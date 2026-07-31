@@ -1,0 +1,23 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e4]:
+      - generic [ref=e8]:
+        - img "Augment Logo" [ref=e10]
+        - generic [ref=e11]:
+          - link "Status" [ref=e12] [cursor=pointer]:
+            - /url: https://status.augmentcode.com/
+          - link "Blog" [ref=e13] [cursor=pointer]:
+            - /url: https://www.augmentcode.com/blog
+          - link "Docs" [ref=e14] [cursor=pointer]:
+            - /url: https://docs.augmentcode.com/
+          - link "Support" [ref=e15] [cursor=pointer]:
+            - /url: https://support.augmentcode.com/
+      - generic [ref=e21]:
+        - heading "Loading Your Account" [level=1] [ref=e32]
+        - text: Fetching your account data and settings.
+        - progressbar [ref=e36]
+    - region "Notifications (F8)":
+      - list
+  - iframe [ref=e38]:
+    - generic [active]:
+      - generic: OK

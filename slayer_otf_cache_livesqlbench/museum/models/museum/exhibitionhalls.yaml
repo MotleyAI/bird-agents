@@ -1,0 +1,118 @@
+version: 7
+name: exhibitionhalls
+sql_table: exhibitionhalls
+query_variables: {}
+data_source: museum
+columns:
+- name: hallrecord
+  sql: hallrecord
+  type: TEXT
+  primary_key: true
+  hidden: false
+- name: cctvcoverage
+  sql: cctvcoverage
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(100) describing the CCTV coverage (possible values: ''Partial'',
+    ''Full'', ''Limited'').'
+  hidden: false
+  sampled: Limited, Partial, Full
+  sampled_values:
+  - Limited
+  - Partial
+  - Full
+  distinct_count: 3
+- name: motiondetectstatus
+  sql: motiondetectstatus
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(50) summarizing motion detection status (possible values:
+    ''Active'', ''Maintenance'', ''Partial'').'
+  hidden: false
+  sampled: Maintenance, Active, Partial
+  sampled_values:
+  - Maintenance
+  - Active
+  - Partial
+  distinct_count: 3
+- name: alarmsysstatus
+  sql: alarmsysstatus
+  type: TEXT
+  primary_key: false
+  description: 'CHAR(15) for alarm system status (possible values: ''Armed'', ''Maintenance'',
+    ''Partial'').'
+  hidden: false
+  sampled: 'Maintenance              , Armed                    , Partial                  '
+  sampled_values:
+  - 'Maintenance              '
+  - 'Armed                    '
+  - 'Partial                  '
+  distinct_count: 3
+- name: accessctrlstatus
+  sql: accessctrlstatus
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(80) describing the level of access control (possible values:
+    ''Maintenance'', ''Active'', ''Partial'').'
+  hidden: false
+  sampled: Partial, Maintenance, Active
+  sampled_values:
+  - Partial
+  - Maintenance
+  - Active
+  distinct_count: 3
+- name: visitorcountdaily
+  sql: visitorcountdaily
+  type: INT
+  primary_key: false
+  description: INT representing the typical or observed daily visitor count (unbounded
+    integer).
+  hidden: false
+  format:
+    type: integer
+  sampled: 2 .. 996
+- name: visitorflowrate
+  sql: visitorflowrate
+  type: INT
+  primary_key: false
+  description: 'SMALLINT indicating how many visitors pass through (possible values:
+    ''Low'', ''Medium'', ''High'').'
+  hidden: false
+  sampled: Low, Medium, High
+  sampled_values:
+  - Low
+  - Medium
+  - High
+  distinct_count: 3
+- name: visitordwellmin
+  sql: visitordwellmin
+  type: INT
+  primary_key: false
+  description: SMALLINT specifying the average dwell time (in minutes) per visitor.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 30
+- name: visitorbehaviornotes
+  sql: visitorbehaviornotes
+  type: TEXT
+  primary_key: false
+  description: TEXT field for any additional notes on visitor behaviors, traffic patterns,
+    or compliance issues.
+  hidden: false
+  sampled: Good, Fair, Poor
+  sampled_values:
+  - Good
+  - Fair
+  - Poor
+  distinct_count: 3
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - hallrecord
+    - artregistry
+  join_type: left
+filters: []
+hidden: false

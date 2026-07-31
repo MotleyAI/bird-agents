@@ -1,0 +1,291 @@
+version: 7
+name: container
+sql_table: container
+query_variables: {}
+data_source: vaccine
+columns:
+- name: containregistry
+  sql: containregistry
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key uniquely identifying each container record.
+  hidden: false
+- name: containmodel
+  sql: containmodel
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(40) naming or describing the container model/type.
+  hidden: false
+  sampled: Ultra-Low Freezer, Cryo Container, Thermal Shipper
+  sampled_values:
+  - Ultra-Low Freezer
+  - Cryo Container
+  - Thermal Shipper
+  distinct_count: 3
+- name: volliters
+  sql: volliters
+  type: INT
+  primary_key: false
+  description: An INTEGER specifying the container's internal volume in liters.
+  hidden: false
+  format:
+    type: integer
+  sampled: 50 .. 499
+- name: masskg
+  sql: masskg
+  type: DOUBLE
+  primary_key: false
+  description: "A REAL number for the container\u2019s mass in kilograms (when empty,\
+    \ if applicable)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 20.4 .. 199.8
+- name: containflag
+  sql: containflag
+  type: TEXT
+  primary_key: false
+  description: "A VARCHAR(30) field capturing a container status or classification\
+    \ (e.g., \u2018In Transit\u2019, \u2018Active\u2019, \u2018Return\u2019, \u2018\
+    Delivered\u2019)."
+  hidden: false
+  sampled: Return, Active, Delivered, In Transit
+  sampled_values:
+  - Return
+  - Active
+  - Delivered
+  - In Transit
+  distinct_count: 4
+- name: coolkind
+  sql: coolkind
+  type: TEXT
+  primary_key: false
+  description: "A VARCHAR(40) describing the coolant type used within the container\
+    \ (e.g., Dry Ice, Liquid Nitrogen, Phase Change Material). Sample values are clean\
+    \ exact-case labels ('Dry Ice', 'Liquid Nitrogen', 'Phase Change Material'); use\
+    \ LOWER+TRIM if matching against user-supplied literals. [kb=24] Uses paraffin-based\
+    \ material with 2-8\xB0C phase transition point and 200 kJ/kg latent heat capacity\
+    \ for temperature stabilization. \u2014 Illustrates PCM cooling mechanism [/kb=24]"
+  label: 'CoolKind: ''Phase Change Material'''
+  hidden: false
+  meta:
+    kb_id: 24
+  sampled: Dry Ice, Liquid Nitrogen, Phase Change Material
+  sampled_values:
+  - Dry Ice
+  - Liquid Nitrogen
+  - Phase Change Material
+  distinct_count: 3
+- name: coolmass
+  sql: coolmass
+  type: DOUBLE
+  primary_key: false
+  description: A REAL number indicating the mass (in kilograms) of the coolant present.
+  hidden: false
+  format:
+    type: integer
+  sampled: 5.2 .. 50
+- name: coolremainpct
+  sql: coolremainpct
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(5,2) representing the remaining percentage of coolant.
+  hidden: false
+  format:
+    type: float
+  sampled: 20.0 .. 99.9
+- name: coolrefills
+  sql: coolrefills
+  type: INT
+  primary_key: false
+  description: A SMALLINT count of how many times coolant has been refilled.
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 5
+- name: refilllatest
+  sql: refilllatest
+  type: DATE
+  primary_key: false
+  description: A DATE recording the most recent coolant refill date.
+  hidden: false
+  sampled: 2025-02-09 .. 2025-02-19
+- name: refillnext
+  sql: refillnext
+  type: DATE
+  primary_key: false
+  description: A DATE for the scheduled or expected next refill date.
+  hidden: false
+  sampled: 2025-02-20 .. 2025-02-24
+- name: batterypct
+  sql: batterypct
+  type: DOUBLE
+  primary_key: false
+  description: "A REAL percentage of the container\u2019s internal battery level,\
+    \ if battery-powered components exist."
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 100
+- name: pwrfeed
+  sql: pwrfeed
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(40) indicating the primary power feed or source (e.g., Battery,
+    External, Hybrid).
+  hidden: false
+  sampled: Hybrid, External, Battery
+  sampled_values:
+  - Hybrid
+  - External
+  - Battery
+  distinct_count: 3
+- name: pwrbackupflag
+  sql: pwrbackupflag
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(40) specifying backup power availability status (e.g., Available,
+    In Use, Not Available).
+  hidden: false
+  sampled: In Use, Available, Not Available
+  sampled_values:
+  - In Use
+  - Available
+  - Not Available
+  distinct_count: 3
+- name: shipown
+  sql: shipown
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) foreign key referencing Shipments(ShipmentRegistry).
+    Links this container to a shipment.
+  hidden: false
+  sampled: VS101443, VS101896, VS103453, VS107213, VS107478, VS108663, VS109470, VS110349,
+    VS111220, VS113526, VS116114, VS120493, VS121615, VS122057, VS122283, VS124761,
+    VS124785, VS125521, VS126219, VS126297 ... (900 distinct)
+  sampled_values:
+  - VS101443
+  - VS101896
+  - VS103453
+  - VS107213
+  - VS107478
+  - VS108663
+  - VS109470
+  - VS110349
+  - VS111220
+  - VS113526
+  - VS116114
+  - VS120493
+  - VS121615
+  - VS122057
+  - VS122283
+  - VS124761
+  - VS124785
+  - VS125521
+  - VS126219
+  - VS126297
+  - VS127092
+  - VS128180
+  - VS128465
+  - VS129414
+  - VS131248
+  - VS131616
+  - VS133967
+  - VS135208
+  - VS135323
+  - VS136255
+  - VS140768
+  - VS141136
+  - VS141866
+  - VS143336
+  - VS143586
+  - VS144344
+  - VS144593
+  - VS145015
+  - VS147256
+  - VS147622
+  - VS148137
+  - VS149025
+  - VS150281
+  - VS150918
+  - VS151303
+  - VS151690
+  - VS152703
+  - VS153208
+  - VS153333
+  - VS154617
+  distinct_count: 900
+- name: cdr
+  sql: (100 - coolremainpct) / NULLIF(julianday('now') - julianday(refilllatest),
+    0)
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=1] Coolant Depletion Rate (CDR) = (100 - CoolRemainPct) / (Current_Date\
+    \ - RefillLatest) \u2014 Measures how quickly the coolant is being depleted. [/kb=1]"
+  label: Coolant Depletion Rate (CDR)
+  hidden: false
+  meta:
+    kb_id: 1
+  sampled: 0.0002134743900680551 .. 0.17188027314870838
+- name: coolant_critical
+  sql: CASE WHEN cdr > 1 AND coolremainpct < 30 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=17] A condition where CDR > 1 and CoolRemainPct < 30 \u2014 Identifies\
+    \ critical coolant conditions. [/kb=17]"
+  label: Coolant Critical
+  hidden: false
+  meta:
+    kb_id: 17
+  sampled: '0'
+  sampled_values:
+  - '0'
+  distinct_count: 1
+- name: efficient_container
+  sql: CASE WHEN vaccinedetails.ser > 0.8 AND sensordata.tss > 0.9 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=18] A container where SER > 0.8 and TSS > 0.9 \u2014 Identifies\
+    \ efficiently utilized containers. [/kb=18]"
+  label: Efficient Container
+  hidden: false
+  meta:
+    kb_id: 18
+- name: ces
+  sql: vaccinedetails.ser * sensordata.cei * (1 - sensordata.cri)
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=36] CES = SER \\times CEI \\times (1 - CRI) \u2014 Overall container\
+    \ efficiency considering multiple metrics. [/kb=36]"
+  label: Container Efficiency Score (CES)
+  hidden: false
+  meta:
+    kb_id: 36
+- name: severe_container_risk
+  sql: CASE WHEN container.ces < 0.3 AND sensordata.cei < 0.5 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=41] A container where CES < 0.3 and CEI < 0.5 \u2014 Identifies\
+    \ containers with severe combined risks. [/kb=41]"
+  label: Severe Container Risk
+  hidden: false
+  meta:
+    kb_id: 41
+measures:
+- formula: rank(cdr:sum)
+  name: depletion_rank
+  label: Depletion Rank
+  description: "[kb=62] Depletion Rank \u2014 Ranks containers based on the rate of\
+    \ coolant depletion. Rank assigned to containers based on descending order of\
+    \ CDR (rank 1 = highest CDR). [/kb=62]"
+  meta:
+    kb_id: 62
+aggregations: []
+joins:
+- target_model: shipments
+  join_pairs:
+  - - shipown
+    - shipmentregistry
+  join_type: left
+filters: []
+hidden: false

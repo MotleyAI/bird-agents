@@ -1,0 +1,350 @@
+version: 7
+name: sensitivitydata
+sql_table: sensitivitydata
+query_variables: {}
+data_source: museum
+columns:
+- name: sensitivityregistry
+  sql: sensitivityregistry
+  type: INT
+  primary_key: true
+  description: BIGSERIAL PRIMARY KEY, unique ID for each record of sensitivity details.
+  hidden: false
+  format:
+    type: integer
+- name: artref
+  sql: artref
+  type: TEXT
+  primary_key: false
+  description: CHAR(10) FOREIGN KEY referencing ArtifactsCore(ArtRegistry).
+  hidden: false
+  sampled: ART10016  , ART10101  , ART10304  , ART10454  , ART10602  , ART10796  ,
+    ART10868  , ART10877  , ART11061  , ART11166  , ART11238  , ART11605  , ART11692  ,
+    ART11696  , ART11818  , ART11915  , ART11997  , ART12066  , ART12071  , ART12569   ...
+    (951 distinct)
+  sampled_values:
+  - 'ART10016  '
+  - 'ART10101  '
+  - 'ART10304  '
+  - 'ART10454  '
+  - 'ART10602  '
+  - 'ART10796  '
+  - 'ART10868  '
+  - 'ART10877  '
+  - 'ART11061  '
+  - 'ART11166  '
+  - 'ART11238  '
+  - 'ART11605  '
+  - 'ART11692  '
+  - 'ART11696  '
+  - 'ART11818  '
+  - 'ART11915  '
+  - 'ART11997  '
+  - 'ART12066  '
+  - 'ART12071  '
+  - 'ART12569  '
+  - 'ART12707  '
+  - 'ART12752  '
+  - 'ART12761  '
+  - 'ART12836  '
+  - 'ART12913  '
+  - 'ART12943  '
+  - 'ART12970  '
+  - 'ART13225  '
+  - 'ART13427  '
+  - 'ART13446  '
+  - 'ART13491  '
+  - 'ART13670  '
+  - 'ART13864  '
+  - 'ART13944  '
+  - 'ART13974  '
+  - 'ART14031  '
+  - 'ART14074  '
+  - 'ART14093  '
+  - 'ART14403  '
+  - 'ART14428  '
+  - 'ART14493  '
+  - 'ART14524  '
+  - 'ART14535  '
+  - 'ART14626  '
+  - 'ART14981  '
+  - 'ART14989  '
+  - 'ART15309  '
+  - 'ART15493  '
+  - 'ART15630  '
+  - 'ART15822  '
+  distinct_count: 951
+- name: envsensitivity
+  sql: envsensitivity
+  type: TEXT
+  primary_key: false
+  description: 'CHAR(20) for overall environmental sensitivity (possible values: ''Low'',
+    ''High'', ''Medium'').'
+  hidden: false
+  sampled: 'Medium              , High                , Low                 '
+  sampled_values:
+  - 'Medium              '
+  - 'High                '
+  - 'Low                 '
+  distinct_count: 3
+- name: lightsensitivity
+  sql: lightsensitivity
+  type: TEXT
+  primary_key: false
+  description: "[kb=23] Illustrates light sensitivity classifications and their implications.\
+    \ \u2014 Values include 'Low' (can tolerate up to 300 lux, like stone artifacts),\
+    \ 'Medium' (should be limited to 150-200 lux, like oil paintings), and 'High'\
+    \ (restricted to 50 lux or less, like textiles and works on paper). [/kb=23] VARCHAR(80)\
+    \ describing light/UV sensitivity (possible values: 'High', 'Low', 'Medium')."
+  label: Light Sensitivity
+  hidden: false
+  meta:
+    kb_id: 23
+  sampled: Medium, Low, High
+  sampled_values:
+  - Medium
+  - Low
+  - High
+  distinct_count: 3
+- name: tempsensitivity
+  sql: tempsensitivity
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(50) summarizing temperature tolerance (possible values: ''High'',
+    ''Low'', ''Medium'').'
+  hidden: false
+  sampled: Low, High, Medium
+  sampled_values:
+  - Low
+  - High
+  - Medium
+  distinct_count: 3
+- name: humiditysensitivity
+  sql: humiditysensitivity
+  type: TEXT
+  primary_key: false
+  description: "[kb=24] Values include 'Low' (can tolerate 30-65% RH, like stone artifacts),\
+    \ 'Medium' (requires 40-60% RH, like wood), and 'High' (requires 45-55% RH with\
+    \ minimal fluctuation, like lacquer work). \u2014 Illustrates humidity sensitivity\
+    \ classifications and their implications. [/kb=24] TEXT detailing humidity requirements\
+    \ or maximum humidity tolerance (possible values: 'Medium', 'High', 'Low')."
+  label: Humidity Sensitivity
+  hidden: false
+  meta:
+    kb_id: 24
+  sampled: Medium, Low, High
+  sampled_values:
+  - Medium
+  - Low
+  - High
+  distinct_count: 3
+- name: vibrasensitivity
+  sql: vibrasensitivity
+  type: TEXT
+  primary_key: false
+  description: 'CHAR(20) describing vibration tolerance (possible values: ''Medium'',
+    ''High'', ''Low'').'
+  hidden: false
+  sampled: 'Medium              , High                , Low                 '
+  sampled_values:
+  - 'Medium              '
+  - 'High                '
+  - 'Low                 '
+  distinct_count: 3
+- name: pollutantsensitivity
+  sql: pollutantsensitivity
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(100) indicating susceptibility to pollutants (possible values:
+    ''High'', ''Medium'', ''Low'').'
+  hidden: false
+  sampled: High, Medium, Low
+  sampled_values:
+  - High
+  - Medium
+  - Low
+  distinct_count: 3
+- name: pestsensitivity
+  sql: pestsensitivity
+  type: TEXT
+  primary_key: false
+  description: 'TEXT describing vulnerability to pests (possible values: ''High'',
+    ''Low'', ''Medium'').'
+  hidden: false
+  sampled: Low, Medium, High
+  sampled_values:
+  - Low
+  - Medium
+  - High
+  distinct_count: 3
+- name: handlesensitivity
+  sql: handlesensitivity
+  type: TEXT
+  primary_key: false
+  description: 'CHAR(20) for handling sensitivity (possible values: ''Medium'', ''Low'',
+    ''High'').'
+  hidden: false
+  sampled: 'Low                 , Medium              , High                '
+  sampled_values:
+  - 'Low                 '
+  - 'Medium              '
+  - 'High                '
+  distinct_count: 3
+- name: transportsensitivity
+  sql: transportsensitivity
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(50) specifying special packaging needs (possible values: ''High'',
+    ''Low'', ''Medium'').'
+  hidden: false
+  sampled: High, Low, Medium
+  sampled_values:
+  - High
+  - Low
+  - Medium
+  distinct_count: 3
+- name: displaysensitivity
+  sql: displaysensitivity
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(120) noting special display requirements (possible values:
+    ''Low'', ''High'', ''Medium'').'
+  hidden: false
+  sampled: Low, Medium, High
+  sampled_values:
+  - Low
+  - Medium
+  - High
+  distinct_count: 3
+- name: storagesensitivity
+  sql: storagesensitivity
+  type: TEXT
+  primary_key: false
+  description: 'TEXT detailing storage conditions (possible values: ''Medium'', ''Low'',
+    ''High'').'
+  hidden: false
+  sampled: High, Low, Medium
+  sampled_values:
+  - High
+  - Low
+  - Medium
+  distinct_count: 3
+- name: env_sens_weight
+  sql: CASE LOWER(TRIM(envsensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN
+    'high' THEN 10 ELSE NULL END
+  type: INT
+  primary_key: false
+  description: "[kb=1] EnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity:\
+    \ Low=1, Medium=5, High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity:\
+    \ Low=1, Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\
+    \ [/kb=1] Numeric weight for envsensitivity (Low=1, Medium=5, High=10); NULL for\
+    \ any other value."
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+  sampled: 1 .. 10
+- name: light_sens_weight
+  sql: CASE LOWER(TRIM(lightsensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN
+    'high' THEN 10 ELSE NULL END
+  type: INT
+  primary_key: false
+  description: "[kb=1] EnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity:\
+    \ Low=1, Medium=5, High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity:\
+    \ Low=1, Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\
+    \ [/kb=1] Numeric weight for lightsensitivity (Low=1, Medium=5, High=10); NULL\
+    \ for any other value."
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+  sampled: 1 .. 10
+- name: temp_sens_weight
+  sql: CASE LOWER(TRIM(tempsensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN 5 WHEN
+    'high' THEN 10 ELSE NULL END
+  type: INT
+  primary_key: false
+  description: "[kb=1] EnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity:\
+    \ Low=1, Medium=5, High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity:\
+    \ Low=1, Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\
+    \ [/kb=1] Numeric weight for tempsensitivity (Low=1, Medium=5, High=10); NULL\
+    \ for any other value."
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+  sampled: 1 .. 10
+- name: humid_sens_weight
+  sql: CASE LOWER(TRIM(humiditysensitivity)) WHEN 'low' THEN 1 WHEN 'medium' THEN
+    5 WHEN 'high' THEN 10 ELSE NULL END
+  type: INT
+  primary_key: false
+  description: "[kb=1] EnvSensitivity: Low=1, Medium=5, High=10; LightSensitivity:\
+    \ Low=1, Medium=5, High=10; TempSensitivity: Low=1, Medium=5, High=10; HumiditySensitivity:\
+    \ Low=1, Medium=5, High=10 \u2014 Numerical weights for sensitivity calculations\
+    \ [/kb=1] Numeric weight for humiditysensitivity (Low=1, Medium=5, High=10); NULL\
+    \ for any other value."
+  label: Sensitivity Weight Values
+  hidden: false
+  meta:
+    kb_id: 1
+  sampled: 1 .. 10
+- name: organic_material_vulnerability
+  sql: CASE WHEN LOWER(TRIM(artifactscore.mattype)) IN ('wood', 'textile', 'paper')
+    AND LOWER(TRIM(envsensitivity)) = 'high' THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=20] Artifacts with MatType='Wood', 'Textile', or 'Paper' AND EnvSensitivity='High'\
+    \ require specialized environmental controls with narrower humidity and temperature\
+    \ ranges than inorganic materials. \u2014 Identifies organic materials requiring\
+    \ special environmental conditions. [/kb=20] Boolean (1/0) row-level flag on sensitivitydata;\
+    \ references artifactscore.mattype via the artref->artregistry join."
+  label: Organic Material Vulnerability
+  hidden: false
+  meta:
+    kb_id: 20
+  sampled: 0, 1
+  sampled_values:
+  - '0'
+  - '1'
+  distinct_count: 2
+- name: erf
+  sql: (env_sens_weight + light_sens_weight + temp_sens_weight + humid_sens_weight)
+    / 4.0
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=2] ERF = \\frac{\\sum_{i \\in sensitivities} SensWeight_i}{|sensitivities|},\
+    \ where sensitivities includes EnvSensitivity, LightSensitivity, TempSensitivity,\
+    \ etc, with value mapping based on Sensitivity Weight Values. \u2014 Quantifies\
+    \ the overall environmental risk to an artifact based on its sensitivities. [/kb=2]\
+    \ Computed as the arithmetic mean of the four encoded sensitivity weights (env,\
+    \ light, temp, humid) on this row; NULL propagates if any input weight is NULL."
+  label: Environmental Risk Factor (ERF)
+  hidden: false
+  meta:
+    kb_id: 2
+  sampled: 1.0 .. 10.0
+- name: dsd
+  sql: 36.0 * (10 - light_sens_weight) * (10 - temp_sens_weight) * (10 - humid_sens_weight)
+    / 1000.0
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=4] DSD = (BaseDuration \xD7 (10 - LightSensWeight) \xD7 (10 -\
+    \ TempSensWeight) \xD7 (10 - HumidSensWeight)) / 1000, where BaseDuration=36 months,\
+    \ and SensWeight uses Sensitivity Weight Values. \u2014 Calculates the recommended\
+    \ maximum display duration for an artifact based on its sensitivities. [/kb=4]"
+  label: Display Safety Duration (DSD)
+  hidden: false
+  meta:
+    kb_id: 4
+  sampled: 0.0 .. 26.244
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artref
+    - artregistry
+  join_type: left
+filters: []
+hidden: false

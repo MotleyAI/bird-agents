@@ -1,0 +1,204 @@
+version: 7
+name: treatmentoutcomes
+sql_table: treatmentoutcomes
+query_variables: {}
+data_source: mental
+columns:
+- name: txoutkey
+  sql: txoutkey
+  type: INT
+  primary_key: true
+  description: A SERIAL primary key for treatment outcome records (e.g., 201).
+  hidden: false
+  format:
+    type: integer
+- name: txref
+  sql: txref
+  type: INT
+  primary_key: false
+  description: An INT FK referencing TreatmentBasics(TxKey).
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 1000
+- name: thprog
+  sql: thprog
+  type: TEXT
+  primary_key: false
+  description: An enum (therapyprogress_enum) describing therapy progress (Fair, Good,
+    Poor).
+  hidden: false
+  sampled: Fair, Poor, Good
+  sampled_values:
+  - Fair
+  - Poor
+  - Good
+  distinct_count: 3
+- name: txadh
+  sql: txadh
+  type: TEXT
+  primary_key: false
+  description: An enum (treatmentadherence_enum) referencing overall treatment adherence
+    (Non-compliant, Medium, Low, High).
+  hidden: false
+  sampled: Medium, Low, Non-compliant, High
+  sampled_values:
+  - Medium
+  - Low
+  - Non-compliant
+  - High
+  distinct_count: 4
+- name: txresp
+  sql: txresp
+  type: TEXT
+  primary_key: false
+  description: An enum (treatmentresponse_enum) for treatment response (Poor, Good,
+    Partial).
+  hidden: false
+  sampled: Partial, Good, Poor
+  sampled_values:
+  - Partial
+  - Good
+  - Poor
+  distinct_count: 3
+- name: sideburd
+  sql: sideburd
+  type: TEXT
+  primary_key: false
+  description: An enum (sideeffectburden_enum) describing side effect burden (Mild,
+    Moderate, Severe).
+  hidden: false
+  sampled: Mild, Severe, Moderate
+  sampled_values:
+  - Mild
+  - Severe
+  - Moderate
+  distinct_count: 3
+- name: txgoalstat
+  sql: txgoalstat
+  type: TEXT
+  primary_key: false
+  description: An enum (treatmentgoalsstatus_enum) for treatment goals status (Not
+    Started, Achieved, In Progress, Modified).
+  hidden: false
+  sampled: In Progress, Not Started, Achieved, Modified
+  sampled_values:
+  - In Progress
+  - Not Started
+  - Achieved
+  - Modified
+  distinct_count: 4
+- name: recgoalstat
+  sql: recgoalstat
+  type: TEXT
+  primary_key: false
+  description: An enum (recoverygoalsstatus_enum) for recovery goals status (Not Started,
+    Achieved, In Progress, Modified).
+  hidden: false
+  sampled: In Progress, Achieved, Modified, Not Started
+  sampled_values:
+  - In Progress
+  - Achieved
+  - Modified
+  - Not Started
+  distinct_count: 4
+- name: sympimp
+  sql: sympimp
+  type: TEXT
+  primary_key: false
+  description: An enum (symptomimprovement_enum) indicating symptom improvement (Moderate,
+    Minimal, Significant).
+  hidden: false
+  sampled: Minimal, Moderate, Significant
+  sampled_values:
+  - Minimal
+  - Moderate
+  - Significant
+  distinct_count: 3
+- name: funcimpv
+  sql: funcimpv
+  type: TEXT
+  primary_key: false
+  description: An enum (functionalimprovement_enum) capturing functional improvement
+    (Moderate, Minimal, Significant).
+  hidden: false
+  sampled: Minimal, Significant, Moderate
+  sampled_values:
+  - Minimal
+  - Significant
+  - Moderate
+  distinct_count: 3
+- name: workstatchg
+  sql: workstatchg
+  type: TEXT
+  primary_key: false
+  description: An enum (workstatuschanges_enum) referencing changes in work status
+    (Leave, Reduced Hours, Terminated).
+  hidden: false
+  sampled: Leave, Reduced Hours, Terminated
+  sampled_values:
+  - Leave
+  - Reduced Hours
+  - Terminated
+  distinct_count: 3
+- name: satscr
+  sql: satscr
+  type: DOUBLE
+  primary_key: false
+  description: "A NUMERIC(3,1) satisfaction score (0\u201310 scale) (e.g., 8.5)."
+  hidden: false
+  format:
+    type: float
+  sampled: 1.0 .. 10.0
+- name: theralliance
+  sql: theralliance
+  type: TEXT
+  primary_key: false
+  description: An enum (therapeuticalliance_enum) describing alliance (Moderate, Poor,
+    Strong, Weak).
+  hidden: false
+  sampled: Moderate, Poor, Strong, Weak
+  sampled_values:
+  - Moderate
+  - Poor
+  - Strong
+  - Weak
+  distinct_count: 4
+- name: txeng
+  sql: txeng
+  type: TEXT
+  primary_key: false
+  description: An enum (treatmentengagement_enum) describing overall engagement (Non-compliant,
+    High, Medium, Low).
+  hidden: false
+  sampled: High, Low, Medium, Non-compliant
+  sampled_values:
+  - High
+  - Low
+  - Medium
+  - Non-compliant
+  distinct_count: 4
+- name: txsat
+  sql: txsat
+  type: TEXT
+  primary_key: false
+  description: An enum (treatmentsatisfaction_enum) describing treatment satisfaction
+    (Medium, Dissatisfied, Low, High).
+  hidden: false
+  sampled: Medium, High, Low, Dissatisfied
+  sampled_values:
+  - Medium
+  - High
+  - Low
+  - Dissatisfied
+  distinct_count: 4
+measures: []
+aggregations: []
+joins:
+- target_model: treatmentbasics
+  join_pairs:
+  - - txref
+    - txkey
+  join_type: left
+filters: []
+hidden: false

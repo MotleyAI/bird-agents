@@ -1,0 +1,229 @@
+version: 7
+name: artifactsecurityaccess
+sql_table: artifactsecurityaccess
+query_variables: {}
+data_source: museum
+columns:
+- name: secrecordregistry
+  sql: secrecordregistry
+  type: INT
+  primary_key: true
+  description: A BIGSERIAL primary key uniquely identifying each artifact security/access
+    record.
+  hidden: false
+  format:
+    type: integer
+- name: artref
+  sql: artref
+  type: TEXT
+  primary_key: false
+  description: A CHAR(10) NOT NULL foreign key referencing ArtifactsCore(ArtRegistry).
+    Links this security record to a specific artifact.
+  hidden: false
+  sampled: ART10016  , ART10101  , ART10304  , ART10454  , ART10602  , ART10796  ,
+    ART10868  , ART10877  , ART11061  , ART11166  , ART11238  , ART11605  , ART11692  ,
+    ART11696  , ART11818  , ART11915  , ART11997  , ART12066  , ART12071  , ART12569   ...
+    (951 distinct)
+  sampled_values:
+  - 'ART10016  '
+  - 'ART10101  '
+  - 'ART10304  '
+  - 'ART10454  '
+  - 'ART10602  '
+  - 'ART10796  '
+  - 'ART10868  '
+  - 'ART10877  '
+  - 'ART11061  '
+  - 'ART11166  '
+  - 'ART11238  '
+  - 'ART11605  '
+  - 'ART11692  '
+  - 'ART11696  '
+  - 'ART11818  '
+  - 'ART11915  '
+  - 'ART11997  '
+  - 'ART12066  '
+  - 'ART12071  '
+  - 'ART12569  '
+  - 'ART12707  '
+  - 'ART12752  '
+  - 'ART12761  '
+  - 'ART12836  '
+  - 'ART12913  '
+  - 'ART12943  '
+  - 'ART12970  '
+  - 'ART13225  '
+  - 'ART13427  '
+  - 'ART13446  '
+  - 'ART13491  '
+  - 'ART13670  '
+  - 'ART13864  '
+  - 'ART13944  '
+  - 'ART13974  '
+  - 'ART14031  '
+  - 'ART14074  '
+  - 'ART14093  '
+  - 'ART14403  '
+  - 'ART14428  '
+  - 'ART14493  '
+  - 'ART14524  '
+  - 'ART14535  '
+  - 'ART14626  '
+  - 'ART14981  '
+  - 'ART14989  '
+  - 'ART15309  '
+  - 'ART15493  '
+  - 'ART15630  '
+  - 'ART15822  '
+  distinct_count: 951
+- name: ratingref
+  sql: ratingref
+  type: INT
+  primary_key: false
+  description: A BIGINT foreign key referencing ArtifactRatings(RatingRecordRegistry).
+    Associates this security record with a particular artifact rating, if relevant.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 951
+- name: loanstatus
+  sql: loanstatus
+  type: TEXT
+  primary_key: false
+  description: "A CHAR(15) indicating the artifact\u2019s loan status (possible values:\
+    \ 'On Loan', 'Available', 'Not Available')."
+  hidden: false
+  sampled: 'Not Available            , On Loan                  , Available                '
+  sampled_values:
+  - 'Not Available            '
+  - 'On Loan                  '
+  - 'Available                '
+  distinct_count: 3
+- name: insvalueusd
+  sql: insvalueusd
+  type: DOUBLE
+  primary_key: false
+  description: "A NUMERIC(15,2) specifying the artifact\u2019s insured value in USD."
+  hidden: false
+  format:
+    type: float
+  sampled: 10055.0 .. 997619.0
+- name: seclevel
+  sql: seclevel
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(50) describing the security level (possible values: ''Level
+    3'', ''Level 2'', ''Level 1'').'
+  hidden: false
+  sampled: Level 1, Level 2, Level 3
+  sampled_values:
+  - Level 1
+  - Level 2
+  - Level 3
+  distinct_count: 3
+- name: accessrestrictions
+  sql: accessrestrictions
+  type: TEXT
+  primary_key: false
+  description: 'A TEXT field detailing constraints on handling/viewing (possible values:
+    ''Public'', ''Restricted'', ''Limited'').'
+  hidden: false
+  sampled: Restricted, Public, Limited
+  sampled_values:
+  - Restricted
+  - Public
+  - Limited
+  distinct_count: 3
+- name: docustatus
+  sql: docustatus
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(60) indicating the completeness of documentation (possible
+    values: ''Updating'', ''Partial'', ''Complete'').'
+  hidden: false
+  sampled: Partial, Updating, Complete
+  sampled_values:
+  - Partial
+  - Updating
+  - Complete
+  distinct_count: 3
+- name: photodocu
+  sql: photodocu
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(100) noting photographic documentation status (possible
+    values: ''Outdated'', ''Required'', ''Recent'').'
+  hidden: false
+  sampled: Recent, Outdated, Required
+  sampled_values:
+  - Recent
+  - Outdated
+  - Required
+  distinct_count: 3
+- name: condreportstatus
+  sql: condreportstatus
+  type: TEXT
+  primary_key: false
+  description: "A VARCHAR(80) describing the artifact\u2019s condition report status\
+    \ (possible values: 'Current', 'Due', 'Overdue')."
+  hidden: false
+  sampled: Current, Due, Overdue
+  sampled_values:
+  - Current
+  - Due
+  - Overdue
+  distinct_count: 3
+- name: conserverecstatus
+  sql: conserverecstatus
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(20) summarizing conservation record status (possible values:
+    ''Review Required'', ''Pending'', ''Updated'').'
+  hidden: false
+  sampled: 'Pending             , Review Required     , Updated             '
+  sampled_values:
+  - 'Pending             '
+  - 'Review Required     '
+  - 'Updated             '
+  distinct_count: 3
+- name: researchaccessstatus
+  sql: researchaccessstatus
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(40) indicating if the artifact is open to researchers (possible
+    values: ''Limited'', ''Available'', ''Restricted'').'
+  hidden: false
+  sampled: Limited, Restricted, Available
+  sampled_values:
+  - Limited
+  - Restricted
+  - Available
+  distinct_count: 3
+- name: digitalrecstatus
+  sql: digitalrecstatus
+  type: TEXT
+  primary_key: false
+  description: 'A TEXT field specifying any digital records or scans (possible values:
+    ''In Progress'', ''Partial'', ''Complete'').'
+  hidden: false
+  sampled: In Progress, Complete, Partial
+  sampled_values:
+  - In Progress
+  - Complete
+  - Partial
+  distinct_count: 3
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artref
+    - artregistry
+  join_type: left
+- target_model: artifactratings
+  join_pairs:
+  - - ratingref
+    - ratingrecordregistry
+  join_type: left
+filters: []
+hidden: false

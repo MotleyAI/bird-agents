@@ -1,0 +1,781 @@
+[
+  {
+    "kb_id": 0,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "artifactratings",
+        "name": "cpi",
+        "entity_ref": "museum.artifactratings.cpi"
+      }
+    ],
+    "notes": "CASE A: emitted CPI as a leaf scoring column on host artifactratings (1:1 with the artifact rating, 1-hop join to artifactscore for conservestatus). Formula follows KB literally; the 5 conservestatus literals (Excellent/Good/Fair/Poor/Critical) all exist verbatim. Caveat in description flags that cultscore (1..100) dominates the additive term vs the 1..10 ratings since KB does not normalize.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 1,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "sensitivitydata",
+        "name": "env_sens_weight",
+        "entity_ref": "museum.sensitivitydata.env_sens_weight"
+      },
+      {
+        "kind": "column",
+        "host_model": "sensitivitydata",
+        "name": "light_sens_weight",
+        "entity_ref": "museum.sensitivitydata.light_sens_weight"
+      },
+      {
+        "kind": "column",
+        "host_model": "sensitivitydata",
+        "name": "temp_sens_weight",
+        "entity_ref": "museum.sensitivitydata.temp_sens_weight"
+      },
+      {
+        "kind": "column",
+        "host_model": "sensitivitydata",
+        "name": "humid_sens_weight",
+        "entity_ref": "museum.sensitivitydata.humid_sens_weight"
+      }
+    ],
+    "notes": "CASE A: parents (KB 2 ERF, KB 4 DSD, KB 8 LER) combine multiple sensitivity weights as component scores, so each leaf sensitivity emits its own numeric weight column on sensitivitydata (host carries all four base columns; 1:1 with artifact-sensitivity record). Mapping Low=1, Medium=5, High=10 via CASE LOWER(TRIM(...)) on envsensitivity/lightsensitivity/tempsensitivity/humiditysensitivity; NULL propagates for any unrecognised value. Sample values verified clean ('Low','Medium','High'); LOWER+TRIM defends against CHAR padding/case drift.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 2,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "sensitivitydata",
+        "name": "erf",
+        "entity_ref": "museum.sensitivitydata.erf"
+      }
+    ],
+    "notes": "CASE A: parents (KB 3/6/7/31/32/39) combine ERF with other components, so this KB owns its scoring column. Encoded as row-level mean of the four KB-1 sensitivity weights (env/light/temp/humid) on sensitivitydata; NULL propagates if any weight is NULL.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 3,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "artifactratings",
+        "name": "avs",
+        "entity_ref": "museum.artifactratings.avs"
+      }
+    ],
+    "notes": "CASE A (own scoring Column): parents KB 34/35/41 reference AVS as a component / threshold input, so KB 3 owns the scoring value. Encoded AVS = cpi * sensitivitydata.erf as a row-level Column on artifactratings (kb_id=3). Side-effect: registered a left join artifactratings -> sensitivitydata on artref because the two input columns sat on tables with no declared path; both tables are 1:1 per artref (951 rows each, fully populated), so the join is a clean 1:1 sibling link. NULL propagates from either input.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 4,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "sensitivitydata",
+        "name": "dsd",
+        "entity_ref": "museum.sensitivitydata.dsd"
+      }
+    ],
+    "notes": "CASE A: parent KBs (15, 38) reference DSD as a named component alongside siblings (current display duration, LER, CPI), so this KB owns its own scoring Column. Row-level arithmetic over the three KB-1 weight columns on sensitivitydata (natural 1:1 grain, all inputs reachable at 0 hops) \u2014 R-COL with formula 36 * (10 - light) * (10 - temp) * (10 - humid) / 1000.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 5,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "environmentalreadingscore",
+        "name": "sesr",
+        "entity_ref": "museum.environmentalreadingscore.sesr"
+      }
+    ],
+    "notes": "CASE A \u2014 SESR is owned here as a per-environmental-reading scoring Column; parents (AEC, SPA, Showcase Failure Risk) reference it by name. R-COL: formula 10 - (tempvar24h + humvar24h/5 + showcases.leakrate)/3 on environmentalreadingscore, using the existing join to showcases for leakrate. Float divisors (5.0, 3.0) used to avoid integer truncation.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 6,
+    "status": "deferred",
+    "entities": [],
+    "notes": "CASE A scoring component of parent KB 35 (ESQ), but operationalisation is ambiguous: ERF lives on sensitivitydata (per-artifact) while SESR lives on environmentalreadingscore (per-reading, many per showcase over time). There is no declared join path from any artifact-side host (sensitivitydata / usagerecords / artifactscore) to environmentalreadingscore, and the KB does not specify which SESR reading represents the artifact's 'current showcase environment' (latest reading? average over a window? a specific reading id?). Encoding row-level here would require inventing a join and picking a reduction policy.",
+    "error": null,
+    "clarifying_questions": [
+      "What is the intended grain of AEC \u2014 one value per artifact, per (artifact, showcase) placement (usagerecords row), or per environmental reading?",
+      "Which SESR value should be used for an artifact's 'current showcase environment': the latest reading on the artifact's current showcase, an average over a time window (e.g. last 24h / 7d / 30d), or some other reduction?",
+      "Should we register a new join from usagerecords (or showcases) to environmentalreadingscore via showcaseref, or compute AEC inside a query-backed model that aggregates SESR per showcase first?",
+      "If an artifact's showcase has no environmental readings (NULL SESR) or NULL ERF, should AEC be NULL or treated as 0/10 by convention?"
+    ]
+  },
+  {
+    "kb_id": 7,
+    "status": "deferred",
+    "entities": [],
+    "notes": "CASE A applies (parents KB 14/31/37 reference MDR as a component score), but the MDR formula mixes columns from three tables at different grains \u2014 ArtAgeYears (artifactscore, per-artifact), ERF (sensitivitydata, per-artifact), RelHumidity and TempC (environmentalreadingscore, per environmental reading taken on a showcase). The KB does not specify the grain of MDR nor how to bridge per-reading env data to per-artifact rows. The parent KBs read like artifact-level scores, but no aggregation policy (latest reading? mean over a window? specific time range?) is pinned, and there is no declared join from artifactscore/sensitivitydata to environmentalreadingscore \u2014 the only candidate bridge is usagerecords -> showcases -> environmentalreadingscore, which itself requires choosing a many-to-one reduction. No guess is safe.",
+    "error": null,
+    "clarifying_questions": [
+      "What is the grain of MDR \u2014 one value per artifact, one value per environmental reading, or one per artifact x reading pair?",
+      "If per-artifact: which environmental reading(s) supply RelHumidity and TempC for an artifact \u2014 the most recent reading from the artifact's showcase (via usagerecords.showcaserefused -> environmentalreadingscore.showcaseref), the average over all readings, or readings within a specific time window?",
+      "Should MDR use the artifact's currently-displayed showcase (usagerecords with displayrotatesched='Active'), or any showcase the artifact has ever been linked to?",
+      "If per-reading: how is ArtAgeYears/ERF chosen when a showcase displays multiple artifacts simultaneously \u2014 pick one artifact, average, or expand to artifact x reading rows?",
+      "Should a new ModelJoin be registered to bridge sensitivitydata/artifactscore to environmentalreadingscore via usagerecords + showcases, or via some other path?"
+    ]
+  },
+  {
+    "kb_id": 8,
+    "status": "deferred",
+    "entities": [],
+    "notes": "LER = (LightLux \u00d7 LightSensWeight \u00d7 VisibleExpLxh) / 1000 combines columns from three tables (lightandradiationreadings.lightlux + visibleexplxh, sensitivitydata.light_sens_weight) at incompatible grains. LightLux/VisibleExpLxh are per-light-reading (951 rows on lightandradiationreadings, joined via env reading to a showcase), while LightSensWeight is per-artifact on sensitivitydata. The KB does not specify which light reading to pair with which artifact, and no declared schema join connects sensitivitydata or artifactscore to a specific light reading (conditionassessments has both artrefexamined and lightreadrefobserved but lacks a declared join to sensitivitydata). Parent KBs (TETL=31, ERPS=38, rotation candidate=15) treat LER as artifact-scoped, but the schema offers no single canonical light reading per artifact. CASE A (this KB owns its own score Column), but operationalisation of the artifact\u2194light-reading binding is not pinned \u2014 defer rather than guess.",
+    "error": null,
+    "clarifying_questions": [
+      "At what grain should LER be computed: per (artifact \u00d7 light reading) row on conditionassessments, per artifact (aggregating LightLux/VisibleExpLxh \u2014 and if so, with which aggregation: latest reading, mean, max?), or per light reading (ignoring artifact-specific LightSensWeight and substituting a default)?",
+      "If artifact-scoped: which join path should resolve a single LightLux/VisibleExpLxh per artifact \u2014 via conditionassessments.lightreadrefobserved (most recent assessment? all?), or via usagerecords.showcaserefused \u2192 showcases \u2192 environmentalreadingscore \u2192 lightandradiationreadings (which yields many readings per artifact)?",
+      "Should an undeclared ModelJoin be added from conditionassessments.artrefexamined \u2192 sensitivitydata.artref so that LER can live on conditionassessments at per-assessment grain?",
+      "When LightSensWeight is NULL (artifact's lightsensitivity not in {Low,Medium,High}), should LER be NULL (propagate unknown) or 0 (treat unknown as no sensitivity)?"
+    ]
+  },
+  {
+    "kb_id": 9,
+    "status": "deferred",
+    "entities": [],
+    "notes": "CASE A applies (parent KB 36 combines CBE with CBR, and KB 17 thresholds CBE<0.5, so CBE owns its own scoring entity). However, the formula requires a numeric per-artifact conservation budget allocation and a total conservation budget to compute BudgetRatio_i. The museum schema carries no numeric conservation budget column \u2014 only categorical status fields (conservationandmaintenance.budgetallocstatus in {'Adequate','Insufficient','Review Required'} and conservationandmaintenance.maintbudgetstatus in {'Available','Limited','Depleted'}). Mapping these labels to dollar amounts cannot be guessed.",
+    "error": null,
+    "clarifying_questions": [
+      "Which column should be used as the numeric per-artifact conservation budget? The schema has no dollar-amount conservation budget field \u2014 only categorical statuses (conservationandmaintenance.budgetallocstatus: 'Adequate'/'Insufficient'/'Review Required'; conservationandmaintenance.maintbudgetstatus: 'Available'/'Limited'/'Depleted'). Should one of these be mapped to a numeric weight (and if so, what mapping)?",
+      "If budgetallocstatus is the intended source, what numeric weights should map each label (e.g., Adequate=?, Insufficient=?, Review Required=?) so BudgetRatio_i = weight_i / SUM(weight)?",
+      "Should artifactsecurityaccess.insvalueusd (insured value in USD) serve as a proxy for the conservation budget allocation instead? It is the only per-artifact monetary field present.",
+      "What is the grain of 'artifacts' in the denominator |artifacts| \u2014 the count of all artifacts in artifactscore, or only those with a conservationandmaintenance record? An artifact may have multiple conservationandmaintenance rows (per hall) \u2014 should the budget be summed per artifact first?",
+      "How should the aggregate \u03a3(CPI_i \u00d7 BudgetRatio_i)/|artifacts| be exposed \u2014 as a single scalar measure on a query-backed model (one row), or as a per-artifact contribution column? KB 17 thresholds it as a single number (<0.5), implying scalar."
+    ]
+  },
+  {
+    "kb_id": 10,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "exhibitionhalls",
+        "name": "visitor_impact_risk",
+        "entity_ref": "museum.exhibitionhalls.visitor_impact_risk"
+      }
+    ],
+    "notes": "CASE A (own scoring Column): parent KBs 19/34/35/40 reference VIR as a named component combined with sibling scores, so VIR owns its own row-level Column on exhibitionhalls. R-COL with CASE for the Low/Medium/High -> 1/3/5 enum mapping (verified the 3 literals are the only distinct values). All three inputs (visitorcountdaily, visitorflowrate, visitordwellmin) live on exhibitionhalls so no joins needed; granularity = one hall. CASE uses LOWER(TRIM(...)) per STRING-NORM in a predicate position.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 11,
+    "status": "deferred",
+    "entities": [],
+    "notes": "CASE A \u2014 KB 11 is a boolean classification reused as a filter by KB 44 and KB 48; encoded as a query-backed model `high_value_artifacts` (one row per artref) with derived column `is_high_value` = CASE WHEN ins_value_usd > 1000000 OR (hist_pr <= 0.10 AND cult_pr <= 0.10) THEN 1 ELSE 0 END. Top-10% materialised via the SLayer `percent_rank` transform (descending PERCENT_RANK over all 951 artifacts; ties at the top share rank 0). Joins from artifactscore.artregistry and artifactsecurityaccess.artref \u2192 high_value_artifacts.artref were also added so downstream KBs can reference `high_value_artifacts.is_high_value`. Note: no artifact in the data has insvalueusd > $1M (data max \u2248 $998K), so the classification is driven entirely by the cultural/historical clause (~10 artifacts qualify). Column-level meta is not settable on query-backed models, so `meta.kb_id=11` is carried on the model; the column inherits via the [kb=11]\u2026[/kb=11] block in the model description. | entities missing or untagged in storage: museum.high_value_artifacts.is_high_value",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 12,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "conservationandmaintenance",
+        "name": "conservation_emergency",
+        "entity_ref": "museum.conservationandmaintenance.conservation_emergency"
+      }
+    ],
+    "notes": "CASE C-ish / domain predicate: encoded as a row-level boolean Column on conservationandmaintenance (each maintenance row carries its own treatpriority and reaches artifactscore.conservestatus via the declared join). Reverse-dep KB 41 refines this predicate with AVS>8 rather than averaging sibling component scores, so KB 12 owns the emergency flag itself. Both literals 'Critical' and 'Urgent' verified present in distinct values; LOWER+TRIM normalisation applied in filter position.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 13,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "environmentalreadingscore",
+        "name": "environmental_instability_event",
+        "entity_ref": "museum.environmentalreadingscore.environmental_instability_event"
+      }
+    ],
+    "notes": "CASE C: no parent owns a composite score combining siblings; KB 47 uses this as a boolean predicate alongside ECI. Encoded as a row-level boolean Column on environmentalreadingscore (natural grain = one env reading) computing (tempvar24h > 1 OR humvar24h > 3). Both columns' observed ranges (temp 0-2, hum 0-5) include the thresholds.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 14,
+    "status": "deferred",
+    "entities": [],
+    "notes": "depends on unencoded KB 7 (deferred: CASE A applies (parents KB 14/31/37 reference MDR as a component score), but the MDR formula mixes columns from three tables at different grains \u2014 ArtAgeYears (artifactscore, per-artifact), ERF (sensi\u2026). Without MDR encoded, the 'MDR > 5' clause of this Accelerated Deterioration Scenario cannot be expressed.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 7 (MDR \u2014 Material Degradation Rate) is not yet encoded; what is the operational definition (host table, grain, exact formula, and how to reconcile columns from artifactscore/sensitivitydata/etc. at differing grains) so that 'MDR > 5' can be evaluated?",
+      "Which two (or more) SensitivityData columns count toward the 'at least two SensitivityData values are High' clause \u2014 the four *_sens_weight columns (temp/humid/light/env), or another set? And what numeric/textual value constitutes 'High' for each (the sampled sensitivitydata weight columns are numeric, not ordinal labels)?"
+    ]
+  },
+  {
+    "kb_id": 15,
+    "status": "deferred",
+    "entities": [],
+    "notes": "Depends on unencoded KB 8 (deferred: LER = (LightLux \u00d7 LightSensWeight \u00d7 VisibleExpLxh) / 1000 combines columns from three tables (lightandradiationreadings.lightlux + visibleexplxh, sensitivitydata.light_sens_weight) at incompatible gra\u2026). The rotation-candidate predicate requires both 'current display duration' (no encoded source/definition) and LER (KB 8, unencoded), so it cannot be operationalised without guessing.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 8 (LER) is unencoded \u2014 what table/grain should LER live on, and how should the three source columns (lightandradiationreadings.lightlux, lightandradiationreadings.visibleexplxh, sensitivitydata.light_sens_weight) be aggregated to a per-artifact value before dividing by 1000?",
+      "What column or derivation represents an artifact's 'current display duration' (units, host table, and how it is computed \u2014 e.g. days since exhibition start)?",
+      "Should the rotation-candidate flag be a boolean Column on a single host (which host?), and is the threshold strictly '> 75% of DSD' (exclusive) and 'LER > 7' (exclusive)?"
+    ]
+  },
+  {
+    "kb_id": 16,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "environmentalreadingscore",
+        "name": "showcase_failure_risk",
+        "entity_ref": "museum.environmentalreadingscore.showcase_failure_risk"
+      }
+    ],
+    "notes": "R-CASE on environmentalreadingscore. Hosted there to keep the same per-reading grain as the dependency SESR (kb=5) and the peer environmental_instability_event (kb=13); the four status columns are reached via the declared environmentalreadingscore->showcases join. All four categorical literals ('Poor', 'Overdue', 'Replace Now', 'Replace Now') are present in the showcases column sampled sets; predicates use LOWER(TRIM(...)) string-norm. SESR<4 lets NULL propagate as unknown.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 17,
+    "status": "deferred",
+    "entities": [],
+    "notes": "depends on unencoded KB 9 (deferred: CASE A applies (parent KB 36 combines CBE with CBR, and KB 17 thresholds CBE<0.5, so CBE owns its own scoring entity). However, the formula requires a numeric per-artifact conservation budget allocati\u2026). Without CBE encoded, the CBE<0.5 threshold and BudgetAllocStatus='Insufficient' / ConserveStatus='Critical' literals cannot be grounded.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 9 (CBE - Conservation Budget Efficiency) is not yet encoded \u2014 what columns / formula define CBE per artifact, and on which host model does it live?",
+      "Which column carries ConserveStatus and does the literal 'Critical' actually occur in its sampled values?",
+      "Which column carries BudgetAllocStatus and does the literal 'Insufficient' actually occur in its sampled values?",
+      "Is the 'Conservation Budget Crisis' a per-artifact flag (row-level Column) or a museum-wide event (aggregate measure / multi-stage model)?"
+    ]
+  },
+  {
+    "kb_id": 18,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "artifactratings",
+        "name": "dynasty_value_artifact",
+        "entity_ref": "museum.artifactratings.dynasty_value_artifact"
+      }
+    ],
+    "notes": "R-CASE flag. KB 46 parent is a wrapper combining this flag with a separate MAP>3 condition (not a multi-component composite average), so this KB owns its own boolean column. Hosted on artifactratings (1:1 with artifact, hosts researchvalrating natively; reaches artifactscore.artdynasty via the single declared join). Dynasty literals 'Ming','Han','Tang' confirmed present; LOWER+TRIM applied in predicate position for robustness.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 19,
+    "status": "deferred",
+    "entities": [],
+    "notes": "KB 19 is a hall-level boolean requiring an EXISTS check over artifacts in the hall (VIR > 5 on exhibitionhalls AND at least one artifact in the hall has seclevel='Level 1' on artifactsecurityaccess). The schema does not pin which table represents artifact-to-hall residency: the only declared join from exhibitionhalls goes to artifactscore on `hallrecord = artregistry` (an ID-equality that does not represent hall membership), and other tables that carry both hall and artifact references (conservationandmaintenance.hallrefmaintained+artrefmaintained, riskassessments.hallrefconcerned+artrefconcerned) are maintenance/risk records rather than authoritative residency. Choosing one would silently change semantics. The 'Level 1' literal IS confirmed present on artifactsecurityaccess.seclevel (values 'Level 1','Level 2','Level 3'), and VIR is the already-encoded exhibitionhalls.visitor_impact_risk; the missing piece is the residency join.",
+    "error": null,
+    "clarifying_questions": [
+      "Which table+columns define 'artifact in the hall'? Candidates seen in the schema: (a) conservationandmaintenance.hallrefmaintained = exhibitionhalls.hallrecord with artrefmaintained = artifactsecurityaccess.artref; (b) riskassessments.hallrefconcerned + artrefconcerned; (c) some other authoritative enrollment table not currently joined. The current exhibitionhalls->artifactscore join (`hallrecord = artregistry`) appears to be ID-equality, not residency \u2014 confirm.",
+      "Should the rule be EXISTS (at least one Level-1 artifact in the hall) as the phrase 'for any artifact' suggests, or universal (ALL artifacts in the hall are Level 1)?",
+      "At what grain should the flag be exposed: row-level boolean on exhibitionhalls, or only as a query-backed derived model keyed by hallrecord?"
+    ]
+  },
+  {
+    "kb_id": 20,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "sensitivitydata",
+        "name": "organic_material_vulnerability",
+        "entity_ref": "museum.sensitivitydata.organic_material_vulnerability"
+      }
+    ],
+    "notes": "R-COL boolean classifier on host sensitivitydata (carries envsensitivity; joins to artifactscore in 1 hop for mattype). CASE A doesn't apply (parent KB 50 adds an extra TETL condition rather than averaging components); this KB owns a reusable boolean flag. Literals 'Wood'/'Textile'/'Paper' and 'High' all verified to exist; LOWER(TRIM(...)) used for case/whitespace-insensitive matching (CHAR columns carry padding).",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 21,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "artifactscore",
+        "name": "conservestatus",
+        "entity_ref": "museum.artifactscore.conservestatus"
+      }
+    ],
+    "notes": "CASE C / R-DESCRIBE: KB is a value_illustration of the conservestatus enum. The only parent (KB 53) is domain_knowledge about light lux thresholds, not a calculation combining sibling components, so no scoring column is owed here. Attached the value-list prose as a description on the base column artifactscore.conservestatus. Sampled values match the KB-described labels exactly.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 22,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "artifactratings",
+        "name": "histsignrating",
+        "entity_ref": "museum.artifactratings.histsignrating"
+      }
+    ],
+    "notes": "CASE C (R-DESCRIBE): no reverse-deps, no parent calculation_knowledge combines this score with siblings. Attached the value-illustration prose as a description on the base column artifactratings.histsignrating; sampled values (1..10 ints) align with the KB-described scale, so no caveat needed beyond confirming the range.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 23,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "sensitivitydata",
+        "name": "lightsensitivity",
+        "entity_ref": "museum.sensitivitydata.lightsensitivity"
+      }
+    ],
+    "notes": "CASE C (R-DESCRIBE): pure value_illustration with no calculation_knowledge parent in reverse-deps. Attached the lux-threshold prose as a [kb=23] description on the existing base column sensitivitydata.lightsensitivity. Sampled values ('Low','Medium','High') match the KB labels exactly, so no caveat needed. The numeric scoring weight for this column already lives on light_sens_weight (kb=1), so no scoring column is emitted here.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 24,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "sensitivitydata",
+        "name": "humiditysensitivity",
+        "entity_ref": "museum.sensitivitydata.humiditysensitivity"
+      }
+    ],
+    "notes": "CASE C (R-DESCRIBE): no reverse-dep parent owns a derived score; KB 24 is purely illustrative of the categorical values on sensitivitydata.humiditysensitivity (Low/Medium/High RH ranges and example materials). Attached as a [kb=24] description on the base column. Sampled values are clean ('Low','Medium','High') and match the KB; no normalisation caveat needed. Distinct from KB 1 which encoded the numeric weight column humid_sens_weight.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 25,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "exhibitionhalls",
+        "name": "cctvcoverage",
+        "entity_ref": "museum.exhibitionhalls.cctvcoverage"
+      }
+    ],
+    "notes": "CASE C (R-DESCRIBE): no parent KB owns a score, and the KB merely defines the meaning of three existing enum labels on exhibitionhalls.cctvcoverage. Sampled values ('Full', 'Partial', 'Limited') match the KB verbatim, so attached the definition as a description on the base column with kb_id=25 tag.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 26,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "showcases",
+        "name": "airtightness",
+        "entity_ref": "museum.showcases.airtightness"
+      }
+    ],
+    "notes": "CASE C (R-DESCRIBE): value_illustration with no parent scoring KB. Attached KB prose as description on showcases.airtightness with a sampled-value caveat noting the data ranges 90..100 (quality score semantics) which diverges from the KB-described 0.01..5.0 air-changes-per-day scale; leakrate (0.01..0.5) is the closer match. No scoring Column emitted.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 27,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "environmentalreadingscore",
+        "name": "tempc",
+        "entity_ref": "museum.environmentalreadingscore.tempc"
+      }
+    ],
+    "notes": "CASE C (R-DESCRIBE): value_illustration with no parent calculation_knowledge in reverse-deps; the KB only narrates typical/ideal/failure bands for TempC with no algebraic formula, so the prose is attached as a description on the base tempc column (with a sampled-value caveat noting all observed readings sit in 18..21\u00b0C).",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 28,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "environmentalreadingscore",
+        "name": "relhumidity",
+        "entity_ref": "museum.environmentalreadingscore.relhumidity"
+      }
+    ],
+    "notes": "CASE C (R-DESCRIBE): no parent KB owns a derived score from this illustration; attached the KB's value-range/ideal-band/threshold prose as a description on the base column environmentalreadingscore.relhumidity, tagged meta.kb_id=28. Prepended a sample-value caveat noting observed range (45..54) is narrower than the KB-described 30-65% band.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 29,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "lightandradiationreadings",
+        "name": "lightlux",
+        "entity_ref": "museum.lightandradiationreadings.lightlux"
+      }
+    ],
+    "notes": "CASE C (R-DESCRIBE): value_illustration with no parents and no scoring formula \u2014 attached the lux range/conservation-standard prose as description on the base column lightandradiationreadings.lightlux, with a caveat noting actual sampled range is 50..200.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 30,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "airqualityreadings",
+        "name": "pm25conc",
+        "entity_ref": "museum.airqualityreadings.pm25conc"
+      }
+    ],
+    "notes": "CASE C (R-DESCRIBE): no calculation_knowledge parent owns a score for this value_illustration, so attached the KB's unit + threshold band prose as a description on the base column airqualityreadings.pm25conc. Sampled range (0.1..35 \u00b5g/m\u00b3) is consistent with the KB; no caveat needed.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 31,
+    "status": "deferred",
+    "entities": [],
+    "notes": "TETL = ERF + LER + (MDR \u00d7 2) depends on KB 7 (MDR) and KB 8 (LER), both of which are NOT encoded. Per DEFENSIVE DEFER, this KB cannot be encoded until its component scores exist.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 7 (MDR) is deferred: 'CASE A applies (parents KB 14/31/37 reference MDR as a component score), but the MDR formula mixes columns from three tables at different grains \u2014 ArtAgeYears (artifactscore, per-artifact), ERF (sensitivitydata)...'. How should MDR be operationalised (host table, grain, exact formula inputs)?",
+      "KB 8 (LER) is deferred: 'LER = (LightLux \u00d7 LightSensWeight \u00d7 VisibleExpLxh) / 1000 combines columns from three tables (lightandradiationreadings.lightlux + visibleexplxh, sensitivitydata.light_sens_weight) at incompatible grains...'. How should LER be operationalised (host table, grain, aggregation of per-reading light values to per-artifact)?",
+      "Once MDR and LER are pinned, TETL can be encoded as a Column on the same host (likely sensitivitydata or a query-backed per-artifact model) referencing ERF + LER + (MDR \u00d7 2)."
+    ]
+  },
+  {
+    "kb_id": 32,
+    "status": "deferred",
+    "entities": [],
+    "notes": "SPA = SESR - (ERF * 0.5) crosses two unconnected hosts: SESR lives on environmentalreadingscore (per-reading, per-showcase grain) and ERF lives on sensitivitydata (per-artifact grain). Neither host reaches the other through the declared join graph (environmentalreadingscore -> showcases -> exhibitionhalls -> artifactscore; sensitivitydata -> artifactscore), and the KB does not pin the grain (per artifact-reading pair? per showcase aggregated over its artifacts? per artifact aggregated over its showcase readings?) nor the artifact<->showcase linkage. NO INVENTED JOINS rule forbids fabricating a row-level path; pinning the grain and join chain requires user input.",
+    "error": null,
+    "clarifying_questions": [
+      "At what grain is SPA defined: per environmental reading (showcase x timestamp) joined to a single artifact, per artifact (aggregating SESR across its readings, e.g. averaging), or per showcase (aggregating ERF across its housed artifacts)?",
+      "How are artifacts linked to environmental readings/showcases for SPA \u2014 via exhibitionhalls.hallref (an artifact is in a hall which contains showcases), or is there an artifact->showcase mapping not currently in the schema?",
+      "When aggregating across the grain mismatch (e.g. an artifact has many SESR readings, or a showcase houses many artifacts each with their own ERF), which aggregation should be used (mean, latest, min/max)?"
+    ]
+  },
+  {
+    "kb_id": 33,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "conservationandmaintenance",
+        "name": "conservation_backlog_risk",
+        "entity_ref": "museum.conservationandmaintenance.conservation_backlog_risk"
+      }
+    ],
+    "notes": "CASE A \u2014 calculation_knowledge with a closed-form formula. Hosted CBR as a row-level DOUBLE column on conservationandmaintenance (which carries both lastcleaningdate and cleanintervaldays); also added a ModelJoin from conservationandmaintenance to artifactratings on artrefmaintained=artref (1:1, verified \u2014 neither table has duplicates per artref) so the formula can reference artifactratings.cpi (kb=0). 'Days since LastCleaningDate' is operationalised as julianday('now') - julianday(lastcleaningdate) (SQLite). Verified against live data; sample rows return plausible CBR values (~35\u201392).",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 34,
+    "status": "deferred",
+    "entities": [],
+    "notes": "VCSF = VIR / (AVS * 0.1) combines a hall-level metric (exhibitionhalls.visitor_impact_risk) with an artifact-level metric (artifactratings.avs), but neither candidate host reaches the other's column through the declared join graph (exhibitionhalls reaches artifactscore -> high_value_artifacts only; artifactratings reaches artifactscore + sensitivitydata; there is no declared edge between exhibitionhalls and artifactratings). Additionally, the KB does not specify the grain: VCSF for a 'hall containing sensitive artifacts' could be per-hall (requiring an aggregation of AVS across artifacts in that hall) or per-hall-artifact pair (if the 1:1 mapping suggested by row counts 951=951=951 via hallrecord=artregistry=artref is intentional).",
+    "error": null,
+    "clarifying_questions": [
+      "What is the intended grain of VCSF: one value per exhibition hall (aggregating AVS over all artifacts in the hall, and if so by what aggregation \u2014 max/avg/sum?), or one value per hall-artifact pair under a 1:1 mapping?",
+      "Should a new ModelJoin be declared between exhibitionhalls and artifactratings (or artifactscore) so that AVS becomes reachable from exhibitionhalls \u2014 and if so, on which key pair (hallrecord = artref via artifactscore.artregistry)?",
+      "If grain is per-hall and multiple artifacts can live in one hall, which AVS aggregate should drive VCSF (the most-vulnerable artifact's AVS, the mean AVS, the sum)?"
+    ]
+  },
+  {
+    "kb_id": 35,
+    "status": "deferred",
+    "entities": [],
+    "notes": "depends on unencoded KB 6 (deferred: CASE A scoring component of parent KB 35 (ESQ), but operationalisation is ambiguous: ERF lives on sensitivitydata (per-artifact) while SESR lives on environmentalreadingscore (per-reading, many per sh...). Without AEC (KB 6) operationalised, the ESQ formula ((10 - AVS) + AEC + (10 - VIR)) / 3 cannot be encoded.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 6 (AEC \u2014 Artifact Exhibition Compatibility) is not encoded: how should AEC be operationalised given ERF lives per-artifact on sensitivitydata while SESR lives per-reading on environmentalreadingscore? Specifically, at what grain (per artifact? per showcase? per exhibition hall?) should AEC be computed, and which aggregation should reduce SESR (mean, min, max, latest) before combining with ERF?",
+      "Once AEC is pinned, what is the host grain for ESQ itself \u2014 per exhibition hall, per showcase, or per exhibition event? AVS is per-artifact (artifactratings), VIR is per-hall (exhibitionhalls), and AEC's grain is undetermined; the aggregation strategy across artifacts within an exhibition is not specified by the KB."
+    ]
+  },
+  {
+    "kb_id": 36,
+    "status": "deferred",
+    "entities": [],
+    "notes": "depends on unencoded KB 9 (deferred: CASE A applies (parent KB 36 combines CBE with CBR, and KB 17 thresholds CBE<0.5, so CBE owns its own scoring entity). However, the formula requires a numeric per-artifact conservation budget allocati\u2026). CRAE = CBE \u00d7 (1 - CBR/10) cannot be computed without a concrete CBE entity to reference.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 9 (Conservation Budget Efficiency / CBE) is not yet encoded \u2014 how should CBE be operationalised at the per-artifact (conservationandmaintenance) grain? Specifically, what is the numeric per-artifact conservation budget allocation/spend input, and what is the efficiency formula (ratio of what to what, with what normalisation to a 0-1 or 0-10 scale)?",
+      "Once CBE is pinned, confirm CRAE's host is museum.conservationandmaintenance (same grain as CBR / KB 33) and that CBR is on a 0-10 scale so that (1 - CBR/10) yields a 0-1 multiplier."
+    ]
+  },
+  {
+    "kb_id": 37,
+    "status": "deferred",
+    "entities": [],
+    "notes": "depends on unencoded KB 7 (CASE A applies (parents KB 14/31/37 reference MDR as a component score), but the MDR formula mixes columns from three tables at different grains) and unencoded KB 31 (TETL = ERF + LER + (MDR \u00d7 2) depends on KB 7 (MDR) and KB 8 (LER), both of which are NOT encoded). MAP = MDR \u00d7 (1 + (TETL \u00f7 20)) cannot be operationalised until both component scores exist.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 7 (MDR \u2014 Material Deterioration Rate) is not yet encoded: what is its canonical host model and column-level SQL definition, given it mixes ArtAgeYears (artifactscore), sensitivity weights (sensitivitydata), and other inputs at different grains?",
+      "KB 31 (TETL \u2014 Total Environmental Threat Level) is not yet encoded (it depends on KB 7 MDR and KB 8 LER): once MDR and LER are pinned, on which host should TETL = ERF + LER + (MDR \u00d7 2) live?",
+      "Once MDR and TETL are encoded, confirm the host for MAP (likely the same host as TETL/MDR \u2014 typically artifactscore at per-artifact grain) and confirm whether the divisor 20 in (TETL \u00f7 20) should use integer or real division (SQLite: cast to REAL)."
+    ]
+  },
+  {
+    "kb_id": 38,
+    "status": "deferred",
+    "entities": [],
+    "notes": "Depends on unencoded KB 8 (LER = (LightLux \u00d7 LightSensWeight \u00d7 VisibleExpLxh) / 1000 combines columns from three tables (lightandradiationreadings.lightlux + visibleexplxh, sensitivitydata.light_sens_weight) at incompatible gra\u2026). ERPS formula multiplies by (LER + 1), so without a canonical LER entity the score cannot be safely encoded.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 8 (LER, Light Exposure Risk) is not yet encoded \u2014 what host/grain should LER live at (per artifact? per reading? aggregated how across the lightandradiationreadings rows)?",
+      "How should LightLux and VisibleExpLxh be aggregated per artifact before combining with light_sens_weight (e.g. AVG, MAX, SUM over what time window)?",
+      "Once LER is pinned, ERPS host should be artifactratings (1:1 per artifact, reaches sensitivitydata.dsd in 1 hop and artifactratings.cpi at 0 hops); confirm this is the intended grain.",
+      "DisplayDurMonths in the ERPS formula is not mapped to any encoded column \u2014 which column/expression represents months currently on display per artifact?"
+    ]
+  },
+  {
+    "kb_id": 39,
+    "status": "deferred",
+    "entities": [],
+    "notes": "The ECI formula references 'IdealTemp' and 'IdealHumidity', but the KB does not pin numeric values (or a per-artifact source) for these constants, and no such columns exist on environmentalreadingscore or sensitivitydata. KB 27 describes the ideal temperature as a 18-22\u00b0C RANGE and KB 28 describes ideal humidity as a 45-55% RANGE, not a single point \u2014 both could plausibly map to a midpoint (20\u00b0C, 50%), the nearest range edge (distance-to-band), or per-artifact ideals; the choice changes results. Deferring under the NO-GUESS rule. Falls under CASE A vs CASE B \u2014 the parent KB 47 ('Environmental Control Failure' = ECI < 4 AND environmental_instability_event) treats ECI as an atomic score it filters on (not a composite of sibling components), so KB 39 owns its own ECI scoring column once the ideal values are pinned.",
+    "error": null,
+    "clarifying_questions": [
+      "What numeric value should IdealTemp take in the |TempC - IdealTemp| term? Options to confirm: (a) midpoint of KB 27's ideal band = 20\u00b0C; (b) nearest edge of the 18-22\u00b0C band (so the absolute deviation is 0 when inside the band); (c) a per-artifact ideal sourced from another column (which column?).",
+      "What numeric value should IdealHumidity take in the |RelHumidity - IdealHumidity| term? Options: (a) midpoint of KB 28's ideal band = 50%; (b) nearest edge of the 45-55% band; (c) a per-artifact ideal (from which column?).",
+      "Confirm the operator precedence: should the formula be parsed as ECI = 10 - (|TempC - IdealTemp| + |RelHumidity - IdealHumidity|/5 + ERF/2) \u2014 i.e. the /5 applies only to the humidity absolute-deviation term and the /2 only to ERF \u2014 or as ECI = 10 - (|TempC - IdealTemp| + |RelHumidity - IdealHumidity|)/5 + ERF/2, or some other grouping?",
+      "Host model: the formula combines TempC + RelHumidity (on environmentalreadingscore, per-reading grain) with ERF (on sensitivitydata, per-artifact grain). Should ECI be computed per-environmental-reading by joining sensitivitydata via showcaseref->showcasereg + usagerecords->sensdatalink (which artifact's ERF to use when multiple artifacts share a showcase?), or per-artifact by aggregating readings (which aggregation \u2014 latest, mean, worst?)"
+    ]
+  },
+  {
+    "kb_id": 40,
+    "status": "deferred",
+    "entities": [],
+    "notes": "SRE needs both InsValueUSD (on artifactsecurityaccess) and VIR (museum.exhibitionhalls.visitor_impact_risk), but the declared join graph does not connect artifactsecurityaccess (or any artifact-grain table: artifactscore/artifactratings/sensitivitydata) to exhibitionhalls. There is no canonical 'this artifact's hall' relationship; an artifact appears in halls only indirectly via conservationandmaintenance.hallrefmaintained or riskassessments.hallrefconcerned, both many-to-many and event-scoped rather than artifact-scoped. Choosing one of these (or composing/aggregating across them) is an undeclared join and a guessed semantic decision, so encoding would silently fix a meaning the KB does not pin.",
+    "error": null,
+    "clarifying_questions": [
+      "Which hall's VIR should be paired with each artifact's InsValueUSD when computing SRE \u2014 the hall on the latest riskassessments record for the artifact, the hall on the latest conservationandmaintenance record, the hall the artifact is currently displayed in (which column/table denotes that?), or an aggregate across all halls touching the artifact?",
+      "If multiple halls are associated with an artifact (via conservation or risk records), should SRE use MAX(VIR), AVG(VIR), or the VIR of the most recent record?",
+      "Should we instead add a declared ModelJoin from artifactsecurityaccess/artifactscore to exhibitionhalls via a specific path (e.g., riskassessments.artrefconcerned/hallrefconcerned), and if so, which path is authoritative?",
+      "Is SRE meant to live on a hall-grain row (one SRE per artifact-hall pair, computed at the conservationandmaintenance or riskassessments grain) rather than at the artifact grain?"
+    ]
+  },
+  {
+    "kb_id": 41,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "conservationandmaintenance",
+        "name": "critical_conservation_alert",
+        "entity_ref": "museum.conservationandmaintenance.critical_conservation_alert"
+      }
+    ],
+    "notes": "R-COL: boolean flag combining conservation_emergency (KB 12, same host) AND avs > 8 (KB 3, reached via the declared artifactratings join). Host = conservationandmaintenance (natural grain of the conservation_emergency flag).",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 42,
+    "status": "deferred",
+    "entities": [],
+    "notes": "depends on unencoded KB 31 (TETL = ERF + LER + (MDR \u00d7 2) depends on KB 7 (MDR) and KB 8 (LER), both of which are NOT encoded. Per DEFENSIVE DEFER, this KB cannot be encoded until its component scores exist.) and unencoded KB 14 (Accelerated Deterioration Scenario). Cannot evaluate 'TETL > 15 AND Accelerated Deterioration Scenario' without those.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 31 (TETL composite score) is not encoded because its components KB 7 (MDR) and KB 8 (LER) are unencoded \u2014 how should TETL be computed?",
+      "KB 14 (Accelerated Deterioration Scenario) is not encoded \u2014 what is the precise predicate that defines this scenario?",
+      "Once TETL and the Accelerated Deterioration Scenario predicate exist, confirm the host table/grain for this high-risk flag (per-artifact? per-reading?) and whether the threshold is strictly > 15 or >= 15."
+    ]
+  },
+  {
+    "kb_id": 43,
+    "status": "deferred",
+    "entities": [],
+    "notes": "Depends on unencoded KB 15 (deferred: Depends on unencoded KB 8 \u2014 LER formula combining columns across lightandradiationreadings, sensitivitydata, etc.) and unencoded KB 38 (deferred: Depends on unencoded KB 8 \u2014 same LER chain). Without the 'Exhibition Rotation Candidate' definition (KB 15) and the ERPS metric (KB 38), the urgency predicate (Candidate AND ERPS < 0) cannot be operationalised.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 15 (Exhibition Rotation Candidate) is unencoded \u2014 what is the operational definition of an Exhibition Rotation Candidate, and which host/columns identify it? It transitively depends on KB 8 (LER formula) which is also unencoded.",
+      "KB 38 (ERPS) is unencoded \u2014 what is the exact ERPS formula and its host/grain, and what unit/sign convention makes 'ERPS < 0' meaningful? It also transitively depends on KB 8.",
+      "Once KBs 8, 15, and 38 are pinned, confirm the host model and grain (per-artifact? per-artifact-per-exhibition?) at which 'Exhibition Rotation Urgency' should be materialised."
+    ]
+  },
+  {
+    "kb_id": 44,
+    "status": "deferred",
+    "entities": [],
+    "notes": "depends on unencoded KB 32 (deferred: SPA = SESR - (ERF * 0.5) crosses two unconnected hosts: SESR lives on environmentalreadingscore (per-reading, per-showcase grain) and ERF lives on sensitivitydata (per-artifact grain). Neither host re\u2026). KB 44 (Showcase Compatibility Issue) is defined as SPA < 0 AND artifact is High-Value, so it cannot be operationalised until SPA's host/grain and the artifact\u2194showcase pairing semantics are pinned.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 32 (SPA = SESR - ERF*0.5) is unencoded because SESR lives at per-reading/per-showcase grain on environmentalreadingscore while ERF lives at per-artifact grain on sensitivitydata, with no declared join between the two. At what grain should SPA \u2014 and therefore this Showcase Compatibility Issue flag \u2014 be computed (per artifact-showcase pair? per reading? aggregated SESR per showcase joined to artifact ERF?)?",
+      "Which join path links a showcase's environmental readings to the artifacts assigned to that showcase, so that SPA and the High-Value condition can be evaluated together on the same row?",
+      "Should the High-Value condition reuse the existing museum.high_value_artifacts model (KB 11), and if so how is an artifact associated with the showcase whose SESR is being measured?"
+    ]
+  },
+  {
+    "kb_id": 45,
+    "status": "deferred",
+    "entities": [],
+    "notes": "Defensive defer: depends on unencoded KB 36 (deferred: depends on unencoded KB 9) and unencoded KB 17 (deferred: depends on unencoded KB 9). KB 45 defines a Conservation Resource Crisis as CRAE < 0.3 AND Conservation Budget Crisis, both of which are owned by the unencoded children.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 36 (CRAE) is not encoded \u2014 what is the canonical CRAE column/measure and its host model once KB 9 is resolved?",
+      "KB 17 (Conservation Budget Crisis) is not encoded \u2014 what is the canonical predicate column and its host model once KB 9 is resolved?",
+      "Once both children are encoded, should KB 45 be a boolean Column on the same host as the children (e.g. conservationandmaintenance) combining CRAE < 0.3 AND conservation_budget_crisis = 1?"
+    ]
+  },
+  {
+    "kb_id": 46,
+    "status": "deferred",
+    "entities": [],
+    "notes": "depends on unencoded KB 37 (deferred: depends on unencoded KB 7 (CASE A applies (parents KB 14/31/37 reference MDR as a component score), but the MDR formula mixes columns from three tables at different grains) and unencoded KB 31 (TETL =\u2026)). KB 46's definition requires the MAP score from KB 37, which is not available.",
+    "error": null,
+    "clarifying_questions": [
+      "What is the operational definition of MAP (Material Aging Potential, presumably from KB 37) \u2014 what columns and formula, and on what host table?",
+      "What is the underlying MDR formula (KB 7) and TETL formula (KB 31) that MAP depends on?",
+      "Once MAP is defined, confirm the host/grain for combining 'Dynasty Value Artifact' (artifactratings.dynasty_value_artifact, boolean) with 'MAP > 3' \u2014 is the result a per-artifact boolean column on artifactratings?"
+    ]
+  },
+  {
+    "kb_id": 47,
+    "status": "deferred",
+    "entities": [],
+    "notes": "depends on unencoded KB 39 (deferred: The ECI formula references 'IdealTemp' and 'IdealHumidity', but the KB does not pin numeric values (or a per-artifact source) for these constants, and no such columns exist on environmentalreadingscor\u2026). The definition 'ECI < 4 AND Environmental Instability Event' cannot be operationalised until KB 39 (ECI) is encoded.",
+    "error": null,
+    "clarifying_questions": [
+      "What are the numeric values (or per-artifact source) of 'IdealTemp' and 'IdealHumidity' used in the ECI (KB 39) formula, so that ECI can be computed and the 'ECI < 4' predicate of KB 47 can be evaluated?"
+    ]
+  },
+  {
+    "kb_id": 48,
+    "status": "deferred",
+    "entities": [],
+    "notes": "Depends on unencoded KB 40 (SRE): 'SRE needs both InsValueUSD (on artifactsecurityaccess) and VIR (museum.exhibitionhalls.visitor_impact_risk), but the declared join graph does not connect artifactsecurityaccess (or any artifact-grain\u2026'. The 'High-Value' side resolves via KB 11 (museum.high_value_artifacts), but without an encoded SRE expression and without a host that joins both inputs, the AND-predicate 'High-Value AND SRE > 5' cannot be operationalised.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 40 (SRE) is not encoded because the schema's declared join graph does not connect artifactsecurityaccess.InsValueUSD with exhibitionhalls.visitor_impact_risk at artifact grain \u2014 which join (and on which keys) should be declared so SRE can be computed per artifact?",
+      "Once SRE is defined, what is its exact formula and unit (so the literal threshold 'SRE > 5' is interpretable)?",
+      "Which host model should own the High Security Priority Artifact flag \u2014 museum.high_value_artifacts, artifactsecurityaccess, or a new artifact-grain composite \u2014 given that High-Value (KB 11) lives on high_value_artifacts and SRE (KB 40) would live elsewhere?"
+    ]
+  },
+  {
+    "kb_id": 49,
+    "status": "deferred",
+    "entities": [],
+    "notes": "Defers because both child KBs are unencoded: KB 34 (VCSF) and KB 19 (Visitor Crowd Risk). Without VCSF as a numeric value and Visitor Crowd Risk as a boolean/predicate, the condition 'VCSF > 2 AND Visitor Crowd Risk' cannot be operationalised without guessing the host grain (hall? artifact? visit?) and the cross-table aggregation needed to combine them.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 34 (VCSF) is deferred: 'VCSF = VIR / (AVS * 0.1) combines a hall-level metric (exhibitionhalls.visitor_impact_risk) with an artifact-level metric (artifactratings.avs), but neither candidate host reaches the other's column...'. At what grain should VCSF be computed (per exhibition hall, per artifact, or per artifact-in-hall) and how should AVS be aggregated to the chosen grain?",
+      "KB 19 (Visitor Crowd Risk) is deferred: 'KB 19 is a hall-level boolean requiring an EXISTS check over artifacts in the hall (VIR > 5 on exhibitionhalls AND at least one artifact in the hall has seclevel=Level 1 on artifactsecurityaccess)...'. What is the canonical join/path from artifacts to the exhibition hall they live in, and at what grain should the Visitor Crowd Risk flag be exposed?",
+      "Once both children are pinned: at what grain should 'Visitor Traffic Safety Concern' itself be exposed (hall, artifact, or artifact-in-hall), since VCSF and Visitor Crowd Risk may live at different grains?"
+    ]
+  },
+  {
+    "kb_id": 50,
+    "status": "deferred",
+    "entities": [],
+    "notes": "depends on unencoded KB 31 (deferred: TETL = ERF + LER + (MDR \u00d7 2) depends on KB 7 (MDR) and KB 8 (LER), both of which are NOT encoded. Per DEFENSIVE DEFER, this KB cannot be encoded until its component scores exist.). Without TETL, the '> 12' threshold half of the Organic Material Emergency predicate cannot be expressed.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 31 (TETL) is not encoded because its components KB 7 (MDR) and KB 8 (LER) are not encoded \u2014 what are the operational definitions of MDR and LER (host table, source columns, units) so TETL = ERF + LER + (MDR \u00d7 2) can be built?",
+      "Once TETL exists, confirm the host for Organic Material Emergency is sensitivitydata (where organic_material_vulnerability lives) and that the threshold is strictly TETL > 12 (not >=).",
+      "Should the emergency flag be a 0/1 integer column or a boolean, and what should NULLs in either input (organic_material_vulnerability NULL, or TETL NULL) produce \u2014 NULL, 0, or treated as not-emergency?"
+    ]
+  },
+  {
+    "kb_id": 51,
+    "status": "deferred",
+    "entities": [],
+    "notes": "R-CASE: 3-way classification (Monetary High-Value / Cultural/Historical High-Value / Other) implemented as a TEXT column on host model high_value_artifacts (natural granularity: one row per artifact; all referenced columns ins_value_usd, hist_pr, cult_pr live there at 0 hops). 'Top 10%' is operationalised as percent_rank <= 0.10 against the descending PERCENT_RANK columns hist_pr / cult_pr (where 0 = top), matching the convention established by host KB 11. Backing query was restructured into a sql-backed stage1 (CTE that computes the percent ranks) plus a final stage that materializes is_high_value and high_value_category \u2014 needed because SLayer's planner inlined the original window-function extension columns into a GROUP BY, which SQLite rejects. Note: max InsValueUSD in the data is ~$998K, so the 'Monetary High-Value' bucket is empty in current data (still a valid CASE branch). Type=domain_knowledge with no parents -> no value-illustration ownership question. | entities missing or untagged in storage: museum.high_value_artifacts.high_value_category",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 52,
+    "status": "deferred",
+    "entities": [],
+    "notes": "depends on unencoded KB 38 (deferred: Depends on unencoded KB 8 (LER = (LightLux \u00d7 LightSensWeight \u00d7 VisibleExpLxh) / 1000 combines columns from three tables (lightandradiationreadings.lightlux + visibleexplxh, sensitivitydata.light_sens_\u2026)). ERPS is the input to this threshold; without it the CASE expression has no grounded operand.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 38 (ERPS) is not encoded \u2014 what is the canonical SQL expression / host model for ERPS so the threshold CASE (ERPS < 0 -> 'Immediate Rotation' else 'Monitor') can reference it?",
+      "Once ERPS is pinned, should this threshold Column live on the same host as ERPS, and what column name / label should it take?"
+    ]
+  },
+  {
+    "kb_id": 53,
+    "status": "deferred",
+    "entities": [],
+    "notes": "Defensive defer: depends on unencoded KB 8 (deferred: LER = (LightLux \u00d7 LightSensWeight \u00d7 VisibleExpLxh) / 1000 combines columns from three tables at incompatible grain). Also potential PEER-KB DEDUP: KB 29 already documents on lightandradiationreadings.lightlux the same conservation thresholds (50 lux for highly sensitive materials like textiles/paper; 150-200 lux for paintings/wood) that KB 53 restates as policy. CASE C applies (no calculation_knowledge parent owns a derived score), so the only viable encoding would be an R-DESCRIBE caveat \u2014 but the host column already carries the equivalent kb=29 description.",
+    "error": null,
+    "clarifying_questions": [
+      "KB 8 (LER formula) is deferred because it crosses three tables at incompatible grain \u2014 should KB 53's threshold policy be encoded as (a) a row-level boolean flag on lightandradiationreadings (e.g. lux_exceeds_threshold via join to sensitivitydata.lightsensitivity) once the grain question is resolved, or (b) only as an R-DESCRIBE annotation?",
+      "Is KB 53 considered a duplicate of KB 29 (which already documents the same 50/150-200/300 lux thresholds on lightandradiationreadings.lightlux), or does KB 53 deserve its own materialised threshold-violation column distinct from KB 29's descriptive prose?",
+      "If a threshold-violation flag is desired, what is the host model \u2014 lightandradiationreadings (per-reading) or a join to the artifact via condition assessments \u2014 and which sensitivity classification source (sensitivitydata.lightsensitivity, with values 'Low'/'Medium'/'High') maps to KB 53's 'High sensitivity (textiles/paper)' and 'Medium sensitivity (paintings/wood)'? The KB cites material types (textiles, paper, paintings, wood) which would require joining to artifactscore.mattype rather than relying solely on lightsensitivity."
+    ]
+  },
+  {
+    "kb_id": 54,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "environmentalreadingscore",
+        "name": "readtimestamp",
+        "entity_ref": "museum.environmentalreadingscore.readtimestamp"
+      }
+    ],
+    "notes": "CASE C (R-DESCRIBE): CEC is a methodological prose definition with no formula/threshold/scoring. Attached the KB block as a description+label on environmentalreadingscore.readtimestamp, the time dimension over which the chronological grouping of temp/humidity/airpressure readings operates.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 55,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "artifactsecurityaccess",
+        "name": "artifact_rarity_valuation",
+        "entity_ref": "museum.artifactsecurityaccess.artifact_rarity_valuation"
+      }
+    ],
+    "notes": "CASE A does not apply (no parent KB); this is R-COL on artifactsecurityaccess where insvalueusd lives. Boolean flag: insvalueusd > 1000000. Sampled values currently max at ~$998K so the flag is uniformly 0 in the present data; threshold is fixed by the KB definition.",
+    "error": null,
+    "clarifying_questions": []
+  },
+  {
+    "kb_id": 56,
+    "status": "encoded",
+    "entities": [
+      {
+        "kind": "column",
+        "host_model": "artifactratings",
+        "name": "conservation_priority_level",
+        "entity_ref": "museum.artifactratings.conservation_priority_level"
+      }
+    ],
+    "notes": "R-CASE on artifactratings host: bands the already-encoded CPI column (KB 0) into 'High'/'Medium'/'Low Priority' labels per the KB's thresholds. CASE C (no parent in reverse-deps) \u2014 this KB is itself a banding/label encoding so we emit the Column directly.",
+    "error": null,
+    "clarifying_questions": []
+  }
+]

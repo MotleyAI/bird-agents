@@ -1,0 +1,736 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - link "Skip to content" [ref=e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner "Global Navigation Menu" [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - button "Open menu" [ref=e12] [cursor=pointer]:
+            - img [ref=e13]
+          - link "Homepage (g then d)" [ref=e15] [cursor=pointer]:
+            - /url: /
+            - img [ref=e16]
+        - generic [ref=e18]:
+          - navigation "Breadcrumbs" [ref=e19]:
+            - list [ref=e20]:
+              - listitem [ref=e21]:
+                - link "MotleyAI" [ref=e22] [cursor=pointer]:
+                  - /url: /MotleyAI
+                  - generic [ref=e23]: MotleyAI
+          - button "Search or jump to…" [ref=e26] [cursor=pointer]:
+            - generic [ref=e27]:
+              - generic:
+                - img
+              - generic [ref=e28]:
+                - generic:
+                  - text: Type
+                  - generic: /
+                  - text: to search
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - generic [ref=e33]:
+              - link "Chat with Copilot" [ref=e35] [cursor=pointer]:
+                - /url: /copilot
+                - img [ref=e36]
+              - button "Open Copilot…" [ref=e40] [cursor=pointer]:
+                - generic:
+                  - img
+            - button "Create new..." [ref=e42] [cursor=pointer]:
+              - generic [ref=e43]:
+                - generic:
+                  - img
+              - generic:
+                - img
+            - generic [ref=e44]:
+              - link "All issues (g then i)" [ref=e45] [cursor=pointer]:
+                - /url: /issues
+                - img [ref=e46]
+              - link "All pull requests (g then p)" [ref=e49] [cursor=pointer]:
+                - /url: /pulls
+                - img [ref=e50]
+              - link "All repositories" [ref=e52] [cursor=pointer]:
+                - /url: /repos
+                - img [ref=e53]
+          - button "Open user navigation menu" [ref=e56] [cursor=pointer]:
+            - img "Egor Kraev" [ref=e57]
+      - heading "Organization navigation" [level=2] [ref=e58]
+      - navigation "Organization" [ref=e59]:
+        - list [ref=e60]:
+          - listitem [ref=e61]:
+            - link "Overview" [ref=e62] [cursor=pointer]:
+              - /url: /MotleyAI
+              - img [ref=e64]
+              - generic [ref=e66]: Overview
+          - listitem [ref=e67]:
+            - link "Repositories (50)" [ref=e68] [cursor=pointer]:
+              - /url: /orgs/MotleyAI/repositories
+              - img [ref=e70]
+              - generic [ref=e72]: Repositories
+              - generic [ref=e73]:
+                - generic [ref=e74]: "50"
+                - generic [ref=e75]: (50)
+          - listitem [ref=e76]:
+            - link "Projects (1)" [ref=e77] [cursor=pointer]:
+              - /url: /orgs/MotleyAI/projects
+              - img [ref=e79]
+              - generic [ref=e81]: Projects
+              - generic [ref=e82]:
+                - generic [ref=e83]: "1"
+                - generic [ref=e84]: (1)
+          - listitem [ref=e85]:
+            - link "Packages" [ref=e86] [cursor=pointer]:
+              - /url: /orgs/MotleyAI/packages
+              - img [ref=e88]
+              - generic [ref=e90]: Packages
+          - listitem [ref=e91]:
+            - link "Teams" [ref=e92] [cursor=pointer]:
+              - /url: /orgs/MotleyAI/teams
+              - img [ref=e94]
+              - generic [ref=e96]: Teams
+          - listitem [ref=e97]:
+            - link "People (6)" [ref=e98] [cursor=pointer]:
+              - /url: /orgs/MotleyAI/people
+              - img [ref=e100]
+              - generic [ref=e102]: People
+              - generic [ref=e103]:
+                - generic [ref=e104]: "6"
+                - generic [ref=e105]: (6)
+          - listitem [ref=e106]:
+            - link "Insights" [ref=e107] [cursor=pointer]:
+              - /url: /orgs/MotleyAI/insights
+              - img [ref=e109]
+              - generic [ref=e111]: Insights
+          - listitem [ref=e112]:
+            - link "Settings" [ref=e113] [cursor=pointer]:
+              - /url: /organizations/MotleyAI/settings/profile
+              - img [ref=e115]
+              - generic [ref=e117]: Settings
+  - main [ref=e120]:
+    - generic [ref=e121]:
+      - generic "MotleyAI settings" [ref=e123]:
+        - generic [ref=e124]:
+          - img "@MotleyAI" [ref=e125]
+          - generic [ref=e126]:
+            - heading "MotleyAI settings" [level=1] [ref=e127]:
+              - link "MotleyAI" [ref=e128] [cursor=pointer]:
+                - /url: /MotleyAI
+              - generic [ref=e129]: settings
+            - paragraph [ref=e131]: Organization
+        - generic [ref=e132]:
+          - button "Go to settings page" [ref=e135] [cursor=pointer]:
+            - generic [ref=e136]:
+              - generic:
+                - img
+              - generic [ref=e137]: Go to settings page
+              - generic:
+                - img
+          - link "Go to your organization profile" [ref=e138] [cursor=pointer]:
+            - /url: /MotleyAI
+      - generic [ref=e140]:
+        - navigation "Organization settings" [ref=e143]:
+          - list [ref=e145]:
+            - listitem [ref=e146]:
+              - link "General" [ref=e147] [cursor=pointer]:
+                - /url: /organizations/MotleyAI/settings/profile
+                - generic:
+                  - img
+                - generic [ref=e148]: General
+            - listitem [ref=e149]:
+              - button "Policies" [ref=e150] [cursor=pointer]:
+                - generic:
+                  - img
+                - generic [ref=e151]: Policies
+                - generic:
+                  - img
+            - listitem [ref=e152]
+            - listitem [ref=e153]:
+              - generic [ref=e156]:
+                - heading "Access" [level=2] [ref=e158]
+                - list "Access" [ref=e159]:
+                  - listitem [ref=e160]:
+                    - button "Billing and licensing" [expanded] [ref=e161] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e162]: Billing and licensing
+                      - generic:
+                        - img
+                    - list "Billing and licensing" [ref=e163]:
+                      - listitem [ref=e164]:
+                        - link "Overview" [ref=e165] [cursor=pointer]:
+                          - /url: https://github.com/organizations/MotleyAI/settings/billing
+                          - generic [ref=e166]: Overview
+                      - listitem [ref=e167]:
+                        - link "Usage" [ref=e168] [cursor=pointer]:
+                          - /url: https://github.com/organizations/MotleyAI/settings/billing/usage
+                          - generic [ref=e169]: Usage
+                      - listitem [ref=e170]:
+                        - link "AI usage" [ref=e171] [cursor=pointer]:
+                          - /url: /organizations/MotleyAI/settings/billing/ai_usage
+                          - generic [ref=e172]: AI usage
+                      - listitem [ref=e173]:
+                        - link "Budgets and alerts" [ref=e174] [cursor=pointer]:
+                          - /url: https://github.com/organizations/MotleyAI/settings/billing/budgets
+                          - generic [ref=e175]: Budgets and alerts
+                      - listitem [ref=e176]:
+                        - link "Licensing" [ref=e177] [cursor=pointer]:
+                          - /url: /organizations/MotleyAI/settings/licensing
+                          - generic [ref=e178]: Licensing
+                      - listitem [ref=e179]:
+                        - link "Payment information" [ref=e180] [cursor=pointer]:
+                          - /url: /organizations/MotleyAI/settings/billing/payment_information
+                          - generic [ref=e181]: Payment information
+                      - listitem [ref=e182]:
+                        - link "Payment history" [ref=e183] [cursor=pointer]:
+                          - /url: /organizations/MotleyAI/billing/history
+                          - generic [ref=e184]: Payment history
+                      - listitem [ref=e185]:
+                        - link "Additional billing details" [ref=e186] [cursor=pointer]:
+                          - /url: /organizations/MotleyAI/settings/billing/subscriptions
+                          - generic [ref=e187]: Additional billing details
+                  - listitem [ref=e188]:
+                    - button "Organization roles" [ref=e189] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e190]: Organization roles
+                      - generic:
+                        - img
+                  - listitem [ref=e191]:
+                    - link "Repository roles" [ref=e192] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/roles
+                      - generic:
+                        - img
+                      - generic [ref=e193]: Repository roles
+                  - listitem [ref=e194]:
+                    - link "Member privileges" [ref=e195] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/member_privileges
+                      - generic:
+                        - img
+                      - generic [ref=e196]: Member privileges
+                  - listitem [ref=e197]:
+                    - link "Import/Export" [ref=e198] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/import-export
+                      - generic:
+                        - img
+                      - generic [ref=e199]: Import/Export
+                  - listitem [ref=e200]:
+                    - button "Moderation" [ref=e201] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e202]: Moderation
+                      - generic:
+                        - img
+            - listitem [ref=e203]
+            - listitem [ref=e204]:
+              - generic [ref=e207]:
+                - heading "Code, planning, and automation" [level=2] [ref=e209]
+                - list "Code, planning, and automation" [ref=e210]:
+                  - listitem [ref=e211]:
+                    - button "Repository" [ref=e212] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e213]: Repository
+                      - generic:
+                        - img
+                  - listitem [ref=e214]:
+                    - button "Codespaces" [ref=e215] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e216]: Codespaces
+                      - generic:
+                        - img
+                  - listitem [ref=e217]:
+                    - 'link "Sandboxes Feature Release Label: Preview" [ref=e218] [cursor=pointer]':
+                      - /url: /organizations/MotleyAI/settings/sandboxes
+                      - generic:
+                        - img
+                      - generic [ref=e219]: Sandboxes
+                      - generic:
+                        - 'generic "Feature Release Label: Preview"': Preview
+                  - listitem [ref=e220]:
+                    - button "Planning" [ref=e221] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e222]: Planning
+                      - generic:
+                        - img
+                  - listitem [ref=e223]:
+                    - button "Actions" [ref=e224] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e225]: Actions
+                      - generic:
+                        - img
+                  - listitem [ref=e226]:
+                    - button "Models Preview feature" [ref=e227] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e228]: Models
+                      - generic:
+                        - generic "Preview feature": Preview
+                      - generic:
+                        - img
+                  - listitem [ref=e229]:
+                    - link "Webhooks" [ref=e230] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/hooks
+                      - generic:
+                        - img
+                      - generic [ref=e231]: Webhooks
+                  - listitem [ref=e232]:
+                    - link "Discussions" [ref=e233] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/discussions
+                      - generic:
+                        - img
+                      - generic [ref=e234]: Discussions
+                  - listitem [ref=e235]:
+                    - link "Packages" [ref=e236] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/packages
+                      - generic:
+                        - img
+                      - generic [ref=e237]: Packages
+                  - listitem [ref=e238]:
+                    - link "Pages" [ref=e239] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/pages
+                      - generic:
+                        - img
+                      - generic [ref=e240]: Pages
+            - listitem [ref=e241]
+            - listitem [ref=e242]:
+              - generic [ref=e245]:
+                - heading "Security" [level=2] [ref=e247]
+                - list "Security" [ref=e248]:
+                  - listitem [ref=e249]:
+                    - link "Authentication security" [ref=e250] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/security
+                      - generic:
+                        - img
+                      - generic [ref=e251]: Authentication security
+                  - listitem [ref=e252]:
+                    - button "Advanced Security" [ref=e253] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e254]: Advanced Security
+                      - generic:
+                        - img
+                  - listitem [ref=e255]:
+                    - link "Deploy keys" [ref=e256] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/deploy_keys
+                      - generic:
+                        - img
+                      - generic [ref=e257]: Deploy keys
+                  - listitem [ref=e258]:
+                    - link "Compliance" [ref=e259] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/compliance
+                      - generic:
+                        - img
+                      - generic [ref=e260]: Compliance
+                  - listitem [ref=e261]:
+                    - link "Verified and approved domains" [ref=e262] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/domains
+                      - generic:
+                        - img
+                      - generic [ref=e263]: Verified and approved domains
+                  - listitem [ref=e264]:
+                    - button "Secrets and variables" [ref=e265] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e266]: Secrets and variables
+                      - generic:
+                        - img
+            - listitem [ref=e267]
+            - listitem [ref=e268]:
+              - generic [ref=e271]:
+                - heading "Third-party Access" [level=2] [ref=e273]
+                - list "Third-party Access" [ref=e274]:
+                  - listitem [ref=e275]:
+                    - link "GitHub Apps" [ref=e276] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/installations
+                      - generic:
+                        - img
+                      - generic [ref=e277]: GitHub Apps
+                  - listitem [ref=e278]:
+                    - link "OAuth app policy" [ref=e279] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/oauth_application_policy
+                      - generic:
+                        - img
+                      - generic [ref=e280]: OAuth app policy
+                  - listitem [ref=e281]:
+                    - button "Personal access tokens" [ref=e282] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e283]: Personal access tokens
+                      - generic:
+                        - img
+            - listitem [ref=e284]
+            - listitem [ref=e285]:
+              - generic [ref=e288]:
+                - heading "Integrations" [level=2] [ref=e290]
+                - list "Integrations" [ref=e291]:
+                  - listitem [ref=e292]:
+                    - link "Scheduled reminders" [ref=e293] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/reminders
+                      - generic:
+                        - img
+                      - generic [ref=e294]: Scheduled reminders
+            - listitem [ref=e295]
+            - listitem [ref=e296]:
+              - generic [ref=e299]:
+                - heading "Archive" [level=2] [ref=e301]
+                - list "Archive" [ref=e302]:
+                  - listitem [ref=e303]:
+                    - button "Logs" [ref=e304] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e305]: Logs
+                      - generic:
+                        - img
+                  - listitem [ref=e306]:
+                    - link "Deleted repositories" [ref=e307] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/settings/deleted_repositories
+                      - generic:
+                        - img
+                      - generic [ref=e308]: Deleted repositories
+            - listitem [ref=e309]
+            - listitem [ref=e310]:
+              - button "Developer settings" [ref=e311] [cursor=pointer]:
+                - generic:
+                  - img
+                - generic [ref=e312]: Developer settings
+                - generic:
+                  - img
+        - generic [ref=e315]:
+          - heading "Payment history" [level=2] [ref=e317]
+          - generic [ref=e320]:
+            - generic [ref=e322]:
+              - generic [ref=e323]: Date
+              - generic [ref=e324]: ID
+              - generic [ref=e325]: Payment Method
+              - generic [ref=e326]: Amount
+              - generic [ref=e327]: Status
+              - generic [ref=e328]: Receipt
+              - generic [ref=e329]: Invoice
+            - list "Date ID Payment Method Amount Status Receipt Invoice" [ref=e330]:
+              - listitem [ref=e331]:
+                - generic [ref=e332]:
+                  - time [ref=e334]: 2026-05-08
+                  - code [ref=e336]: 1Q8P1BRF
+                  - generic [ref=e337]:
+                    - img [ref=e338]
+                    - text: MasterCard ending in 1555
+                  - generic [ref=e341]: $21.68
+                  - generic "Approved" [ref=e343]: Success
+                  - generic [ref=e344]:
+                    - link "Download receipt" [ref=e346] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3TUvM7JFr6CCHwIi1q8P1bRf
+                      - img [ref=e347]
+                    - link "View receipt" [ref=e351] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3TUvM7JFr6CCHwIi1q8P1bRf.pdf
+                      - img [ref=e352]
+                  - link "Download invoice(s)" [ref=e358] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e359]
+              - listitem [ref=e362]:
+                - generic [ref=e363]:
+                  - time [ref=e365]: 2026-04-04
+                  - code [ref=e367]: 0GBCDZV3
+                  - generic [ref=e368]:
+                    - img [ref=e369]
+                    - text: MasterCard ending in 1555
+                  - generic [ref=e372]: $8.90
+                  - generic "Approved" [ref=e374]: Success
+                  - generic [ref=e375]:
+                    - link "Download receipt" [ref=e377] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3TIW86JFr6CCHwIi0GBcDzV3
+                      - img [ref=e378]
+                    - link "View receipt" [ref=e382] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3TIW86JFr6CCHwIi0GBcDzV3.pdf
+                      - img [ref=e383]
+                  - link "Download invoice(s)" [ref=e389] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e390]
+              - listitem [ref=e393]:
+                - generic [ref=e394]:
+                  - time [ref=e396]: 2026-03-04
+                  - code [ref=e398]: 1LI4PCLW
+                  - generic [ref=e399]:
+                    - img [ref=e400]
+                    - text: MasterCard ending in 1555
+                  - generic [ref=e403]: $11.29
+                  - generic "Approved" [ref=e405]: Success
+                  - generic [ref=e406]:
+                    - link "Download receipt" [ref=e408] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3T7LXTJFr6CCHwIi1lI4pclW
+                      - img [ref=e409]
+                    - link "View receipt" [ref=e413] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3T7LXTJFr6CCHwIi1lI4pclW.pdf
+                      - img [ref=e414]
+                  - link "Download invoice(s)" [ref=e420] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e421]
+              - listitem [ref=e424]:
+                - generic [ref=e425]:
+                  - time [ref=e427]: 2026-02-04
+                  - code [ref=e429]: 0DGZZOMU
+                  - generic [ref=e430]:
+                    - img [ref=e431]
+                    - text: MasterCard ending in 1555
+                  - generic [ref=e434]: $15.17
+                  - generic "Approved" [ref=e436]: Success
+                  - generic [ref=e437]:
+                    - link "Download receipt" [ref=e439] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3SxAyjJFr6CCHwIi0DGZzOmU
+                      - img [ref=e440]
+                    - link "View receipt" [ref=e444] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3SxAyjJFr6CCHwIi0DGZzOmU.pdf
+                      - img [ref=e445]
+                  - link "Download invoice(s)" [ref=e451] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e452]
+              - listitem [ref=e455]:
+                - generic [ref=e456]:
+                  - time [ref=e458]: 2026-01-04
+                  - code [ref=e460]: 1MDUQUXP
+                  - generic [ref=e461]:
+                    - img [ref=e462]
+                    - text: MasterCard ending in 1555
+                  - generic [ref=e465]: $6.53
+                  - generic "Approved" [ref=e467]: Success
+                  - generic [ref=e468]:
+                    - link "Download receipt" [ref=e470] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3Slw4zJFr6CCHwIi1MdUquxP
+                      - img [ref=e471]
+                    - link "View receipt" [ref=e475] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3Slw4zJFr6CCHwIi1MdUquxP.pdf
+                      - img [ref=e476]
+                  - link "Download invoice(s)" [ref=e482] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e483]
+              - listitem [ref=e486]:
+                - generic [ref=e487]:
+                  - time [ref=e489]: 2025-12-04
+                  - code [ref=e491]: 1WNPMNZS
+                  - generic [ref=e492]:
+                    - img [ref=e493]
+                    - text: MasterCard ending in 1555
+                  - generic [ref=e496]: $12.81
+                  - generic "Approved" [ref=e498]: Success
+                  - generic [ref=e499]:
+                    - link "Download receipt" [ref=e501] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3SajFJJFr6CCHwIi1wnpmnZs
+                      - img [ref=e502]
+                    - link "View receipt" [ref=e506] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3SajFJJFr6CCHwIi1wnpmnZs.pdf
+                      - img [ref=e507]
+                  - link "Download invoice(s)" [ref=e513] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e514]
+              - listitem [ref=e517]:
+                - generic [ref=e518]:
+                  - time [ref=e520]: 2025-11-04
+                  - code [ref=e522]: 1BDKV5W1
+                  - generic [ref=e523]:
+                    - img [ref=e524]
+                    - text: MasterCard ending in 1555
+                  - generic [ref=e527]: $3.73
+                  - generic "Approved" [ref=e529]: Success
+                  - generic [ref=e530]:
+                    - link "Download receipt" [ref=e532] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3SPq6fJFr6CCHwIi1bDKv5w1
+                      - img [ref=e533]
+                    - link "View receipt" [ref=e537] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3SPq6fJFr6CCHwIi1bDKv5w1.pdf
+                      - img [ref=e538]
+                  - link "Download invoice(s)" [ref=e544] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e545]
+              - listitem [ref=e548]:
+                - generic [ref=e549]:
+                  - time [ref=e551]: 2025-05-15
+                  - code [ref=e553]: 1HLUGY64
+                  - generic [ref=e554]:
+                    - img [ref=e555]
+                    - text: MasterCard ending in 1555
+                  - generic [ref=e558]: $-336.00
+                  - link "Refund for 1ZGROBRT" [ref=e561] [cursor=pointer]:
+                    - /url: "#ch_3RL40yJFr6CCHwIi1ZGRObrt"
+                    - generic "Refund" [ref=e562]
+                  - generic [ref=e563]:
+                    - link "Download receipt" [ref=e565] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/re_3RL40yJFr6CCHwIi1hLuGy64
+                      - img [ref=e566]
+                    - link "View receipt" [ref=e570] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/re_3RL40yJFr6CCHwIi1hLuGy64.pdf
+                      - img [ref=e571]
+                  - link "Download invoice(s)" [ref=e577] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e578]
+              - listitem [ref=e581]:
+                - generic [ref=e582]:
+                  - time [ref=e584]: 2025-05-04
+                  - code [ref=e586]: 1ZGROBRT
+                  - generic [ref=e587]:
+                    - img [ref=e588]
+                    - text: MasterCard ending in 1555
+                  - generic [ref=e591]: $336.00
+                  - generic "Approved" [ref=e593]: Success
+                  - generic [ref=e594]:
+                    - link "Download receipt" [ref=e596] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3RL40yJFr6CCHwIi1ZGRObrt
+                      - img [ref=e597]
+                    - link "View receipt" [ref=e601] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3RL40yJFr6CCHwIi1ZGRObrt.pdf
+                      - img [ref=e602]
+                  - link "Download invoice(s)" [ref=e608] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e609]
+              - listitem [ref=e612]:
+                - generic [ref=e613]:
+                  - time [ref=e615]: 2025-05-01
+                  - code [ref=e617]: 1LW8MK1I
+                  - generic [ref=e618]:
+                    - img [ref=e619]
+                    - text: Visa ending in 8369
+                  - generic [ref=e622]: $336.00
+                  - generic "Declined" [ref=e624]
+                  - generic [ref=e626]: "-"
+                  - link "Download invoice(s)" [ref=e631] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e632]
+              - listitem [ref=e635]:
+                - generic [ref=e636]:
+                  - time [ref=e638]: 2025-04-24
+                  - code [ref=e640]: 1PY4FGUW
+                  - generic [ref=e641]:
+                    - img [ref=e642]
+                    - text: Visa ending in 8369
+                  - generic [ref=e645]: $336.00
+                  - generic "Declined" [ref=e647]
+                  - generic [ref=e649]: "-"
+                  - link "Download invoice(s)" [ref=e654] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e655]
+              - listitem [ref=e658]:
+                - generic [ref=e659]:
+                  - time [ref=e661]: 2025-04-17
+                  - code [ref=e663]: 1L8K4118
+                  - generic [ref=e664]:
+                    - img [ref=e665]
+                    - text: Visa ending in 8369
+                  - generic [ref=e668]: $336.00
+                  - generic "Declined" [ref=e670]
+                  - generic [ref=e672]: "-"
+                  - link "Download invoice(s)" [ref=e677] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e678]
+              - listitem [ref=e681]:
+                - generic [ref=e682]:
+                  - time [ref=e684]: 2025-04-15
+                  - code [ref=e686]: 15PMK7S1
+                  - generic [ref=e687]:
+                    - img [ref=e688]
+                    - text: Visa ending in 8369
+                  - generic [ref=e691]: $0.25
+                  - generic "Approved" [ref=e693]: Success
+                  - generic [ref=e694]:
+                    - link "Download receipt" [ref=e696] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3RE9EoJFr6CCHwIi15pmK7s1
+                      - img [ref=e697]
+                    - link "View receipt" [ref=e701] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3RE9EoJFr6CCHwIi15pmK7s1.pdf
+                      - img [ref=e702]
+                  - link "Download invoice(s)" [ref=e708] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e709]
+              - listitem [ref=e712]:
+                - generic [ref=e713]:
+                  - time [ref=e715]: 2024-11-29
+                  - code [ref=e717]: 014SHQXH
+                  - generic [ref=e718]:
+                    - img [ref=e719]
+                    - text: Visa ending in 8369
+                  - generic [ref=e722]: $16.76
+                  - generic "Approved" [ref=e724]: Success
+                  - generic [ref=e725]:
+                    - link "Download receipt" [ref=e727] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3QQTYxJFr6CCHwIi014Shqxh
+                      - img [ref=e728]
+                    - link "View receipt" [ref=e732] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3QQTYxJFr6CCHwIi014Shqxh.pdf
+                      - img [ref=e733]
+                  - link "Download invoice(s)" [ref=e739] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e740]
+              - listitem [ref=e743]:
+                - generic [ref=e744]:
+                  - time [ref=e746]: 2024-06-17
+                  - code [ref=e748]: 1TSQYZQH
+                  - generic [ref=e749]:
+                    - img [ref=e750]
+                    - text: Visa ending in 8369
+                  - generic [ref=e753]: $36.65
+                  - generic "Approved" [ref=e755]: Success
+                  - generic [ref=e756]:
+                    - link "Download receipt" [ref=e758] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3PSfkqJFr6CCHwIi1TSQyZqH
+                      - img [ref=e759]
+                    - link "View receipt" [ref=e763] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3PSfkqJFr6CCHwIi1TSQyZqH.pdf
+                      - img [ref=e764]
+                  - link "Download invoice(s)" [ref=e770] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e771]
+              - listitem [ref=e774]:
+                - generic [ref=e775]:
+                  - time [ref=e777]: 2024-04-17
+                  - code [ref=e779]: 0I70KJ1T
+                  - generic [ref=e780]:
+                    - img [ref=e781]
+                    - text: Visa ending in 8369
+                  - generic [ref=e784]: $176.00
+                  - generic "Approved" [ref=e786]: Success
+                  - generic [ref=e787]:
+                    - link "Download receipt" [ref=e789] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3P6U5tJFr6CCHwIi0i70Kj1T
+                      - img [ref=e790]
+                    - link "View receipt" [ref=e794] [cursor=pointer]:
+                      - /url: /organizations/MotleyAI/billing/receipt/ch_3P6U5tJFr6CCHwIi0i70Kj1T.pdf
+                      - img [ref=e795]
+                  - link "Download invoice(s)" [ref=e801] [cursor=pointer]:
+                    - /url: "#"
+                    - img [ref=e802]
+          - paragraph [ref=e805]: Amounts shown in USD
+  - contentinfo [ref=e806]:
+    - heading "Footer" [level=2] [ref=e807]
+    - generic [ref=e808]:
+      - generic [ref=e809]:
+        - link "GitHub Homepage" [ref=e810] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e811]
+        - generic [ref=e813]: © 2026 GitHub, Inc.
+      - navigation "Footer" [ref=e814]:
+        - heading "Footer navigation" [level=3] [ref=e815]
+        - list "Footer navigation" [ref=e816]:
+          - listitem [ref=e817]:
+            - link "Terms" [ref=e818] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/github-terms/github-terms-of-service
+          - listitem [ref=e819]:
+            - link "Privacy" [ref=e820] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/privacy-policies/github-privacy-statement
+          - listitem [ref=e821]:
+            - link "Security" [ref=e822] [cursor=pointer]:
+              - /url: https://github.com/security
+          - listitem [ref=e823]:
+            - link "Status" [ref=e824] [cursor=pointer]:
+              - /url: https://www.githubstatus.com/
+          - listitem [ref=e825]:
+            - link "Community" [ref=e826] [cursor=pointer]:
+              - /url: https://github.community/
+          - listitem [ref=e827]:
+            - link "Docs" [ref=e828] [cursor=pointer]:
+              - /url: https://docs.github.com/
+          - listitem [ref=e829]:
+            - link "Contact" [ref=e830] [cursor=pointer]:
+              - /url: https://support.github.com?tags=dotcom-footer
+          - listitem [ref=e831]:
+            - button "Manage cookies" [ref=e833] [cursor=pointer]
+          - listitem [ref=e834]:
+            - button "Do not share my personal information" [ref=e836] [cursor=pointer]

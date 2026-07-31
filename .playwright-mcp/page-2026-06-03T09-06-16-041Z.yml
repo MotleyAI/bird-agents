@@ -1,0 +1,264 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e4]:
+      - link "JetBrains Logo" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - img "JetBrains Logo" [ref=e7]
+      - generic [ref=e8]:
+        - link "Help" [ref=e9] [cursor=pointer]:
+          - /url: https://sales.jetbrains.com/hc/en-gb
+          - img "Help" [ref=e10]
+        - link "Cart" [ref=e11] [cursor=pointer]:
+          - /url: https://www.jetbrains.com/shop/cart/empty
+          - img "Cart" [ref=e12]
+        - button "Account" [ref=e13] [cursor=pointer]:
+          - img "Account" [ref=e14]
+    - generic [ref=e15]:
+      - generic [ref=e17]:
+        - generic [ref=e19]:
+          - strong [ref=e21]: Egor Kraev
+          - link "Transactions / Invoices" [ref=e22] [cursor=pointer]:
+            - /url: /licenses/transactions
+          - link "JetBrains AI Settings" [ref=e23] [cursor=pointer]:
+            - /url: /licenses/ai-settings
+          - link "Notifications" [ref=e24] [cursor=pointer]:
+            - /url: /licenses/notifications
+          - link "Payment Methods" [ref=e25] [cursor=pointer]:
+            - /url: /licenses/tokens
+        - generic [ref=e28]:
+          - generic [ref=e29]:
+            - generic [ref=e30]:
+              - link "×" [ref=e31] [cursor=pointer]:
+                - /url: javascript:void(0);
+              - generic [ref=e32]:
+                - text: TOOLBOX SUBSCRIPTION AGREEMENT FOR NON-COMMERCIAL USE need to be accepted for Egor Kraev
+                - generic [ref=e33] [cursor=pointer]: Please review and accept
+            - generic [ref=e34]:
+              - link "×" [ref=e35] [cursor=pointer]:
+                - /url: javascript:void(0);
+              - generic [ref=e37]:
+                - paragraph [ref=e38]:
+                  - strong [ref=e39]: Master PyCharm Pro with a high-quality video course at 50% off
+                - paragraph [ref=e40]:
+                  - text: We at JetBrains are happy to have you as our valued customer. Today we have
+                  - strong [ref=e41]: an exclusive offer for you from our partner – Talk Python Training
+                  - text: ", an online training company for Python developers:"
+                - paragraph [ref=e42]:
+                  - text: Take
+                  - link "the Mastering PyCharm Pro" [ref=e43] [cursor=pointer]:
+                    - /url: https://training.talkpython.fm/courses/explore_pycharm/mastering-pycharm-ide
+                  - text: video course and get
+                  - strong [ref=e44]: 50% off!
+                  - text: The course was created by
+                  - strong [ref=e45]: Michael Kennedy
+                  - text: ", an author, instructor, speaker, and PyCharm Pro expert. In the course, Michael covers a wide variety of productivity features, use cases and tricks which I hope will make you more productive with PyCharm Pro."
+                - link "I’m interested! Send me the discount" [ref=e46] [cursor=pointer]:
+                  - /url: javascript:void(0)
+            - generic [ref=e47]:
+              - link "×" [ref=e48] [cursor=pointer]:
+                - /url: javascript:void(0);
+              - generic [ref=e49]:
+                - generic [ref=e50]: Two-factor authentication is available!
+                - generic [ref=e51]:
+                  - text: To enable an extra layer of security for your JetBrains Account,
+                  - link "turn on two-factor auth" [ref=e52] [cursor=pointer]:
+                    - /url: /change-password?_st=APXIgbcbYTAMpBw6kBuVDK7fsb50QMRzq_kSBhXgO9rpcQgu-MOoYERutdueHHG9
+                  - text: .
+          - generic: . . . .
+          - button "Buy new license" [ref=e55] [cursor=pointer]
+          - generic [ref=e56]:
+            - heading "3 Toolbox Subscriptions" [level=1] [ref=e58]
+            - link "Can’t find some of your licenses?" [ref=e59] [cursor=pointer]:
+              - /url: /profile-details/linked-emails
+          - paragraph [ref=e60]: Please use your JetBrains Account credentials to sign in to software.
+          - generic [ref=e62]:
+            - generic [ref=e64]:
+              - link "PyCharm Pro" [ref=e66] [cursor=pointer]:
+                - /url: https://www.jetbrains.com/pycharm
+                - text: PyCharm Pro
+              - link "Download" [ref=e69] [cursor=pointer]:
+                - /url: https://www.jetbrains.com/shop/download/PC/2026100
+              - generic [ref=e70]:
+                - text: "License ID:"
+                - generic [ref=e71]: 8ZYGBI5ZEH
+            - generic [ref=e72]:
+              - generic [ref=e73]:
+                - generic [ref=e74]: "Licensed to:"
+                - strong [ref=e76]: Egor Kraev
+              - generic [ref=e77]:
+                - button "Fallback ver.:" [ref=e79] [cursor=pointer]
+                - link "2026.1" [ref=e81] [cursor=pointer]:
+                  - /url: https://www.jetbrains.com/shop/download/PC/2026100
+              - generic [ref=e82]:
+                - generic [ref=e83]: "Billing date:"
+                - generic [ref=e84]:
+                  - text: May 18, 2027 for €65.00
+                  - button "Taxes may still be added" [ref=e86] [cursor=pointer]
+              - paragraph [ref=e87]: "Payment method used for auto-renewals and other charges:"
+              - generic [ref=e88]:
+                - generic [ref=e89]:
+                  - img "MasterCard" [ref=e90]
+                  - generic [ref=e91]: "**** 1555"
+                - button "Disable auto-renewal" [ref=e92] [cursor=pointer]
+                - text: . . . .
+            - generic [ref=e93]:
+              - generic [ref=e94]:
+                - generic [ref=e95]:
+                  - link "Switch to IntelliJ IDEA Ultimate" [ref=e99] [cursor=pointer]:
+                    - /url: "#"
+                  - link "Switch to All Products Pack" [ref=e103] [cursor=pointer]:
+                    - /url: "#"
+                - generic [ref=e104]:
+                  - generic [ref=e105]:
+                    - button "Switch to monthly billing (at the next renewal)" [ref=e106] [cursor=pointer]: Switch to monthly billing (at the next renewal)
+                    - text: . . . .
+                  - link "Renew" [ref=e109] [cursor=pointer]:
+                    - /url: javascript:void(0);
+                    - text: Renew
+                  - button "Cancel subscription" [ref=e111] [cursor=pointer]: Cancel subscription
+                  - text: . . . .
+              - button "Download a code for offline activation" [ref=e115] [cursor=pointer]: Download a code for offline activation
+              - generic: . . . .
+              - link "Generate legacy license key" [ref=e117] [cursor=pointer]:
+                - /url: javascript:void(0);
+                - text: Generate legacy license key
+            - text: . .
+          - generic [ref=e119]:
+            - generic [ref=e120]:
+              - generic [ref=e122]:
+                - link "WebStorm" [ref=e124] [cursor=pointer]:
+                  - /url: https://www.jetbrains.com/webstorm
+                  - text: WebStorm
+                - generic [ref=e126]:
+                  - text: "License ID:"
+                  - generic [ref=e127]: 8R4H9FWYWZ
+              - generic [ref=e128]:
+                - generic [ref=e129]:
+                  - generic [ref=e130]: "Licensed to:"
+                  - strong [ref=e132]: Egor Kraev
+                - generic [ref=e133]:
+                  - generic [ref=e134]: "License restriction:"
+                  - generic [ref=e135]:
+                    - text: For
+                    - link "non-commercial" [ref=e136] [cursor=pointer]:
+                      - /url: https://www.jetbrains.com/legal/docs/toolbox/license_non-commercial/
+                    - text: use only
+                - generic [ref=e137]:
+                  - generic [ref=e138]: "Valid through:"
+                  - generic [ref=e139]: April 20, 2027
+              - text: . .
+            - generic [ref=e141]:
+              - generic [ref=e142]:
+                - generic [ref=e143] [cursor=pointer]: Please review License Agreement
+                - generic [ref=e144]: and accept it to start using your licenses.
+              - text: . .
+          - generic [ref=e146]:
+            - generic [ref=e148]:
+              - link "WebStorm" [ref=e150] [cursor=pointer]:
+                - /url: https://www.jetbrains.com/webstorm
+                - text: WebStorm
+              - link "Download" [ref=e153] [cursor=pointer]:
+                - /url: https://www.jetbrains.com/shop/download/WS/2026100
+              - generic [ref=e154]:
+                - text: "License ID:"
+                - generic [ref=e155]: 0E8KHD1ETV
+            - generic [ref=e156]:
+              - generic [ref=e157]:
+                - generic [ref=e158]: "Licensed to:"
+                - strong [ref=e160]: Egor Kraev
+              - generic [ref=e161]:
+                - button "Fallback ver.:" [ref=e163] [cursor=pointer]
+                - link "2025.1" [ref=e165] [cursor=pointer]:
+                  - /url: https://www.jetbrains.com/shop/download/WS/2025100
+              - generic [ref=e166]:
+                - generic [ref=e167]: "Billing date:"
+                - generic [ref=e168]:
+                  - text: Yesterday for €63.00
+                  - button "Taxes may still be added" [ref=e170] [cursor=pointer]
+              - paragraph [ref=e171]:
+                - text: We've been unable to renew your annual subscription automatically.
+                - link "Renew" [ref=e172] [cursor=pointer]:
+                  - /url: javascript:void(0);
+              - paragraph [ref=e173]: Your subscription has expired.
+            - generic [ref=e174]:
+              - generic [ref=e175]:
+                - generic [ref=e176]:
+                  - link "Switch to PhpStorm" [ref=e180] [cursor=pointer]:
+                    - /url: "#"
+                  - link "Switch to GoLand" [ref=e184] [cursor=pointer]:
+                    - /url: "#"
+                  - link "Switch to IntelliJ IDEA Ultimate" [ref=e188] [cursor=pointer]:
+                    - /url: "#"
+                  - link "Switch to All Products Pack" [ref=e192] [cursor=pointer]:
+                    - /url: "#"
+                - generic [ref=e193]:
+                  - generic [ref=e194]:
+                    - button "Switch to monthly billing (at the next renewal)" [ref=e195] [cursor=pointer]: Switch to monthly billing (at the next renewal)
+                    - text: . . . .
+                  - link "Renew" [ref=e198] [cursor=pointer]:
+                    - /url: javascript:void(0);
+                    - text: Renew
+                  - button "Cancel subscription" [ref=e200] [cursor=pointer]: Cancel subscription
+                  - text: . . . .
+              - button "Download a code for offline activation" [ref=e204] [cursor=pointer]: Download a code for offline activation
+              - generic: . . . .
+              - link "Generate legacy license key" [ref=e206] [cursor=pointer]:
+                - /url: javascript:void(0);
+                - text: Generate legacy license key
+            - text: . .
+          - generic [ref=e208]:
+            - heading "1 Fallback License" [level=1] [ref=e209]
+            - button " Export license into .xlsx" [ref=e212] [cursor=pointer]:
+              - generic [ref=e214]: 
+              - text: Export license into .xlsx
+          - generic [ref=e216]:
+            - generic [ref=e218]:
+              - link "CLion" [ref=e220] [cursor=pointer]:
+                - /url: https://www.jetbrains.com/clion
+                - text: CLion
+              - link "Download" [ref=e223] [cursor=pointer]:
+                - /url: https://www.jetbrains.com/shop/download/CL/2021300
+              - generic [ref=e224]:
+                - text: "License ID:"
+                - generic [ref=e225]: 0BTOZE3ALD
+            - generic [ref=e226]:
+              - generic [ref=e227]:
+                - generic [ref=e228]: "Licensed to:"
+                - strong [ref=e230]: Egor Kraev
+              - generic [ref=e231]:
+                - button "Fallback ver.:" [ref=e233] [cursor=pointer]
+                - link "2021.3" [ref=e235] [cursor=pointer]:
+                  - /url: https://www.jetbrains.com/shop/download/CL/2021300
+              - generic [ref=e236]:
+                - generic [ref=e237]: "Valid through:"
+                - generic [ref=e238]: February 19, 2023
+              - paragraph [ref=e239]: Your subscription expired.
+            - generic [ref=e240]:
+              - generic [ref=e241]:
+                - link "Switch to All Products Pack" [ref=e246] [cursor=pointer]:
+                  - /url: "#"
+                - link "Resume payments" [ref=e248] [cursor=pointer]:
+                  - /url: javascript:void(0);
+                  - text: Resume payments
+              - button "Download a code for offline activation" [ref=e252] [cursor=pointer]: Download a code for offline activation
+              - generic: . . . .
+              - link "Generate legacy license key" [ref=e254] [cursor=pointer]:
+                - /url: javascript:void(0);
+                - text: Generate legacy license key
+            - text: . .
+      - text: . .
+    - generic [ref=e257]:
+      - generic [ref=e258]:
+        - generic [ref=e259]: Copyright © 2000–2026 JetBrains s.r.o.
+        - generic [ref=e260]:
+          - link "Help" [ref=e261] [cursor=pointer]:
+            - /url: https://sales.jetbrains.com/hc/en-gb
+          - link "Support" [ref=e262] [cursor=pointer]:
+            - /url: mailto:support@jetbrains.com?subject=JetBrains Account Support
+          - link "JetBrains Privacy Policy" [ref=e263] [cursor=pointer]:
+            - /url: https://www.jetbrains.com/legal/docs/privacy/privacy
+          - link "JetBrains Account Agreement" [ref=e264] [cursor=pointer]:
+            - /url: https://www.jetbrains.com/legal/docs/agreements/jetbrains_account
+      - generic [ref=e265]: "Build #2026.06-4295"
+  - button [ref=e268] [cursor=pointer]:
+    - img [ref=e269]

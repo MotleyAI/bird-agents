@@ -1,0 +1,449 @@
+version: 7
+name: usagerecords
+sql_table: usagerecords
+query_variables: {}
+data_source: museum
+columns:
+- name: usagerecordregistry
+  sql: usagerecordregistry
+  type: INT
+  primary_key: true
+  description: A BIGSERIAL primary key uniquely identifying each usage record.
+  hidden: false
+  format:
+    type: integer
+- name: artrefused
+  sql: artrefused
+  type: TEXT
+  primary_key: false
+  description: A CHAR(10) NOT NULL foreign key referencing ArtifactsCore(ArtRegistry),
+    indicating which artifact is being used.
+  hidden: false
+  sampled: ART10016  , ART10101  , ART10304  , ART10454  , ART10602  , ART10796  ,
+    ART10868  , ART10877  , ART11061  , ART11166  , ART11238  , ART11605  , ART11692  ,
+    ART11696  , ART11818  , ART11915  , ART11997  , ART12066  , ART12071  , ART12569   ...
+    (951 distinct)
+  sampled_values:
+  - 'ART10016  '
+  - 'ART10101  '
+  - 'ART10304  '
+  - 'ART10454  '
+  - 'ART10602  '
+  - 'ART10796  '
+  - 'ART10868  '
+  - 'ART10877  '
+  - 'ART11061  '
+  - 'ART11166  '
+  - 'ART11238  '
+  - 'ART11605  '
+  - 'ART11692  '
+  - 'ART11696  '
+  - 'ART11818  '
+  - 'ART11915  '
+  - 'ART11997  '
+  - 'ART12066  '
+  - 'ART12071  '
+  - 'ART12569  '
+  - 'ART12707  '
+  - 'ART12752  '
+  - 'ART12761  '
+  - 'ART12836  '
+  - 'ART12913  '
+  - 'ART12943  '
+  - 'ART12970  '
+  - 'ART13225  '
+  - 'ART13427  '
+  - 'ART13446  '
+  - 'ART13491  '
+  - 'ART13670  '
+  - 'ART13864  '
+  - 'ART13944  '
+  - 'ART13974  '
+  - 'ART14031  '
+  - 'ART14074  '
+  - 'ART14093  '
+  - 'ART14403  '
+  - 'ART14428  '
+  - 'ART14493  '
+  - 'ART14524  '
+  - 'ART14535  '
+  - 'ART14626  '
+  - 'ART14981  '
+  - 'ART14989  '
+  - 'ART15309  '
+  - 'ART15493  '
+  - 'ART15630  '
+  - 'ART15822  '
+  distinct_count: 951
+- name: showcaserefused
+  sql: showcaserefused
+  type: TEXT
+  primary_key: false
+  description: A CHAR(12) foreign key referencing Showcases(ShowcaseReg) if a showcase
+    is involved in the usage.
+  hidden: false
+  sampled: SC1006      , SC1007      , SC1015      , SC1038      , SC1043      , SC1060      ,
+    SC1062      , SC1077      , SC1112      , SC1125      , SC1127      , SC1135      ,
+    SC1141      , SC1158      , SC1164      , SC1183      , SC1193      , SC1201      ,
+    SC1211      , SC1214       ... (951 distinct)
+  sampled_values:
+  - 'SC1006      '
+  - 'SC1007      '
+  - 'SC1015      '
+  - 'SC1038      '
+  - 'SC1043      '
+  - 'SC1060      '
+  - 'SC1062      '
+  - 'SC1077      '
+  - 'SC1112      '
+  - 'SC1125      '
+  - 'SC1127      '
+  - 'SC1135      '
+  - 'SC1141      '
+  - 'SC1158      '
+  - 'SC1164      '
+  - 'SC1183      '
+  - 'SC1193      '
+  - 'SC1201      '
+  - 'SC1211      '
+  - 'SC1214      '
+  - 'SC1224      '
+  - 'SC1226      '
+  - 'SC1232      '
+  - 'SC1242      '
+  - 'SC1251      '
+  - 'SC1253      '
+  - 'SC1260      '
+  - 'SC1269      '
+  - 'SC1271      '
+  - 'SC1285      '
+  - 'SC1286      '
+  - 'SC1292      '
+  - 'SC1296      '
+  - 'SC1305      '
+  - 'SC1319      '
+  - 'SC1326      '
+  - 'SC1350      '
+  - 'SC1351      '
+  - 'SC1353      '
+  - 'SC1376      '
+  - 'SC1402      '
+  - 'SC1443      '
+  - 'SC1445      '
+  - 'SC1447      '
+  - 'SC1487      '
+  - 'SC1490      '
+  - 'SC1491      '
+  - 'SC1498      '
+  - 'SC1511      '
+  - 'SC1525      '
+  distinct_count: 951
+- name: sensdatalink
+  sql: sensdatalink
+  type: INT
+  primary_key: false
+  description: A BIGINT foreign key referencing SensitivityData(SensitivityRegistry).
+    Links usage requirements to known sensitivities.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 951
+- name: displayrotatesched
+  sql: displayrotatesched
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(20) describing how often the artifact is rotated (possible
+    values: ''Permanent'', ''Resting'', ''Active'').'
+  hidden: false
+  sampled: 'Active              , Resting             , Permanent           '
+  sampled_values:
+  - 'Active              '
+  - 'Resting             '
+  - 'Permanent           '
+  distinct_count: 3
+- name: displaydurmonths
+  sql: displaydurmonths
+  type: INT
+  primary_key: false
+  description: A SMALLINT indicating how many months the artifact is displayed in
+    a single rotation.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 12
+- name: restperiodmonths
+  sql: restperiodmonths
+  type: INT
+  primary_key: false
+  description: A SMALLINT for how many months the artifact rests between rotations.
+  hidden: false
+  format:
+    type: integer
+  sampled: 6 .. 24
+- name: displayreqs
+  sql: displayreqs
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(120) listing any special display requirements (possible
+    values: ''Special'', ''Standard'', ''Custom'').'
+  hidden: false
+  sampled: Standard, Special, Custom
+  sampled_values:
+  - Standard
+  - Special
+  - Custom
+  distinct_count: 3
+- name: storagereqs
+  sql: storagereqs
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(60) describing special storage requirements (possible values:
+    ''Standard'', ''Custom'', ''Special'').'
+  hidden: false
+  sampled: Custom, Special, Standard
+  sampled_values:
+  - Custom
+  - Special
+  - Standard
+  distinct_count: 3
+- name: handlingreqs
+  sql: handlingreqs
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(80) specifying guidelines for handling (possible values:
+    ''Custom'', ''Special'', ''Standard'').'
+  hidden: false
+  sampled: Custom, Special, Standard
+  sampled_values:
+  - Custom
+  - Special
+  - Standard
+  distinct_count: 3
+- name: transportreqs
+  sql: transportreqs
+  type: TEXT
+  primary_key: false
+  description: 'A TEXT field detailing transport requirements (possible values: ''Custom'',
+    ''Special'', ''Standard'').'
+  hidden: false
+  sampled: Custom, Special, Standard
+  sampled_values:
+  - Custom
+  - Special
+  - Standard
+  distinct_count: 3
+- name: packingreqs
+  sql: packingreqs
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(90) summarizing packing methods (possible values: ''Custom'',
+    ''Special'', ''Standard'').'
+  hidden: false
+  sampled: Special, Standard, Custom
+  sampled_values:
+  - Special
+  - Standard
+  - Custom
+  distinct_count: 3
+- name: resaccessfreq
+  sql: resaccessfreq
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(10) indicating how often the artifact is accessed for research
+    (possible values: ''Frequent'', ''Rare'', ''Occasional'').'
+  hidden: false
+  sampled: Frequent  , Rare      , Occasional
+  sampled_values:
+  - 'Frequent  '
+  - 'Rare      '
+  - Occasional
+  distinct_count: 3
+- name: publicdispfreq
+  sql: publicdispfreq
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(15) describing how often the artifact goes on public display
+    (possible values: ''Frequent'', ''Occasional'', ''Rare'').'
+  hidden: false
+  sampled: 'Rare                     , Occasional               , Frequent                 '
+  sampled_values:
+  - 'Rare                     '
+  - 'Occasional               '
+  - 'Frequent                 '
+  distinct_count: 3
+- name: loanfreq
+  sql: loanfreq
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(12) specifying how frequently the artifact is loaned out (possible
+    values: ''Occasional'', ''Frequent'', ''Rare'').'
+  hidden: false
+  sampled: 'Occasional  , Frequent    , Rare        '
+  sampled_values:
+  - 'Occasional  '
+  - 'Frequent    '
+  - 'Rare        '
+  distinct_count: 3
+- name: handlefreq
+  sql: handlefreq
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(10) indicating how frequently the artifact is handled (possible
+    values: ''Rare'', ''Frequent'', ''Occasional'').'
+  hidden: false
+  sampled: 'Occasional, Rare      , Frequent  '
+  sampled_values:
+  - Occasional
+  - 'Rare      '
+  - 'Frequent  '
+  distinct_count: 3
+- name: docufreq
+  sql: docufreq
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(20) describing how often documentation is updated (possible
+    values: ''Frequent'', ''Rare'', ''Occasional'').'
+  hidden: false
+  sampled: Occasional, Frequent, Rare
+  sampled_values:
+  - Occasional
+  - Frequent
+  - Rare
+  distinct_count: 3
+- name: monitorfreq
+  sql: monitorfreq
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(35) for how often the artifact is monitored (possible values:
+    ''Monthly'', ''Daily'', ''Weekly'').'
+  hidden: false
+  sampled: Daily, Weekly, Monthly
+  sampled_values:
+  - Daily
+  - Weekly
+  - Monthly
+  distinct_count: 3
+- name: assessfreq
+  sql: assessfreq
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(15) for the frequency of condition assessments (possible values:
+    ''Monthly'', ''Quarterly'', ''Annually'').'
+  hidden: false
+  sampled: 'Annually                 , Quarterly                , Monthly                  '
+  sampled_values:
+  - 'Annually                 '
+  - 'Quarterly                '
+  - 'Monthly                  '
+  distinct_count: 3
+- name: maintfreq
+  sql: maintfreq
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(15) indicating the maintenance schedule (possible values: ''Monthly'',
+    ''Weekly'', ''Quarterly'').'
+  hidden: false
+  sampled: 'Monthly                  , Weekly                   , Quarterly                '
+  sampled_values:
+  - 'Monthly                  '
+  - 'Weekly                   '
+  - 'Quarterly                '
+  distinct_count: 3
+- name: inspectfreq
+  sql: inspectfreq
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(15) describing the routine inspection frequency (possible values:
+    ''Weekly'', ''Monthly'', ''Daily'').'
+  hidden: false
+  sampled: 'Daily                    , Monthly                  , Weekly                   '
+  sampled_values:
+  - 'Daily                    '
+  - 'Monthly                  '
+  - 'Weekly                   '
+  distinct_count: 3
+- name: calibfreq
+  sql: calibfreq
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(15) stating how often instruments are calibrated (possible
+    values: ''Monthly'', ''Quarterly'', ''Annually'').'
+  hidden: false
+  sampled: 'Annually                 , Quarterly                , Monthly                  '
+  sampled_values:
+  - 'Annually                 '
+  - 'Quarterly                '
+  - 'Monthly                  '
+  distinct_count: 3
+- name: certstatus
+  sql: certstatus
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(40) noting any certification status (possible values: ''Expired'',
+    ''Current'', ''Pending'').'
+  hidden: false
+  sampled: Expired, Current, Pending
+  sampled_values:
+  - Expired
+  - Current
+  - Pending
+  distinct_count: 3
+- name: compliancestatus
+  sql: compliancestatus
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(55) summarizing compliance (possible values: ''Non-compliant'',
+    ''Partial'', ''Compliant'').'
+  hidden: false
+  sampled: Partial, Non-compliant, Compliant
+  sampled_values:
+  - Partial
+  - Non-compliant
+  - Compliant
+  distinct_count: 3
+- name: auditstatus
+  sql: auditstatus
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(10) indicating the result of a related audit (possible values:
+    ''Passed'', ''Pending'', ''Failed'').'
+  hidden: false
+  sampled: Failed, Passed, Pending
+  sampled_values:
+  - Failed
+  - Passed
+  - Pending
+  distinct_count: 3
+- name: qualityctrlstatus
+  sql: qualityctrlstatus
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(70) describing quality control status (possible values:
+    ''Failed'', ''Passed'', ''Review'').'
+  hidden: false
+  sampled: Failed, Passed, Review
+  sampled_values:
+  - Failed
+  - Passed
+  - Review
+  distinct_count: 3
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artrefused
+    - artregistry
+  join_type: left
+- target_model: sensitivitydata
+  join_pairs:
+  - - sensdatalink
+    - sensitivityregistry
+  join_type: left
+- target_model: showcases
+  join_pairs:
+  - - showcaserefused
+    - showcasereg
+  join_type: left
+filters: []
+hidden: false

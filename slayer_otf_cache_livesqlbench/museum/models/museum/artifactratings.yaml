@@ -1,0 +1,197 @@
+version: 7
+name: artifactratings
+sql_table: artifactratings
+query_variables: {}
+data_source: museum
+columns:
+- name: ratingrecordregistry
+  sql: ratingrecordregistry
+  type: INT
+  primary_key: true
+  description: BIGSERIAL PRIMARY KEY, unique ID for each rating record.
+  hidden: false
+  format:
+    type: integer
+- name: artref
+  sql: artref
+  type: TEXT
+  primary_key: false
+  description: CHAR(10) FOREIGN KEY referencing ArtifactsCore(ArtRegistry). Links
+    the record to a specific artifact.
+  hidden: false
+  sampled: ART10016  , ART10101  , ART10304  , ART10454  , ART10602  , ART10796  ,
+    ART10868  , ART10877  , ART11061  , ART11166  , ART11238  , ART11605  , ART11692  ,
+    ART11696  , ART11818  , ART11915  , ART11997  , ART12066  , ART12071  , ART12569   ...
+    (951 distinct)
+  sampled_values:
+  - 'ART10016  '
+  - 'ART10101  '
+  - 'ART10304  '
+  - 'ART10454  '
+  - 'ART10602  '
+  - 'ART10796  '
+  - 'ART10868  '
+  - 'ART10877  '
+  - 'ART11061  '
+  - 'ART11166  '
+  - 'ART11238  '
+  - 'ART11605  '
+  - 'ART11692  '
+  - 'ART11696  '
+  - 'ART11818  '
+  - 'ART11915  '
+  - 'ART11997  '
+  - 'ART12066  '
+  - 'ART12071  '
+  - 'ART12569  '
+  - 'ART12707  '
+  - 'ART12752  '
+  - 'ART12761  '
+  - 'ART12836  '
+  - 'ART12913  '
+  - 'ART12943  '
+  - 'ART12970  '
+  - 'ART13225  '
+  - 'ART13427  '
+  - 'ART13446  '
+  - 'ART13491  '
+  - 'ART13670  '
+  - 'ART13864  '
+  - 'ART13944  '
+  - 'ART13974  '
+  - 'ART14031  '
+  - 'ART14074  '
+  - 'ART14093  '
+  - 'ART14403  '
+  - 'ART14428  '
+  - 'ART14493  '
+  - 'ART14524  '
+  - 'ART14535  '
+  - 'ART14626  '
+  - 'ART14981  '
+  - 'ART14989  '
+  - 'ART15309  '
+  - 'ART15493  '
+  - 'ART15630  '
+  - 'ART15822  '
+  distinct_count: 951
+- name: histsignrating
+  sql: histsignrating
+  type: INT
+  primary_key: false
+  description: SMALLINT rating for historical significance (scale is flexible).
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: researchvalrating
+  sql: researchvalrating
+  type: INT
+  primary_key: false
+  description: INT rating for research value (range is flexible).
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: exhibitvalrating
+  sql: exhibitvalrating
+  type: INT
+  primary_key: false
+  description: "INT rating evaluating the artifact\u2019s exhibition value (scale\
+    \ is flexible)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: cultscore
+  sql: cultscore
+  type: INT
+  primary_key: false
+  description: "SMALLINT measuring the artifact\u2019s cultural importance (common\
+    \ range or flexible scale)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 100
+- name: publicaccessrating
+  sql: publicaccessrating
+  type: INT
+  primary_key: false
+  description: "SMALLINT rating the artifact\u2019s public accessibility or appeal\
+    \ (scale is flexible)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: eduvaluerating
+  sql: eduvaluerating
+  type: INT
+  primary_key: false
+  description: BIGINT rating for how much educational value the artifact provides
+    (scale is flexible).
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: conservediff
+  sql: conservediff
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(100) describing difficulty in conserving the artifact (possible
+    values: ''Medium'', ''High'', ''Low'').'
+  hidden: false
+  sampled: Medium, Low, High
+  sampled_values:
+  - Medium
+  - Low
+  - High
+  distinct_count: 3
+- name: treatcomplexity
+  sql: treatcomplexity
+  type: TEXT
+  primary_key: false
+  description: 'CHAR(10) indicating treatment complexity (possible values: ''Complex'',
+    ''Moderate'', ''Simple'').'
+  hidden: false
+  sampled: 'Moderate  , Complex   , Simple    '
+  sampled_values:
+  - 'Moderate  '
+  - 'Complex   '
+  - 'Simple    '
+  distinct_count: 3
+- name: matstability
+  sql: matstability
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(30) for material stability classification (possible values:
+    ''Unstable'', ''Stable'', ''Moderate'').'
+  hidden: false
+  sampled: Unstable, Moderate, Stable
+  sampled_values:
+  - Unstable
+  - Moderate
+  - Stable
+  distinct_count: 3
+- name: deteriorrate
+  sql: deteriorrate
+  type: TEXT
+  primary_key: false
+  description: TEXT field detailing the specific deterioration rate or pattern (e.g.,
+    'Moderate', 'Rapid', 'Slow').
+  hidden: false
+  sampled: Moderate, Slow, Rapid
+  sampled_values:
+  - Moderate
+  - Slow
+  - Rapid
+  distinct_count: 3
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artref
+    - artregistry
+  join_type: left
+filters: []
+hidden: false

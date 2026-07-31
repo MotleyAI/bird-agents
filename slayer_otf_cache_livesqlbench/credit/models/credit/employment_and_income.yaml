@@ -1,0 +1,300 @@
+version: 7
+name: employment_and_income
+sql_table: employment_and_income
+query_variables: {}
+data_source: credit
+columns:
+- name: emplcoreref
+  sql: emplcoreref
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key referencing core_record(CoreRegistry).
+  hidden: false
+- name: emplstat
+  sql: emplstat
+  type: TEXT
+  primary_key: false
+  description: An enum (EmploymentStatus_enum) for employment status (Self-employed,
+    Employed, Unemployed, Retired).
+  hidden: false
+  sampled: Unemployed, Employed, Self-employed, Retired
+  sampled_values:
+  - Unemployed
+  - Employed
+  - Self-employed
+  - Retired
+  distinct_count: 4
+- name: empllen
+  sql: empllen
+  type: INT
+  primary_key: false
+  description: A SMALLINT indicating length of employment in years (e.g., '5').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 40
+- name: joblabel
+  sql: joblabel
+  type: TEXT
+  primary_key: false
+  description: An enum (JobTitle_enum) labeling the job (Manager, Teacher, Doctor,
+    Other, Engineer).
+  hidden: false
+  sampled: Engineer, Other, Doctor, Teacher, Manager
+  sampled_values:
+  - Engineer
+  - Other
+  - Doctor
+  - Teacher
+  - Manager
+  distinct_count: 5
+- name: indsector
+  sql: indsector
+  type: TEXT
+  primary_key: false
+  description: An enum (IndustrySector_enum) naming the sector (Education, Technology,
+    Healthcare, Finance, Other).
+  hidden: false
+  sampled: Healthcare, Other, Finance, Education, Technology
+  sampled_values:
+  - Healthcare
+  - Other
+  - Finance
+  - Education
+  - Technology
+  distinct_count: 5
+- name: employerref
+  sql: employerref
+  type: TEXT
+  primary_key: false
+  description: A TEXT field storing the employer name (e.g., 'ABC Corp').
+  hidden: false
+  sampled: Brown Ltd, Johnson PLC, Johnson and Sons, Smith PLC, Anderson LLC, Anderson
+    PLC, Brown LLC, Davis Group, Garcia Inc, Garcia PLC, Jones LLC, Lee PLC, Lewis
+    PLC, Nelson Group, Reed Group, Simpson PLC, Smith Group, Taylor Inc, Torres and
+    Sons, Torres-Jones ... (972 distinct)
+  sampled_values:
+  - Brown Ltd
+  - Johnson PLC
+  - Johnson and Sons
+  - Smith PLC
+  - Anderson LLC
+  - Anderson PLC
+  - Brown LLC
+  - Davis Group
+  - Garcia Inc
+  - Garcia PLC
+  - Jones LLC
+  - Lee PLC
+  - Lewis PLC
+  - Nelson Group
+  - Reed Group
+  - Simpson PLC
+  - Smith Group
+  - Taylor Inc
+  - Torres and Sons
+  - Torres-Jones
+  - Turner Ltd
+  - Williams Group
+  - Wilson Inc
+  - Wilson PLC
+  - Acosta-Lynch
+  - Adams, Ward and West
+  - Adams-White
+  - Adkins, Pacheco and Parker
+  - Aguilar, Fields and Robertson
+  - Aguirre PLC
+  - Alexander LLC
+  - Alexander-Garcia
+  - Allen Group
+  - Allen Inc
+  - Allen and Sons
+  - Allen, Morgan and Walker
+  - Allen, Rollins and Santana
+  - Allen-Gomez
+  - Allen-Park
+  - Allison Ltd
+  - Allison-Anderson
+  - Allison-Cameron
+  - Anderson Group
+  - Anderson and Sons
+  - Anderson, Branch and Brown
+  - Anderson-Moran
+  - Andrews and Sons
+  - Armstrong LLC
+  - Arnold, Williams and Young
+  - Ayala PLC
+  distinct_count: 972
+- name: annlincome
+  sql: annlincome
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(12,2) capturing annual income in currency units (e.g., '65000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 21032.0 .. 499544.0
+- name: mthincome
+  sql: mthincome
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(12,2) capturing monthly income (e.g., '5400.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 1752.67 .. 41628.67
+- name: incverify
+  sql: incverify
+  type: TEXT
+  primary_key: false
+  description: An enum (IncomeVerification_enum) describing income verification status
+    (Pending, Verified, Failed).
+  hidden: false
+  sampled: Pending, Verified, Failed
+  sampled_values:
+  - Pending
+  - Verified
+  - Failed
+  distinct_count: 3
+- name: incstabscore
+  sql: incstabscore
+  type: DOUBLE
+  primary_key: false
+  description: A REAL score of how stable the income is (e.g., '7.5').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0.001 .. 0.999
+- name: addincome
+  sql: addincome
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(12,2) indicating additional income (e.g., '500.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 47.0 .. 49953.0
+- name: addincomesrc
+  sql: addincomesrc
+  type: TEXT
+  primary_key: false
+  description: An enum (AdditionalIncomeSource_enum) for source of additional income
+    (Investment, Rental, Part-time).
+  hidden: false
+  sampled: Part-time, Rental, Investment
+  sampled_values:
+  - Part-time
+  - Rental
+  - Investment
+  distinct_count: 3
+- name: hshincome
+  sql: hshincome
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(12,2) capturing total household income (e.g., '90000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 20602.0 .. 797514.0
+- name: emplstable
+  sql: emplstable
+  type: INT
+  primary_key: false
+  description: A SMALLINT rating how stable the employment is (e.g., '4').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 20
+- name: indrisklvl
+  sql: indrisklvl
+  type: TEXT
+  primary_key: false
+  description: An enum (Risk3_enum) indicating industry risk (Low, Medium, High).
+  hidden: false
+  sampled: Medium, High, Low
+  sampled_values:
+  - Medium
+  - High
+  - Low
+  distinct_count: 3
+- name: occrisklvl
+  sql: occrisklvl
+  type: TEXT
+  primary_key: false
+  description: An enum (Risk3_enum) indicating occupation risk (Low, Medium, High).
+  hidden: false
+  sampled: High, Medium, Low
+  sampled_values:
+  - High
+  - Medium
+  - Low
+  distinct_count: 3
+- name: incsrcrisk
+  sql: incsrcrisk
+  type: TEXT
+  primary_key: false
+  description: An enum (Risk3_enum) for income source risk (Low, Medium, High).
+  hidden: false
+  sampled: Low, High, Medium
+  sampled_values:
+  - Low
+  - High
+  - Medium
+  distinct_count: 3
+- name: georisk
+  sql: georisk
+  type: TEXT
+  primary_key: false
+  description: An enum (Risk3_enum) for geographic risk (Low, Medium, High).
+  hidden: false
+  sampled: Medium, High, Low
+  sampled_values:
+  - Medium
+  - High
+  - Low
+  distinct_count: 3
+- name: demrisk
+  sql: demrisk
+  type: TEXT
+  primary_key: false
+  description: An enum (Risk3_enum) capturing demographic risk (Low, Medium, High).
+  hidden: false
+  sampled: Low, Medium, High
+  sampled_values:
+  - Low
+  - Medium
+  - High
+  distinct_count: 3
+- name: edulevel
+  sql: edulevel
+  type: TEXT
+  primary_key: false
+  description: An enum (EducationLevel_enum) labeling education (Doctorate, High School,
+    Master, Bachelor).
+  hidden: false
+  sampled: High School, Bachelor, Doctorate, Master
+  sampled_values:
+  - High School
+  - Bachelor
+  - Doctorate
+  - Master
+  distinct_count: 4
+- name: debincratio
+  sql: debincratio
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(5,3) for debt-to-income ratio (e.g., '0.320').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.001 .. 0.598
+measures: []
+aggregations: []
+joins:
+- target_model: core_record
+  join_pairs:
+  - - emplcoreref
+    - coreregistry
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,300 @@
+version: 7
+name: clinicians
+sql_table: clinicians
+query_variables: {}
+data_source: mental
+columns:
+- name: clinkey
+  sql: clinkey
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key uniquely identifying the clinician (e.g.,
+    'CLN001').
+  hidden: false
+- name: clinconf
+  sql: clinconf
+  type: TEXT
+  primary_key: false
+  description: An enum (clinicianconfidence_enum) capturing the clinician's confidence
+    (Medium, Low, High).
+  hidden: false
+  sampled: Low, High, Medium
+  sampled_values:
+  - Low
+  - High
+  - Medium
+  distinct_count: 3
+- name: assesslim
+  sql: assesslim
+  type: TEXT
+  primary_key: false
+  description: An enum (assessmentlimitations_enum) describing any limitations (Cognitive,
+    Engagement, Language).
+  hidden: false
+  sampled: Language, Cognitive, Engagement
+  sampled_values:
+  - Language
+  - Cognitive
+  - Engagement
+  distinct_count: 3
+- name: docustat
+  sql: docustat
+  type: TEXT
+  primary_key: false
+  description: An enum (documentationstatus_enum) for documentation status (Complete,
+    Incomplete, Pending).
+  hidden: false
+  sampled: Pending, Incomplete, Complete
+  sampled_values:
+  - Pending
+  - Incomplete
+  - Complete
+  distinct_count: 3
+- name: billcode
+  sql: billcode
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(15) storing billing or service code (e.g., '99214').
+  hidden: false
+  sampled: CPT90895, CPT90076, CPT90140, CPT90206, CPT90210, CPT90261, CPT90325, CPT90511,
+    CPT90515, CPT90752, CPT90879, CPT90029, CPT90030, CPT90046, CPT90056, CPT90059,
+    CPT90060, CPT90067, CPT90093, CPT90096 ... (619 distinct)
+  sampled_values:
+  - CPT90895
+  - CPT90076
+  - CPT90140
+  - CPT90206
+  - CPT90210
+  - CPT90261
+  - CPT90325
+  - CPT90511
+  - CPT90515
+  - CPT90752
+  - CPT90879
+  - CPT90029
+  - CPT90030
+  - CPT90046
+  - CPT90056
+  - CPT90059
+  - CPT90060
+  - CPT90067
+  - CPT90093
+  - CPT90096
+  - CPT90116
+  - CPT90122
+  - CPT90132
+  - CPT90161
+  - CPT90163
+  - CPT90175
+  - CPT90178
+  - CPT90216
+  - CPT90233
+  - CPT90237
+  - CPT90238
+  - CPT90251
+  - CPT90259
+  - CPT90281
+  - CPT90301
+  - CPT90323
+  - CPT90337
+  - CPT90351
+  - CPT90425
+  - CPT90452
+  - CPT90472
+  - CPT90514
+  - CPT90542
+  - CPT90565
+  - CPT90572
+  - CPT90579
+  - CPT90609
+  - CPT90624
+  - CPT90629
+  - CPT90631
+  distinct_count: 619
+- name: nxtrevdt
+  sql: nxtrevdt
+  type: DATE
+  primary_key: false
+  description: A DATE indicating next planned review date (e.g., '2025-06-01').
+  hidden: false
+  sampled: 2025-04-28, 2025-04-29, 2025-07-31, 2025-06-27, 2025-07-12, 2025-07-21,
+    2025-05-06, 2025-06-28, 2025-08-11, 2025-08-16, 2025-08-17, 2025-03-27, 2025-03-31,
+    2025-04-01, 2025-04-17, 2025-05-09, 2025-05-12, 2025-05-15, 2025-05-23, 2025-06-08
+    ... (151 distinct)
+  sampled_values:
+  - '2025-04-28'
+  - '2025-04-29'
+  - '2025-07-31'
+  - '2025-06-27'
+  - '2025-07-12'
+  - '2025-07-21'
+  - '2025-05-06'
+  - '2025-06-28'
+  - '2025-08-11'
+  - '2025-08-16'
+  - '2025-08-17'
+  - '2025-03-27'
+  - '2025-03-31'
+  - '2025-04-01'
+  - '2025-04-17'
+  - '2025-05-09'
+  - '2025-05-12'
+  - '2025-05-15'
+  - '2025-05-23'
+  - '2025-06-08'
+  - '2025-06-21'
+  - '2025-06-30'
+  - '2025-07-14'
+  - '2025-07-16'
+  - '2025-07-25'
+  - '2025-07-30'
+  - '2025-08-06'
+  - '2025-08-18'
+  - '2025-03-29'
+  - '2025-04-04'
+  - '2025-04-12'
+  - '2025-05-11'
+  - '2025-05-19'
+  - '2025-05-24'
+  - '2025-06-09'
+  - '2025-06-13'
+  - '2025-06-29'
+  - '2025-07-04'
+  - '2025-07-05'
+  - '2025-07-17'
+  - '2025-07-19'
+  - '2025-07-23'
+  - '2025-07-28'
+  - '2025-08-02'
+  - '2025-08-05'
+  - '2025-08-09'
+  - '2025-03-21'
+  - '2025-04-03'
+  - '2025-04-05'
+  - '2025-04-09'
+  distinct_count: 151
+- name: carecoord
+  sql: carecoord
+  type: TEXT
+  primary_key: false
+  description: An enum (carecoordination_enum) describing care coordination level
+    (Intensive, Regular, Limited).
+  hidden: false
+  sampled: Regular, Limited, Intensive
+  sampled_values:
+  - Regular
+  - Limited
+  - Intensive
+  distinct_count: 3
+- name: refneed
+  sql: refneed
+  type: TEXT
+  primary_key: false
+  description: An enum (referralneeds_enum) capturing referral needs (Services, Testing,
+    Specialist).
+  hidden: false
+  sampled: Services, Specialist, Testing
+  sampled_values:
+  - Services
+  - Specialist
+  - Testing
+  distinct_count: 3
+- name: fuptype
+  sql: fuptype
+  type: TEXT
+  primary_key: false
+  description: An enum (followuptype_enum) describing follow-up type (Therapy, Routine,
+    Urgent, Medication Check).
+  hidden: false
+  sampled: Routine, Therapy, Urgent, Medication Check
+  sampled_values:
+  - Routine
+  - Therapy
+  - Urgent
+  - Medication Check
+  distinct_count: 4
+- name: fupfreq
+  sql: fupfreq
+  type: TEXT
+  primary_key: false
+  description: An enum (followupfrequency_enum) describing follow-up frequency (Weekly,
+    Quarterly, Biweekly, Monthly).
+  hidden: false
+  sampled: Weekly, Biweekly, Monthly, Quarterly
+  sampled_values:
+  - Weekly
+  - Biweekly
+  - Monthly
+  - Quarterly
+  distinct_count: 4
+- name: facconnect
+  sql: facconnect
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) FK referencing Facilities(FacKey), linking this clinician
+    to a facility.
+  hidden: false
+  sampled: F716, F877, F264, F600, F225, F267, F308, F335, F365, F370, F380, F412,
+    F531, F569, F672, F754, F939, F960, F979, F980 ... (576 distinct)
+  sampled_values:
+  - F716
+  - F877
+  - F264
+  - F600
+  - F225
+  - F267
+  - F308
+  - F335
+  - F365
+  - F370
+  - F380
+  - F412
+  - F531
+  - F569
+  - F672
+  - F754
+  - F939
+  - F960
+  - F979
+  - F980
+  - F129
+  - F156
+  - F162
+  - F207
+  - F210
+  - F237
+  - F238
+  - F240
+  - F242
+  - F245
+  - F254
+  - F260
+  - F268
+  - F283
+  - F284
+  - F322
+  - F355
+  - F360
+  - F376
+  - F377
+  - F386
+  - F388
+  - F397
+  - F401
+  - F402
+  - F410
+  - F413
+  - F440
+  - F442
+  - F457
+  distinct_count: 576
+measures: []
+aggregations: []
+joins:
+- target_model: facilities
+  join_pairs:
+  - - facconnect
+    - fackey
+  join_type: left
+filters: []
+hidden: false

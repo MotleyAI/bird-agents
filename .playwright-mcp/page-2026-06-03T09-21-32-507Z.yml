@@ -1,0 +1,90 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - img "Augment Code" [ref=e6]
+    - list [ref=e7]:
+      - button "Overview" [ref=e8] [cursor=pointer]
+      - button "Invoice history" [ref=e9] [cursor=pointer]
+  - generic [ref=e10]:
+    - generic [ref=e328]:
+      - generic [ref=e329]:
+        - generic [ref=e330] [cursor=pointer]:
+          - img [ref=e331]
+          - generic [ref=e333]: All invoices
+        - generic [ref=e334]: /
+        - generic [ref=e335]: TDLVRP-00018
+      - generic [ref=e337]:
+        - generic [ref=e338]:
+          - generic [ref=e339]:
+            - generic [ref=e340]:
+              - generic [ref=e341]: Paid
+              - generic [ref=e342]: TDLVRP-00018
+            - generic [ref=e343]: $30.00
+            - generic [ref=e344]:
+              - generic [ref=e345]: Auto-paid on May 28, 2026
+              - img [ref=e346]
+            - generic [ref=e350]:
+              - link "Download receipt" [ref=e351] [cursor=pointer]:
+                - /url: https://assets.withorb.com/receipt/nzbAoyiVeRrfUZtq/MAtBrPxP3HojM3aW?token=Ik1BdEJyUHhQM0hvak0zYVci.hvGax4AJ0vIGb3ogs5qlgvoDG_g
+                - generic [ref=e352]: Download receipt
+              - link "Download invoice" [ref=e353] [cursor=pointer]:
+                - /url: https://assets.withorb.com/invoice/nzbAoyiVeRrfUZtq/6JeHCTqDpmbEvnb4?token=IjZKZUhDVHFEcG1iRXZuYjQi.ziCnX0mvyNpLvz0zovIRNhRH7qc
+                - generic [ref=e354]: Download invoice
+              - button "Share" [ref=e355] [cursor=pointer]:
+                - generic [ref=e356]: Share
+          - generic [ref=e357]:
+            - generic [ref=e358]:
+              - generic [ref=e359]: Due date
+              - generic [ref=e360]: May 28, 2026
+            - generic [ref=e361]:
+              - generic [ref=e362]: Invoice date
+              - generic [ref=e363]: May 28, 2026
+            - generic [ref=e364]:
+              - generic [ref=e365]: From
+              - generic [ref=e366]: Augment Code
+              - generic [ref=e367]: 395 Page Mill Rd
+              - generic [ref=e368]: Suite 100
+              - generic [ref=e369]: Palo Alto, CA 94306
+              - generic [ref=e370]: United States
+            - generic [ref=e371]:
+              - generic [ref=e372]: Bill to
+              - generic [ref=e373]: egor@motley.ai
+              - generic [ref=e374]: Berglistrasse 30
+              - generic [ref=e375]: Wetzikon, CH 8623
+              - generic [ref=e376]: Switzerland
+              - generic [ref=e377]: egor@motley.ai
+        - generic [ref=e378]:
+          - generic [ref=e379]:
+            - generic [ref=e381]: Augment Credits
+            - generic [ref=e383]: 0 × 1 Credits
+            - generic [ref=e384]: 0 Credits
+            - generic [ref=e385]: Subtotal
+            - generic [ref=e386]: 0.00 Credits
+            - generic [ref=e387]: USD conversion
+            - generic [ref=e389]: 0 Credits × $0.00
+            - generic [ref=e390]: $0.00
+            - generic [ref=e392]: Total (Apr 28 – May 27, 2026)
+            - generic [ref=e393]: $0.00
+            - button "Show usage details" [ref=e397] [cursor=pointer]:
+              - img [ref=e398]
+              - generic [ref=e400]: Show usage details
+          - generic [ref=e401]:
+            - generic [ref=e403]: Seats
+            - generic [ref=e405]: 1 × $30.00
+            - generic [ref=e406]: $30.00
+            - generic [ref=e407]: Subtotal
+            - generic [ref=e408]: $30.00
+            - generic [ref=e410]: Total (May 28 – Jun 27, 2026)
+            - generic [ref=e411]: $30.00
+          - generic [ref=e413]: Subtotal
+          - generic [ref=e415]: $30.00
+          - heading "Amount due" [level=4] [ref=e417]
+          - heading "$30.00" [level=4] [ref=e419]
+    - generic [ref=e123]:
+      - generic [ref=e124]: POWERED BY
+      - link [ref=e125] [cursor=pointer]:
+        - /url: https://withorb.com?utm_campaign=portal_watermark&utm_medium=inproduct&utm_source=website
+        - img [ref=e126]
+      - link "Terms" [ref=e130] [cursor=pointer]:
+        - /url: https://withorb.com/terms?utm_campaign=portal_watermark&utm_medium=inproduct&utm_source=website
+      - link "Privacy" [ref=e131] [cursor=pointer]:
+        - /url: https://withorb.com/privacy-policy?utm_campaign=portal_watermark&utm_medium=inproduct&utm_source=website

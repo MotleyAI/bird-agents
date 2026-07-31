@@ -1,0 +1,305 @@
+version: 7
+name: assessmentsocialanddiagnosis
+sql_table: assessmentsocialanddiagnosis
+query_variables: {}
+data_source: mental
+columns:
+- name: asdkey
+  sql: asdkey
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(30) primary key matching ABKey from AssessmentBasics (FK).
+  hidden: false
+- name: recstatus
+  sql: recstatus
+  type: TEXT
+  primary_key: false
+  description: An enum (recoverystatus_enum) describing recovery status (Relapse,
+    Stable, Advanced, Early).
+  hidden: false
+  sampled: Stable, Relapse, Early, Advanced
+  sampled_values:
+  - Stable
+  - Relapse
+  - Early
+  - Advanced
+  distinct_count: 4
+- name: socsup
+  sql: socsup
+  type: TEXT
+  primary_key: false
+  description: An enum (socialsupportlevel_enum) measuring social support (Strong,
+    Limited, Moderate).
+  hidden: false
+  sampled: Limited, Moderate, Strong
+  sampled_values:
+  - Limited
+  - Moderate
+  - Strong
+  distinct_count: 3
+- name: faminv
+  sql: faminv
+  type: TEXT
+  primary_key: false
+  description: An enum (familyinvolvement_enum) indicating family involvement level
+    (Low, High, Medium).
+  hidden: false
+  sampled: Low, Medium, High
+  sampled_values:
+  - Low
+  - Medium
+  - High
+  distinct_count: 3
+- name: relqual
+  sql: relqual
+  type: TEXT
+  primary_key: false
+  description: An enum (relationshipquality_enum) describing overall relationship
+    quality (Poor, Conflicted, Good, Fair).
+  hidden: false
+  sampled: Poor, Fair, Conflicted, Good
+  sampled_values:
+  - Poor
+  - Fair
+  - Conflicted
+  - Good
+  distinct_count: 4
+- name: workfunc
+  sql: workfunc
+  type: TEXT
+  primary_key: false
+  description: An enum (workfunctioning_enum) referencing work functioning (Disabled,
+    Poor, Fair, Good).
+  hidden: false
+  sampled: Poor, Good, Disabled, Fair
+  sampled_values:
+  - Poor
+  - Good
+  - Disabled
+  - Fair
+  distinct_count: 4
+- name: socfunc
+  sql: socfunc
+  type: TEXT
+  primary_key: false
+  description: An enum (socialfunctioning_enum) referencing social functioning (Isolated,
+    Fair, Good, Poor).
+  hidden: false
+  sampled: Fair, Good, Poor, Isolated
+  sampled_values:
+  - Fair
+  - Good
+  - Poor
+  - Isolated
+  distinct_count: 4
+- name: adlfunc
+  sql: adlfunc
+  type: TEXT
+  primary_key: false
+  description: An enum (adlfunctioning_enum) describing ADL performance (Minimal Help,
+    Independent, Moderate Help, Dependent).
+  hidden: false
+  sampled: Moderate Help, Minimal Help, Dependent, Independent
+  sampled_values:
+  - Moderate Help
+  - Minimal Help
+  - Dependent
+  - Independent
+  distinct_count: 4
+- name: strslvl
+  sql: strslvl
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(3,1) measuring perceived stress level (e.g., 6.0).
+  hidden: false
+  format:
+    type: float
+  sampled: 1.0 .. 10.0
+- name: copskill
+  sql: copskill
+  type: TEXT
+  primary_key: false
+  description: An enum (copingskills_enum) capturing coping skill quality (Good, Poor,
+    Fair, Limited).
+  hidden: false
+  sampled: Fair, Good, Poor, Limited
+  sampled_values:
+  - Fair
+  - Good
+  - Poor
+  - Limited
+  distinct_count: 4
+- name: resscr
+  sql: resscr
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(3,1) measuring resilience (e.g., 5.5).
+  hidden: false
+  format:
+    type: float
+  sampled: 1.0 .. 10.0
+- name: inlevel
+  sql: inlevel
+  type: TEXT
+  primary_key: false
+  description: An enum (insightlevel_enum) describing insight (Fair, Good, Poor).
+  hidden: false
+  sampled: Fair, Good, Poor
+  sampled_values:
+  - Fair
+  - Good
+  - Poor
+  distinct_count: 3
+- name: motivlevel
+  sql: motivlevel
+  type: TEXT
+  primary_key: false
+  description: An enum (motivationlevel_enum) referencing motivation (High, Low, Medium).
+  hidden: false
+  sampled: Medium, Low, High
+  sampled_values:
+  - Medium
+  - Low
+  - High
+  distinct_count: 3
+- name: primdx
+  sql: primdx
+  type: TEXT
+  primary_key: false
+  description: An enum (primarydx_enum) for the primary diagnosis (Anxiety, PTSD,
+    Bipolar, Schizophrenia, Depression).
+  hidden: false
+  sampled: PTSD, Schizophrenia, Bipolar, Anxiety, Depression
+  sampled_values:
+  - PTSD
+  - Schizophrenia
+  - Bipolar
+  - Anxiety
+  - Depression
+  distinct_count: 5
+- name: secdx
+  sql: secdx
+  type: TEXT
+  primary_key: false
+  description: An enum (secondarydx_enum) for secondary diagnosis (OCD, Personality
+    Disorder, Substance Use, Eating Disorder).
+  hidden: false
+  sampled: OCD, Personality Disorder, Eating Disorder, Substance Use
+  sampled_values:
+  - OCD
+  - Personality Disorder
+  - Eating Disorder
+  - Substance Use
+  distinct_count: 4
+- name: dxdurm
+  sql: dxdurm
+  type: INT
+  primary_key: false
+  description: A SMALLINT specifying diagnosis duration in months (e.g., 12).
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 240
+- name: prevhosp
+  sql: prevhosp
+  type: INT
+  primary_key: false
+  description: A SMALLINT counting past hospitalizations (e.g., 2).
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 10
+- name: lasthospdt
+  sql: lasthospdt
+  type: DATE
+  primary_key: false
+  description: A DATE capturing the date of the last hospitalization (e.g., '2025-01-10').
+  hidden: false
+  sampled: 2023-05-28, 2024-05-31, 2024-07-16, 2024-08-24, 2023-04-08, 2024-01-04,
+    2024-09-12, 2023-03-24, 2023-05-07, 2023-05-14, 2023-06-03, 2023-07-11, 2023-08-29,
+    2023-09-20, 2023-09-24, 2023-10-03, 2023-10-26, 2023-11-08, 2024-01-20, 2024-01-31
+    ... (532 distinct)
+  sampled_values:
+  - '2023-05-28'
+  - '2024-05-31'
+  - '2024-07-16'
+  - '2024-08-24'
+  - '2023-04-08'
+  - '2024-01-04'
+  - '2024-09-12'
+  - '2023-03-24'
+  - '2023-05-07'
+  - '2023-05-14'
+  - '2023-06-03'
+  - '2023-07-11'
+  - '2023-08-29'
+  - '2023-09-20'
+  - '2023-09-24'
+  - '2023-10-03'
+  - '2023-10-26'
+  - '2023-11-08'
+  - '2024-01-20'
+  - '2024-01-31'
+  - '2024-04-10'
+  - '2024-05-17'
+  - '2024-05-20'
+  - '2024-06-24'
+  - '2024-07-01'
+  - '2024-07-31'
+  - '2024-08-17'
+  - '2024-09-15'
+  - '2024-09-20'
+  - '2024-10-18'
+  - '2024-11-30'
+  - '2024-12-05'
+  - '2024-12-13'
+  - '2025-01-19'
+  - '2025-02-13'
+  - '2023-02-21'
+  - '2023-02-27'
+  - '2023-03-04'
+  - '2023-03-05'
+  - '2023-03-07'
+  - '2023-03-10'
+  - '2023-04-01'
+  - '2023-04-04'
+  - '2023-04-05'
+  - '2023-04-07'
+  - '2023-04-12'
+  - '2023-04-22'
+  - '2023-05-08'
+  - '2023-05-22'
+  - '2023-06-20'
+  distinct_count: 532
+- name: qolscr
+  sql: qolscr
+  type: INT
+  primary_key: false
+  description: "A SMALLINT measuring Quality of Life score (0\u2013100)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 100
+- name: funcimp
+  sql: funcimp
+  type: TEXT
+  primary_key: false
+  description: An enum (functionalimpairment_enum) describing functional impairment
+    (Severe, Moderate, Mild).
+  hidden: false
+  sampled: Mild, Moderate, Severe
+  sampled_values:
+  - Mild
+  - Moderate
+  - Severe
+  distinct_count: 3
+measures: []
+aggregations: []
+joins:
+- target_model: assessmentbasics
+  join_pairs:
+  - - asdkey
+    - abkey
+  join_type: left
+filters: []
+hidden: false

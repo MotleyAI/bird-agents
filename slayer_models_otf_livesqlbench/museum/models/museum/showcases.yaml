@@ -1,0 +1,268 @@
+version: 7
+name: showcases
+sql_table: showcases
+query_variables: {}
+data_source: museum
+columns:
+- name: showcasereg
+  sql: showcasereg
+  type: TEXT
+  primary_key: true
+  description: CHAR(12) PRIMARY KEY for identifying each showcase (e.g., 'SHOW00000012').
+  hidden: false
+- name: hallref
+  sql: hallref
+  type: TEXT
+  primary_key: false
+  description: CHAR(8) FOREIGN KEY referencing ExhibitionHalls(HallRegistry). Connects
+    the showcase to a particular hall.
+  hidden: false
+  sampled: ART10016, ART10101, ART10304, ART10454, ART10602, ART10796, ART10868, ART10877,
+    ART11061, ART11166, ART11238, ART11605, ART11692, ART11696, ART11818, ART11915,
+    ART11997, ART12066, ART12071, ART12569 ... (951 distinct)
+  sampled_values:
+  - ART10016
+  - ART10101
+  - ART10304
+  - ART10454
+  - ART10602
+  - ART10796
+  - ART10868
+  - ART10877
+  - ART11061
+  - ART11166
+  - ART11238
+  - ART11605
+  - ART11692
+  - ART11696
+  - ART11818
+  - ART11915
+  - ART11997
+  - ART12066
+  - ART12071
+  - ART12569
+  - ART12707
+  - ART12752
+  - ART12761
+  - ART12836
+  - ART12913
+  - ART12943
+  - ART12970
+  - ART13225
+  - ART13427
+  - ART13446
+  - ART13491
+  - ART13670
+  - ART13864
+  - ART13944
+  - ART13974
+  - ART14031
+  - ART14074
+  - ART14093
+  - ART14403
+  - ART14428
+  - ART14493
+  - ART14524
+  - ART14535
+  - ART14626
+  - ART14981
+  - ART14989
+  - ART15309
+  - ART15493
+  - ART15630
+  - ART15822
+  distinct_count: 951
+- name: airtightness
+  sql: airtightness
+  type: DOUBLE
+  primary_key: false
+  description: "Sample values are 90..100 (mean ~95), suggesting this column stores\
+    \ an airtightness QUALITY SCORE (higher = better) rather than the air-changes-per-day\
+    \ leakage rate the KB describes. The KB's 0.01..5.0 range is closer to `showcases.leakrate`\
+    \ (sampled 0.01..0.5). Any downstream encoding that needs the KB-described scale\
+    \ must define the mapping explicitly \u2014 the schema does not carry it. [kb=26]\
+    \ Showcases.Airtightness \u2014 Illustrates showcase airtightness measurement.\
+    \ A REAL value typically ranging from 0.01 (extremely airtight, less than 0.01\
+    \ air changes per day) to 5.0 (poor airtightness, multiple air changes per day).\
+    \ Museum-grade showcases typically maintain values below 0.1. [/kb=26]"
+  label: Showcases.Airtightness
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 26
+  sampled: 90 .. 100
+- name: showcasematerial
+  sql: showcasematerial
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(80) describing the material (possible values: ''Tempered Glass'',
+    ''Glass'', ''Acrylic'').'
+  hidden: false
+  sampled: Glass, Tempered Glass, Acrylic
+  sampled_values:
+  - Glass
+  - Tempered Glass
+  - Acrylic
+  distinct_count: 3
+- name: sealcondition
+  sql: sealcondition
+  type: TEXT
+  primary_key: false
+  description: "VARCHAR(30) indicating the seal\u2019s condition (possible values:\
+    \ 'Poor', 'Excellent', 'Good', 'Fair')."
+  hidden: false
+  sampled: Fair, Good, Excellent, Poor
+  sampled_values:
+  - Fair
+  - Good
+  - Excellent
+  - Poor
+  distinct_count: 4
+- name: maintstatus
+  sql: maintstatus
+  type: TEXT
+  primary_key: false
+  description: "CHAR(15) for the showcase\u2019s maintenance status (possible values:\
+    \ 'Overdue', 'Due', 'Good')."
+  hidden: false
+  sampled: 'Overdue                  , Due                      , Good                     '
+  sampled_values:
+  - 'Overdue                  '
+  - 'Due                      '
+  - 'Good                     '
+  distinct_count: 3
+- name: filterstatus
+  sql: filterstatus
+  type: TEXT
+  primary_key: false
+  description: 'TEXT detailing installed filters (possible values: ''Replace Now'',
+    ''Replace Soon'', ''Clean'').'
+  hidden: false
+  sampled: Replace Now, Replace Soon, Clean
+  sampled_values:
+  - Replace Now
+  - Replace Soon
+  - Clean
+  distinct_count: 3
+- name: silicagelstatus
+  sql: silicagelstatus
+  type: TEXT
+  primary_key: false
+  description: 'CHAR(20) noting the condition of silica gel (possible values: ''Active'',
+    ''Replace Soon'', ''Replace Now'').'
+  hidden: false
+  sampled: 'Active              , Replace Now         , Replace Soon        '
+  sampled_values:
+  - 'Active              '
+  - 'Replace Now         '
+  - 'Replace Soon        '
+  distinct_count: 3
+- name: silicagelchangedate
+  sql: silicagelchangedate
+  type: DATE
+  primary_key: false
+  description: DATE of the last silica gel replacement or recharge.
+  hidden: false
+  sampled: 2024-08-23 .. 2025-02-19
+- name: humiditybuffercap
+  sql: humiditybuffercap
+  type: INT
+  primary_key: false
+  description: "SMALLINT rating or index of the showcase\u2019s capacity to buffer\
+    \ humidity."
+  hidden: false
+  format:
+    type: integer
+  sampled: 70 .. 100
+- name: pollutantabsorbcap
+  sql: pollutantabsorbcap
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(5,2) for the pollutant absorption capacity (quantity or threshold).
+  hidden: false
+  format:
+    type: float
+  sampled: 60.0 .. 100.0
+- name: leakrate
+  sql: leakrate
+  type: DOUBLE
+  primary_key: false
+  description: REAL specifying the rate of air leakage, often tested to ensure stable
+    internal conditions.
+  hidden: false
+  format:
+    type: integer
+  sampled: 0.01 .. 0.5
+- name: pressurepa
+  sql: pressurepa
+  type: INT
+  primary_key: false
+  description: BIGINT capturing the internal pressure (in pascals) if pressurization
+    is used.
+  hidden: false
+  format:
+    type: integer
+  sampled: -5 .. 5
+- name: inertgassysstatus
+  sql: inertgassysstatus
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(50) describing any inert gas system status (possible values:
+    ''Active'', ''Standby'', ''Maintenance'').'
+  hidden: false
+  sampled: Maintenance, Active, Standby
+  sampled_values:
+  - Maintenance
+  - Active
+  - Standby
+  distinct_count: 3
+- name: firesuppresssys
+  sql: firesuppresssys
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(50) summarizing fire suppression condition (possible values:
+    ''Maintenance'', ''Active'', ''Standby'').'
+  hidden: false
+  sampled: Standby, Maintenance, Active
+  sampled_values:
+  - Standby
+  - Maintenance
+  - Active
+  distinct_count: 3
+- name: empowerstatus
+  sql: empowerstatus
+  type: TEXT
+  primary_key: false
+  description: 'CHAR(10) indicating emergency power readiness (possible values: ''Testing'',
+    ''Active'', ''Standby'').'
+  hidden: false
+  sampled: 'Active    , Testing   , Standby   '
+  sampled_values:
+  - 'Active    '
+  - 'Testing   '
+  - 'Standby   '
+  distinct_count: 3
+- name: backupsysstatus
+  sql: backupsysstatus
+  type: TEXT
+  primary_key: false
+  description: 'TEXT describing any backup systems (possible values: ''Ready'', ''Maintenance'',
+    ''Testing'') and their condition.'
+  hidden: false
+  sampled: Ready, Maintenance, Testing
+  sampled_values:
+  - Ready
+  - Maintenance
+  - Testing
+  distinct_count: 3
+measures: []
+aggregations: []
+joins:
+- target_model: exhibitionhalls
+  join_pairs:
+  - - hallref
+    - hallrecord
+  join_type: left
+filters: []
+hidden: false

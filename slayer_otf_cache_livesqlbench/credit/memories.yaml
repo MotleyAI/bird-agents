@@ -1,0 +1,669 @@
+- version: 1
+  id: credit_kb_0
+  learning: "KB 0 \u2014 Debt-to-Income Ratio (DTI)\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 0\nknowledge: Debt-to-Income Ratio (DTI)\ndescription: Calculates the proportion\
+    \ of a customer's monthly income that goes toward\n  debt payments.\ndefinition:\
+    \ DTI = \\frac{\\text{Total Monthly Debt Payments}}{\\text{Monthly Income}}\n\
+    \  = debincratio\ntype: calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: &id001 1970-01-01 00:00:00+00:00
+- version: 1
+  id: credit_kb_1
+  learning: "KB 1 \u2014 Credit Utilization Ratio (CUR)\n\nKB item (verbatim from\
+    \ credit_kb.jsonl):\nid: 1\nknowledge: Credit Utilization Ratio (CUR)\ndescription:\
+    \ Measures how much of available credit a customer is currently using.\ndefinition:\
+    \ CUR = \\frac{\\text{Total Credit Used}}{\\text{Total Credit Limit}} = credutil\n\
+    type: calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_2
+  learning: "KB 2 \u2014 Loan-to-Value Ratio (LTV)\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 2\nknowledge: Loan-to-Value Ratio (LTV)\ndescription: Calculates the ratio\
+    \ of loan amount to the value of the asset securing\n  the loan.\ndefinition:\
+    \ LTV = \\frac{\\text{Mortgage Balance}}{\\text{Property Value}} = \\frac{\\text{propfinancialdata.mortgagebits.mortbalance}}{\\\
+    text{propfinancialdata.propvalue}}\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_3
+  learning: "KB 3 \u2014 Customer Lifetime Value (CLV)\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 3\nknowledge: Customer Lifetime Value (CLV)\ndescription: Measures the total\
+    \ worth of a customer to the financial institution over\n  the entire relationship.\n\
+    definition: CLV = custlifeval, which factors in product usage, tenure, profitability,\n\
+    \  and expected future transactions.\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_4
+  learning: "KB 4 \u2014 Net Worth\n\nKB item (verbatim from credit_kb.jsonl):\nid:\
+    \ 4\nknowledge: Net Worth\ndescription: Calculates the financial value of a customer\
+    \ by subtracting liabilities\n  from assets.\ndefinition: Net Worth = \\text{Total\
+    \ Assets} - \\text{Total Liabilities} = totassets\n  - totliabs = networth\ntype:\
+    \ calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_5
+  learning: "KB 5 \u2014 Credit Health Score (CHS)\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 5\nknowledge: Credit Health Score (CHS)\ndescription: Composite score measuring\
+    \ overall credit wellness based on multiple factors.\ndefinition: \"CHS = 0.4\
+    \ \\xD7 \\\\frac{credscore}{850} + 0.2 \\xD7 (1 - credutil) + 0.2\\\n  \\ \\xD7\
+    \ (1 - debincratio) + 0.1 \\xD7 \\\\frac{credageyrs}{20} + 0.1 \\xD7 (1 - \\\\\
+    frac{delinqcount\\\n  \\ + latepaycount + choffs + bankr}{10}), \\\\text{where\
+    \ each component is capped at\\\n  \\ 1.0}\"\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_6
+  learning: "KB 6 \u2014 Financial Stability Index (FSI)\n\nKB item (verbatim from\
+    \ credit_kb.jsonl):\nid: 6\nknowledge: Financial Stability Index (FSI)\ndescription:\
+    \ Measures a customer's overall financial stability combining income, savings,\n\
+    \  and debt factors.\ndefinition: \"FSI = 0.3 \\xD7 (1 - debincratio) + 0.3 \\\
+    xD7 \\\\frac{liqassets}{mthincome\\\n  \\ \\xD7 6} + 0.2 \\xD7 \\\\frac{bankaccbal}{mthincome\
+    \ \\xD7 3} + 0.2 \\xD7 \\\\frac{savamount}{mthincome\\\n  \\ \\xD7 12}, \\\\text{where\
+    \ each component is capped at 1.0}\"\ntype: calculation_knowledge\nchildren_knowledge:\n\
+    - 0"
+  entities:
+  - credit
+  - memory:credit_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_7
+  learning: "KB 7 \u2014 Customer Engagement Score (CES)\n\nKB item (verbatim from\
+    \ credit_kb.jsonl):\nid: 7\nknowledge: Customer Engagement Score (CES)\ndescription:\
+    \ Quantifies how actively a customer uses bank products and services.\ndefinition:\
+    \ \"CES = 0.4 \\xD7 produsescore + 0.3 \\xD7 chanusescore + 0.2 \\xD7 bankrelscore\\\
+    \n  \\ + 0.1 \\xD7 \\\\frac{custservint}{10}, \\\\text{where each component is\
+    \ capped at 1.0}\"\ntype: calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_8
+  learning: "KB 8 \u2014 Risk-Adjusted Return (RAR)\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 8\nknowledge: Risk-Adjusted Return (RAR)\ndescription: Measures the profitability\
+    \ of a customer relationship adjusted for credit\n  risk.\ndefinition: \"RAR =\
+    \ profitscore \\xD7 (1 - \\\\frac{risklev}{4}), \\\\text{where risklev\\\n  \\\
+    \ is converted to a numeric scale: Low=1, Medium=2, High=3, Very High=4}\"\ntype:\
+    \ calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_9
+  learning: "KB 9 \u2014 Account Health Index (AHI)\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 9\nknowledge: Account Health Index (AHI)\ndescription: Composite measure of\
+    \ account quality considering age, mix, and payment\n  history.\ndefinition: \"\
+    AHI = 0.4 \\xD7 \\\\frac{avgaccage}{10} + 0.3 \\xD7 accmixscore + 0.3 \\xD7\\\n\
+    \  \\ payconsist, \\\\text{where each component is capped at 1.0}\"\ntype: calculation_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_10
+  learning: "KB 10 \u2014 Prime Customer\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 10\nknowledge: Prime Customer\ndescription: Identifies customers with excellent\
+    \ creditworthiness and financial stability.\ndefinition: A customer with credscore\
+    \ > 720, defhist of 'Excellent' or 'Good', and\n  risklev of 'Low'.\ntype: domain_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_11
+  learning: "KB 11 \u2014 Financially Vulnerable\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 11\nknowledge: Financially Vulnerable\ndescription: Identifies customers who\
+    \ may be financially stressed or at risk.\ndefinition: \"A customer with debincratio\
+    \ > 0.5, liqassets < mthincome \\xD7 3, and\\\n  \\ at least one of: delinqcount\
+    \ > 0, latepaycount > 1, or ovrfreq of 'Frequent'.\"\ntype: domain_knowledge\n\
+    children_knowledge:\n- 0"
+  entities:
+  - credit
+  - memory:credit_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_12
+  learning: "KB 12 \u2014 High-Value Customer\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 12\nknowledge: High-Value Customer\ndescription: Identifies customers with\
+    \ significant value to the institution.\ndefinition: A customer with custlifeval\
+    \ in the top quartile, tenureyrs > 5, and crossratio\n  > 0.5.\ntype: domain_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_13
+  learning: "KB 13 \u2014 Credit Builder\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 13\nknowledge: Credit Builder\ndescription: Identifies customers actively\
+    \ working to establish or improve credit.\ndefinition: A customer with credageyrs\
+    \ < 3, credinq > 2 in the past year, and recentbeh\n  of 'Improving'.\ntype: domain_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_14
+  learning: "KB 14 \u2014 Digital First Customer\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 14\nknowledge: Digital First Customer\ndescription: Identifies customers who\
+    \ primarily engage through digital channels.\ndefinition: A customer with chaninvdatablock.onlineuse\
+    \ of 'High' or chaninvdatablock.mobileuse\n  of 'High', and chaninvdatablock.autopay\
+    \ of 'Yes'.\ntype: domain_knowledge\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_15
+  learning: "KB 15 \u2014 Investment Focused\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 15\nknowledge: Investment Focused\ndescription: Identifies customers with\
+    \ significant investment activity and sophistication.\ndefinition: \"A customer\
+    \ with chaninvdatablock.invcluster.investport of 'Moderate'\\\n  \\ or 'Aggressive',\
+    \ chaninvdatablock.invcluster.investexp of 'Extensive', and investamt\\\n  \\\
+    \ > 0.3 \\xD7 totassets.\"\ntype: domain_knowledge\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_16
+  learning: "KB 16 \u2014 Revolving Credit Dependent\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 16\nknowledge: Revolving Credit Dependent\ndescription: Identifies customers\
+    \ who heavily rely on revolving credit.\ndefinition: A customer with credutil\
+    \ > 0.7, cardcount > 2, and cardpayhist of 'Fair'\n  or 'Poor'.\ntype: domain_knowledge\n\
+    children_knowledge:\n- 1"
+  entities:
+  - credit
+  - memory:credit_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_17
+  learning: "KB 17 \u2014 Property Risk Exposure\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 17\nknowledge: Property Risk Exposure\ndescription: Assesses risk related\
+    \ to a customer's property investment.\ndefinition: A customer with propfinancialdata.propown\
+    \ of 'Own', LTV > 0.8, and propfinancialdata.mortgagebits.mortpayhist\n  of 'Fair'\
+    \ or 'Poor'.\ntype: domain_knowledge\nchildren_knowledge:\n- 2"
+  entities:
+  - credit
+  - memory:credit_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_18
+  learning: "KB 18 \u2014 Frequent Credit Seeker\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 18\nknowledge: Frequent Credit Seeker\ndescription: Identifies customers frequently\
+    \ seeking new credit.\ndefinition: A customer with hardinq > 3 in the past six\
+    \ months, seekbeh of 'High',\n  and newaccage < 1.\ntype: domain_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_19
+  learning: "KB 19 \u2014 Over-Extended\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 19\nknowledge: Over-Extended\ndescription: Identifies customers who are financially\
+    \ over-extended.\ndefinition: 'A customer with DTI > 0.43, CUR > 0.8, and at least\
+    \ one of: ovrfreq of\n  ''Frequent'', bouncecount > 0 in the past three months.'\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 0\n- 1"
+  entities:
+  - credit
+  - memory:credit_kb_0
+  - memory:credit_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_20
+  learning: "KB 20 \u2014 Credit Score Categories\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 20\nknowledge: Credit Score Categories\ndescription: Illustrates the meaning\
+    \ of different credit score ranges.\ndefinition: 'Credit scores (credscore) typically\
+    \ range from 300-850. 300-579: Poor,\n  580-669: Fair, 670-739: Good, 740-799:\
+    \ Very Good, 800-850: Excellent, Otherwise:\n  Unknown. Higher scores indicate\
+    \ lower credit risk.'\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_21
+  learning: "KB 21 \u2014 Income Stability Score\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 21\nknowledge: Income Stability Score\ndescription: Illustrates the meaning\
+    \ of income stability scores.\ndefinition: Income stability (incstabscore) ranges\
+    \ from 0-10. Scores below 3 indicate\n  highly variable income, 3-6 indicates\
+    \ moderate stability, and above 6 indicates\n  highly stable income sources.\n\
+    type: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_22
+  learning: "KB 22 \u2014 Debt-to-Income Ratio Interpretation\n\nKB item (verbatim\
+    \ from credit_kb.jsonl):\nid: 22\nknowledge: Debt-to-Income Ratio Interpretation\n\
+    description: Illustrates what different debt-to-income ratios mean for lending\
+    \ decisions.\ndefinition: Debt-to-Income ratio (debincratio) ranges from 0-1 (or\
+    \ above). Below 0.36\n  is typically considered excellent, 0.36-0.43 is good,\
+    \ 0.43-0.50 is concerning, and\n  above 0.50 is risky for new credit approval.\n\
+    type: value_illustration\nchildren_knowledge:\n- 0"
+  entities:
+  - credit
+  - memory:credit_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_23
+  learning: "KB 23 \u2014 Credit Utilization Impact\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 23\nknowledge: Credit Utilization Impact\ndescription: Illustrates how credit\
+    \ utilization affects credit scores.\ndefinition: Credit Utilization (credutil)\
+    \ ranges from 0-1 (or above). Utilization\n  under 0.30 is optimal for credit\
+    \ scores, 0.30-0.50 has moderate negative impact,\n  0.50-0.70 has significant\
+    \ negative impact, and above 0.70 severely impacts credit\n  scores.\ntype: value_illustration\n\
+    children_knowledge:\n- 1"
+  entities:
+  - credit
+  - memory:credit_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_24
+  learning: "KB 24 \u2014 Loan-to-Value Ratio Significance\n\nKB item (verbatim from\
+    \ credit_kb.jsonl):\nid: 24\nknowledge: Loan-to-Value Ratio Significance\ndescription:\
+    \ Illustrates what different LTV ratios mean for mortgage lending.\ndefinition:\
+    \ Loan-to-Value ratio (LTV) typically ranges from 0-1 (or above). Below\n  0.80\
+    \ generally avoids private mortgage insurance requirements, 0.80-0.95 typically\n\
+    \  requires PMI, and above 0.95 indicates high leverage and increased lending\
+    \ risk.\ntype: value_illustration\nchildren_knowledge:\n- 2"
+  entities:
+  - credit
+  - memory:credit_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_25
+  learning: "KB 25 \u2014 Risk Level Classifications\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 25\nknowledge: Risk Level Classifications\ndescription: Illustrates what different\
+    \ risk level classifications mean.\ndefinition: Risk level (risklev) values indicate\
+    \ likelihood of default or financial\n  difficulty. 'Low' indicates minimal risk,\
+    \ 'Medium' indicates moderate risk requiring\n  standard monitoring, 'High' indicates\
+    \ significant risk requiring enhanced monitoring,\n  and 'Very High' indicates\
+    \ severe risk requiring active intervention.\ntype: value_illustration\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_26
+  learning: "KB 26 \u2014 Payment History Quality\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 26\nknowledge: Payment History Quality\ndescription: Illustrates what different\
+    \ payment history classifications indicate.\ndefinition: Payment history (defhist,\
+    \ mortpayhist, rentpayhist, cardpayhist, loanpayhist)\n  classifications indicate\
+    \ reliability. 'Excellent' indicates no late payments, 'Good'\n  indicates minimal\
+    \ late payments, 'Fair' indicates occasional missed payments, 'Poor'\n  indicates\
+    \ regular missed payments, 'Current' indicates being up to date, and 'Past'\n\
+    \  indicates historical data.\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_27
+  learning: "KB 27 \u2014 Cross-Sell Ratio Meaning\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 27\nknowledge: Cross-Sell Ratio Meaning\ndescription: Illustrates what different\
+    \ cross-sell ratio values indicate.\ndefinition: Cross-sell ratio (crossratio)\
+    \ ranges from 0-1. Values below 0.2 indicate\n  minimal product relationships,\
+    \ 0.2-0.5 indicates moderate opportunity, and above\n  0.5 indicates strong existing\
+    \ relationship with high additional sales potential.\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_28
+  learning: "KB 28 \u2014 Account Mix Score Interpretation\n\nKB item (verbatim from\
+    \ credit_kb.jsonl):\nid: 28\nknowledge: Account Mix Score Interpretation\ndescription:\
+    \ Illustrates what different account mix scores represent.\ndefinition: Account\
+    \ mix score (accmixscore) ranges from 0-1. Higher scores indicate\n  a healthy\
+    \ diversity of account types (revolving, installment, mortgage, etc.), which\n\
+    \  positively impacts credit scores and indicates financial sophistication.\n\
+    type: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_29
+  learning: "KB 29 \u2014 Churn Rate Significance\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 29\nknowledge: Churn Rate Significance\ndescription: Illustrates what different\
+    \ churn rate values indicate about customer\n  retention risk.\ndefinition: Churn\
+    \ rate (churnrate) ranges from 0-1. Values below 0.1 indicate low\n  attrition\
+    \ risk, 0.1-0.2 indicates moderate risk, 0.2-0.3 indicates high risk, and\n  above\
+    \ 0.3 indicates severe risk of customer loss requiring immediate relationship\n\
+    \  management intervention.\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_30
+  learning: "KB 30 \u2014 Total Debt Service Ratio (TDSR)\n\nKB item (verbatim from\
+    \ credit_kb.jsonl):\nid: 30\nknowledge: Total Debt Service Ratio (TDSR)\ndescription:\
+    \ Extended debt ratio that accounts for all financial obligations including\n\
+    \  housing costs.\ndefinition: TDSR = DTI + \\frac{\\text{Housing Costs}}{\\text{Monthly\
+    \ Income}}, \\text{where\n  Housing Costs are determined by propfinancialdata\
+    \ and DTI is the Debt-to-Income\n  Ratio}\ntype: calculation_knowledge\nchildren_knowledge:\n\
+    - 0"
+  entities:
+  - credit
+  - memory:credit_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_31
+  learning: "KB 31 \u2014 Credit Quality Index (CQI)\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 31\nknowledge: Credit Quality Index (CQI)\ndescription: Comprehensive measure\
+    \ of overall credit quality incorporating credit\n  score and utilization.\ndefinition:\
+    \ \"CQI = 0.6 \\xD7 \\\\frac{credscore}{850} + 0.4 \\xD7 (1 - CUR), \\\\text{where\\\
+    \n  \\ CUR is the Credit Utilization Ratio}\"\ntype: calculation_knowledge\nchildren_knowledge:\n\
+    - 1"
+  entities:
+  - credit
+  - memory:credit_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_32
+  learning: "KB 32 \u2014 Housing Affordability Ratio (HAR)\n\nKB item (verbatim from\
+    \ credit_kb.jsonl):\nid: 32\nknowledge: Housing Affordability Ratio (HAR)\ndescription:\
+    \ Measures the affordability of housing costs relative to income.\ndefinition:\
+    \ \"HAR = \\\\frac{\\\\text{Monthly Housing Payment}}{\\\\text{Monthly Income}}\\\
+    \n  \\ \\xD7 100\\\\%, \\\\text{where Monthly Housing Payment is derived from\
+    \ propfinancialdata\\\n  \\ and LTV calculations}\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 2"
+  entities:
+  - credit
+  - memory:credit_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_33
+  learning: "KB 33 \u2014 Financial Vulnerability Score (FVS)\n\nKB item (verbatim\
+    \ from credit_kb.jsonl):\nid: 33\nknowledge: Financial Vulnerability Score (FVS)\n\
+    description: Quantifies financial fragility by combining debt burden and savings\
+    \ adequacy.\ndefinition: \"FVS = 0.5 \\xD7 DTI + 0.5 \\xD7 (1 - \\\\frac{liqassets}{mthincome\
+    \ \\xD7 6}),\\\n  \\ \\\\text{where DTI is the Debt-to-Income Ratio and the second\
+    \ term measures emergency\\\n  \\ fund adequacy}\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 0"
+  entities:
+  - credit
+  - memory:credit_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_34
+  learning: "KB 34 \u2014 Customer Retention Risk (CRR)\n\nKB item (verbatim from\
+    \ credit_kb.jsonl):\nid: 34\nknowledge: Customer Retention Risk (CRR)\ndescription:\
+    \ Calculates risk of customer attrition based on engagement and satisfaction\n\
+    \  metrics.\ndefinition: \"CRR = 0.4 \\xD7 churnrate + 0.3 \\xD7 (1 - CES) + 0.3\
+    \ \\xD7 \\\\frac{complainthist}{3},\\\n  \\ \\\\text{where CES is the Customer\
+    \ Engagement Score and complainthist is converted\\\n  \\ to numeric (Low=1, Medium=2,\
+    \ High=3)}\"\ntype: calculation_knowledge\nchildren_knowledge:\n- 7"
+  entities:
+  - credit
+  - memory:credit_kb_7
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_35
+  learning: "KB 35 \u2014 Asset Liquidity Ratio (ALR)\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 35\nknowledge: Asset Liquidity Ratio (ALR)\ndescription: Measures the proportion\
+    \ of customer assets that can be quickly converted\n  to cash.\ndefinition: ALR\
+    \ = \\frac{liqassets}{totassets} = \\frac{liqassets}{Net Worth + totliabs},\n\
+    \  \\text{where Net Worth is the difference between assets and liabilities}\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 4"
+  entities:
+  - credit
+  - memory:credit_kb_4
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_36
+  learning: "KB 36 \u2014 Credit Risk Intensity (CRI)\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 36\nknowledge: Credit Risk Intensity (CRI)\ndescription: Advanced measure\
+    \ of credit risk that incorporates payment history and\n  account diversity.\n\
+    definition: \"CRI = 0.5 \\xD7 (1 - \\\\frac{credscore}{850}) + 0.3 \\xD7 \\\\\
+    frac{delinqcount\\\n  \\ + latepaycount + choffs}{10} + 0.2 \\xD7 (1 - AHI), \\\
+    \\text{where AHI is the Account\\\n  \\ Health Index}\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 9"
+  entities:
+  - credit
+  - memory:credit_kb_9
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_37
+  learning: "KB 37 \u2014 Investment Portfolio Quality (IPQ)\n\nKB item (verbatim\
+    \ from credit_kb.jsonl):\nid: 37\nknowledge: Investment Portfolio Quality (IPQ)\n\
+    description: Evaluates the quality and performance of customer's investment allocations.\n\
+    definition: \"IPQ = 0.4 \\xD7 RAR + 0.4 \\xD7 \\\\frac{investamt}{totassets} +\
+    \ 0.2 \\xD7\\\n  \\ \\\\frac{chaninvdatablock.invcluster.investexp}{3}, \\\\text{where\
+    \ RAR is the Risk-Adjusted\\\n  \\ Return and investexp is converted to numeric\
+    \ (Limited=1, Moderate=2, Extensive=3)}\"\ntype: calculation_knowledge\nchildren_knowledge:\n\
+    - 8"
+  entities:
+  - credit
+  - memory:credit_kb_8
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_38
+  learning: "KB 38 \u2014 Banking Relationship Strength (BRS)\n\nKB item (verbatim\
+    \ from credit_kb.jsonl):\nid: 38\nknowledge: Banking Relationship Strength (BRS)\n\
+    description: Quantifies the depth and quality of a customer's banking relationship.\n\
+    definition: \"BRS = 0.3 \\xD7 bankrelscore + 0.3 \\xD7 (1 - churnrate) + 0.4 \\\
+    xD7 CES,\\\n  \\ \\\\text{where CES is the Customer Engagement Score}\"\ntype:\
+    \ calculation_knowledge\nchildren_knowledge:\n- 7"
+  entities:
+  - credit
+  - memory:credit_kb_7
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_39
+  learning: "KB 39 \u2014 Credit Health Momentum (CHM)\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 39\nknowledge: Credit Health Momentum (CHM)\ndescription: Measures the trajectory\
+    \ of a customer's credit health over time.\ndefinition: \"CHM = CHS \\xD7 (1 +\
+    \ \\\\Delta_\\\\text{recentbeh}), \\\\text{where CHS is the\\\n  \\ Credit Health\
+    \ Score and } \\\\Delta_\\\\text{recentbeh} \\\\text{ is +0.1 for 'Improving',\\\
+    \n  \\ 0 for 'Stable', and -0.1 for 'Deteriorating'}\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 5"
+  entities:
+  - credit
+  - memory:credit_kb_5
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_40
+  learning: "KB 40 \u2014 Mortgage Risk Profile\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 40\nknowledge: Mortgage Risk Profile\ndescription: Identifies customers with\
+    \ elevated mortgage-related risk factors.\ndefinition: A customer with high LTV\
+    \ (Loan-to-Value Ratio > 0.9), negative equity\n  risk (LTV > 1.0), or payment\
+    \ stress (propfinancialdata.mortgagebits.mortpayhist\n  of 'Fair' or 'Poor').\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 2"
+  entities:
+  - credit
+  - memory:credit_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_41
+  learning: "KB 41 \u2014 Credit Utilization Alert\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 41\nknowledge: Credit Utilization Alert\ndescription: Identifies customers\
+    \ with problematic credit utilization patterns.\ndefinition: \"A customer with\
+    \ CUR (Credit Utilization Ratio) > 0.8, an increasing trend\\\n  \\ in utilization,\
+    \ and limited available credit (totcredlimit < mthincome \\xD7 2).\"\ntype: domain_knowledge\n\
+    children_knowledge:\n- 1"
+  entities:
+  - credit
+  - memory:credit_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_42
+  learning: "KB 42 \u2014 Financial Stress Indicator\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 42\nknowledge: Financial Stress Indicator\ndescription: Identifies customers\
+    \ showing multiple signs of financial difficulty.\ndefinition: A customer with\
+    \ FVS (Financial Vulnerability Score) > 0.7, recent payment\n  issues (delinqcount\
+    \ > 0 or latepaycount > 0 in past six months), and negative Net\n  Worth.\ntype:\
+    \ domain_knowledge\nchildren_knowledge:\n- 4\n- 33"
+  entities:
+  - credit
+  - memory:credit_kb_4
+  - memory:credit_kb_33
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_43
+  learning: "KB 43 \u2014 Premium Banking Candidate\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 43\nknowledge: Premium Banking Candidate\ndescription: Identifies customers\
+    \ who are good candidates for premium banking services.\ndefinition: A customer\
+    \ with high CQI (Credit Quality Index > 0.8), strong FSI (Financial\n  Stability\
+    \ Index > 0.7), and significant assets (totassets > $250,000).\ntype: domain_knowledge\n\
+    children_knowledge:\n- 6\n- 31"
+  entities:
+  - credit
+  - memory:credit_kb_6
+  - memory:credit_kb_31
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_44
+  learning: "KB 44 \u2014 Digital Channel Opportunity\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 44\nknowledge: Digital Channel Opportunity\ndescription: Identifies customers\
+    \ who would benefit from increased digital engagement.\ndefinition: A customer\
+    \ with low digital engagement (chaninvdatablock.onlineuse not\n  'High' and chaninvdatablock.mobileuse\
+    \ not 'High') but high BRS (Banking Relationship\n  Strength > 0.7) and multiple\
+    \ products (produsescore > 0.5).\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 38"
+  entities:
+  - credit
+  - memory:credit_kb_38
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_45
+  learning: "KB 45 \u2014 Credit Building Opportunity\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 45\nknowledge: Credit Building Opportunity\ndescription: Identifies customers\
+    \ who would benefit from credit-building products.\ndefinition: A customer with\
+    \ limited credit history (credageyrs < 2), low CQI (Credit\n  Quality Index <\
+    \ 0.6), but positive banking behavior (bouncecount = 0 and bankrelscore\n  > 0.6).\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 31"
+  entities:
+  - credit
+  - memory:credit_kb_31
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_46
+  learning: "KB 46 \u2014 Investment Services Target\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 46\nknowledge: Investment Services Target\ndescription: Identifies customers\
+    \ who are good candidates for investment services.\ndefinition: A customer with\
+    \ high ALR (Asset Liquidity Ratio > 0.3) and strong income\n  (mthincome > $5,000).\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 35"
+  entities:
+  - credit
+  - memory:credit_kb_35
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_47
+  learning: "KB 47 \u2014 Declining Credit Health\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 47\nknowledge: Declining Credit Health\ndescription: Identifies customers\
+    \ with deteriorating credit health requiring intervention.\ndefinition: A customer\
+    \ with negative CHM (Credit Health Momentum < 0), increasing\n  CRI (Credit Risk\
+    \ Intensity growing by >10% in 6 months), and rising DTI (Debt-to-Income\n  Ratio\
+    \ increasing by >5% in 6 months).\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 0\n- 36\n- 39"
+  entities:
+  - credit
+  - memory:credit_kb_0
+  - memory:credit_kb_36
+  - memory:credit_kb_39
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_48
+  learning: "KB 48 \u2014 Relationship Attrition Risk\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 48\nknowledge: Relationship Attrition Risk\ndescription: Identifies customers\
+    \ at high risk of ending their banking relationship.\ndefinition: A customer with\
+    \ high CRR (Customer Retention Risk > 0.7), declining product\n  usage (decreasing\
+    \ produsescore), and competitive shopping behavior (hardinq > 2\n  in past 3 months).\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 34"
+  entities:
+  - credit
+  - memory:credit_kb_34
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_49
+  learning: "KB 49 \u2014 Cross-Sell Priority\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 49\nknowledge: Cross-Sell Priority\ndescription: Identifies customers who\
+    \ should be prioritized for cross-selling efforts.\ndefinition: A customer with\
+    \ strong CES (Customer Engagement Score > 0.7), positive\n  CQI (Credit Quality\
+    \ Index > 0.7), and unrealized product potential (crossratio >\n  0.5 but produsescore\
+    \ < 0.5).\ntype: domain_knowledge\nchildren_knowledge:\n- 7\n- 31"
+  entities:
+  - credit
+  - memory:credit_kb_7
+  - memory:credit_kb_31
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_50
+  learning: "KB 50 \u2014 High Engagement Criteria\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 50\nknowledge: High Engagement Criteria\ndescription: Defines customers with\
+    \ a high level of engagement with bank products\n  and services.\ndefinition:\
+    \ A Customer Engagement Score (CES) greater than 0.7.\ntype: domain_knowledge\n\
+    children_knowledge:\n- 7"
+  entities:
+  - credit
+  - memory:credit_kb_7
+  query: null
+  created_at: *id001
+- version: 1
+  id: credit_kb_51
+  learning: "KB 51 \u2014 Cohort Quarter\n\nKB item (verbatim from credit_kb.jsonl):\n\
+    id: 51\nknowledge: Cohort Quarter\ndescription: Quarter of the year when the customer\
+    \ started with the institution.\ndefinition: Quarter of the year when the customer\
+    \ started with the institution (scoring\n  date minus tenure years)\ntype: domain_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - credit
+  query: null
+  created_at: *id001

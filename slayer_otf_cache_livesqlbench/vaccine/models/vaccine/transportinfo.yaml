@@ -1,0 +1,637 @@
+version: 7
+name: transportinfo
+sql_table: transportinfo
+query_variables: {}
+data_source: vaccine
+columns:
+- name: vehiclereg
+  sql: vehiclereg
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key uniquely identifying the transport vehicle
+    record.
+  hidden: false
+- name: vehiclekind
+  sql: vehiclekind
+  type: TEXT
+  primary_key: false
+  description: An enum (VehicleKind_enum) describing the vehicle type (e.g., 'Refrigerated
+    Truck', 'Cargo Aircraft', 'Reefer Container').
+  hidden: false
+  sampled: Refrigerated Truck, Reefer Container, Cargo Aircraft
+  sampled_values:
+  - Refrigerated Truck
+  - Reefer Container
+  - Cargo Aircraft
+  distinct_count: 3
+- name: vehtempc
+  sql: vehtempc
+  type: DOUBLE
+  primary_key: false
+  description: "A REAL number for the current measured temperature (\xB0C) inside\
+    \ the vehicle."
+  hidden: false
+  format:
+    type: integer
+  sampled: -90 .. -60
+- name: speedkm
+  sql: speedkm
+  type: DOUBLE
+  primary_key: false
+  description: "A REAL number specifying the vehicle\u2019s current speed in km/h."
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 896
+- name: distdonekm
+  sql: distdonekm
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(9,2) indicating the distance already traveled (in kilometers).
+  hidden: false
+  format:
+    type: float
+  sampled: 16.0 .. 9988.0
+- name: distleftkm
+  sql: distleftkm
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(9,2) specifying the remaining distance (in kilometers) until
+    destination.
+  hidden: false
+  format:
+    type: float
+  sampled: 2.0 .. 4998.0
+- name: eta
+  sql: eta
+  type: TIMESTAMP
+  primary_key: false
+  description: A TIMESTAMP for the estimated time of arrival at the destination.
+  hidden: false
+  sampled: 2025-02-22 02:32:08, 2025-02-22 04:32:08, 2025-02-20 02:32:08, 2025-02-20
+    09:32:08, 2025-02-20 22:32:08, 2025-02-21 20:32:08, 2025-02-19 15:32:08, 2025-02-20
+    08:32:08, 2025-02-20 13:32:08, 2025-02-20 15:32:08, 2025-02-20 23:32:08, 2025-02-21
+    08:32:08, 2025-02-20 04:32:08, 2025-02-20 16:32:08, 2025-02-21 00:32:08, 2025-02-21
+    03:32:08, 2025-02-21 16:32:08, 2025-02-22 06:32:08, 2025-02-19 10:32:08, 2025-02-19
+    22:32:08 ... (72 distinct)
+  sampled_values:
+  - '2025-02-22 02:32:08'
+  - '2025-02-22 04:32:08'
+  - '2025-02-20 02:32:08'
+  - '2025-02-20 09:32:08'
+  - '2025-02-20 22:32:08'
+  - '2025-02-21 20:32:08'
+  - '2025-02-19 15:32:08'
+  - '2025-02-20 08:32:08'
+  - '2025-02-20 13:32:08'
+  - '2025-02-20 15:32:08'
+  - '2025-02-20 23:32:08'
+  - '2025-02-21 08:32:08'
+  - '2025-02-20 04:32:08'
+  - '2025-02-20 16:32:08'
+  - '2025-02-21 00:32:08'
+  - '2025-02-21 03:32:08'
+  - '2025-02-21 16:32:08'
+  - '2025-02-22 06:32:08'
+  - '2025-02-19 10:32:08'
+  - '2025-02-19 22:32:08'
+  - '2025-02-20 11:32:08'
+  - '2025-02-20 12:32:08'
+  - '2025-02-20 18:32:08'
+  - '2025-02-21 01:32:08'
+  - '2025-02-21 10:32:08'
+  - '2025-02-21 14:32:08'
+  - '2025-02-19 09:32:08'
+  - '2025-02-19 18:32:08'
+  - '2025-02-19 21:32:08'
+  - '2025-02-19 23:32:08'
+  - '2025-02-20 10:32:08'
+  - '2025-02-20 20:32:08'
+  - '2025-02-21 07:32:08'
+  - '2025-02-21 09:32:08'
+  - '2025-02-21 15:32:08'
+  - '2025-02-21 17:32:08'
+  - '2025-02-22 05:32:08'
+  - '2025-02-22 07:32:08'
+  - '2025-02-19 12:32:08'
+  - '2025-02-19 17:32:08'
+  - '2025-02-19 19:32:08'
+  - '2025-02-20 00:32:08'
+  - '2025-02-21 02:32:08'
+  - '2025-02-21 22:32:08'
+  - '2025-02-19 14:32:08'
+  - '2025-02-19 20:32:08'
+  - '2025-02-20 03:32:08'
+  - '2025-02-20 06:32:08'
+  - '2025-02-20 07:32:08'
+  - '2025-02-21 06:32:08'
+  distinct_count: 72
+- name: departsite
+  sql: departsite
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(100) naming the departure location/site.
+  hidden: false
+  sampled: South Jennifer, West Jennifer, Aliciachester, East Crystal, East Johnny,
+    East Matthewton, East Phillip, Jenniferburgh, Jennifermouth, Jessicamouth, Johnport,
+    Johnsonbury, Josephfort, Kimberlychester, Lake David, Lake Gregory, Melissastad,
+    New Joshua, New Leslie, New Tara ... (865 distinct)
+  sampled_values:
+  - South Jennifer
+  - West Jennifer
+  - Aliciachester
+  - East Crystal
+  - East Johnny
+  - East Matthewton
+  - East Phillip
+  - Jenniferburgh
+  - Jennifermouth
+  - Jessicamouth
+  - Johnport
+  - Johnsonbury
+  - Josephfort
+  - Kimberlychester
+  - Lake David
+  - Lake Gregory
+  - Melissastad
+  - New Joshua
+  - New Leslie
+  - New Tara
+  - New Teresa
+  - North Robert
+  - Port Chad
+  - Port Curtis
+  - Port Gregory
+  - Smithland
+  - Smithmouth
+  - Smithview
+  - South Lisa
+  - South Michael
+  - South Robert
+  - West Laura
+  - West Lisa
+  - Aaronbury
+  - Alexandertown
+  - Alexandrashire
+  - Aliciaburgh
+  - Allisonbury
+  - Amandaburgh
+  - Amandastad
+  - Amyhaven
+  - Andreamouth
+  - Andrefort
+  - Andreshire
+  - Andrewfurt
+  - Anneport
+  - Annview
+  - Anthonymouth
+  - Antonioview
+  - Arianastad
+  distinct_count: 865
+- name: currentsite
+  sql: currentsite
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(100) for the current location or site.
+  hidden: false
+  sampled: Lake Nicole, East Caleb, East Christopher, East David, East Robin, Johnside,
+    Katherineport, Lake Christopher, Lake William, Markhaven, Michaelmouth, Morganhaven,
+    New Nicole, Nicoleberg, North James, Port Christopherberg, Rodriguezside, Smithmouth,
+    South James, South Susan ... (876 distinct)
+  sampled_values:
+  - Lake Nicole
+  - East Caleb
+  - East Christopher
+  - East David
+  - East Robin
+  - Johnside
+  - Katherineport
+  - Lake Christopher
+  - Lake William
+  - Markhaven
+  - Michaelmouth
+  - Morganhaven
+  - New Nicole
+  - Nicoleberg
+  - North James
+  - Port Christopherberg
+  - Rodriguezside
+  - Smithmouth
+  - South James
+  - South Susan
+  - West Amy
+  - Williamchester
+  - Williamsside
+  - Adrianaton
+  - Adrianfurt
+  - Alexanderhaven
+  - Alicialand
+  - Aliciamouth
+  - Alisonborough
+  - Allisonmouth
+  - Alyssaland
+  - Amandaborough
+  - Amandabury
+  - Amberfurt
+  - Amyfort
+  - Amyside
+  - Amyton
+  - Amyville
+  - Andersonland
+  - Andersonmouth
+  - Andersonview
+  - Andradeview
+  - Andreachester
+  - Andreaview
+  - Andrewberg
+  - Andrewfort
+  - Andrewmouth
+  - Andrewsmouth
+  - Andrewtown
+  - Angelabury
+  distinct_count: 876
+- name: destsite
+  sql: destsite
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(100) naming the destination location/site.
+  hidden: false
+  sampled: East John, West Brian, Ashleyborough, Joshuafort, Lake Christopher, Lake
+    Jennifer, Lake John, Lake William, Lopezbury, Matthewburgh, Michaelmouth, Millsville,
+    Mollybury, New Benjamin, New Jennifer, Nicoleland, North Johnchester, North Kimberly,
+    Port Jonathan, Port Stephanie ... (866 distinct)
+  sampled_values:
+  - East John
+  - West Brian
+  - Ashleyborough
+  - Joshuafort
+  - Lake Christopher
+  - Lake Jennifer
+  - Lake John
+  - Lake William
+  - Lopezbury
+  - Matthewburgh
+  - Michaelmouth
+  - Millsville
+  - Mollybury
+  - New Benjamin
+  - New Jennifer
+  - Nicoleland
+  - North Johnchester
+  - North Kimberly
+  - Port Jonathan
+  - Port Stephanie
+  - Port Stephanieborough
+  - Ryanberg
+  - South Christopher
+  - South Elizabeth
+  - South Jennifer
+  - South John
+  - South Scott
+  - South Vanessatown
+  - West Jeffrey
+  - West Katherine
+  - West Stephanie
+  - West Steven
+  - Aaronbury
+  - Abigailton
+  - Adamsberg
+  - Adrianburgh
+  - Adrienneview
+  - Alexisview
+  - Allenfurt
+  - Allisonstad
+  - Allisontown
+  - Alvarezton
+  - Amandaborough
+  - Amandaburgh
+  - Amberbury
+  - Amymouth
+  - Andersonhaven
+  - Andrealand
+  - Andrewhaven
+  - Andrewshire
+  distinct_count: 866
+- name: gpsflag
+  sql: gpsflag
+  type: TEXT
+  primary_key: false
+  description: An enum (GPSTrackingStatus_enum) for GPS tracking status (e.g., 'Active',
+    'Lost', 'Limited').
+  hidden: false
+  sampled: Active, Lost, Limited
+  sampled_values:
+  - Active
+  - Lost
+  - Limited
+  distinct_count: 3
+- name: latvalue
+  sql: latvalue
+  type: DOUBLE
+  primary_key: false
+  description: "A DOUBLE PRECISION value for the vehicle\u2019s current latitude."
+  hidden: false
+  format:
+    type: integer
+  sampled: -89.707071 .. 89.850577
+- name: lonvalue
+  sql: lonvalue
+  type: DOUBLE
+  primary_key: false
+  description: "A DOUBLE PRECISION value for the vehicle\u2019s current longitude."
+  hidden: false
+  format:
+    type: integer
+  sampled: -179.523817 .. 179.625169
+- name: altmeter
+  sql: altmeter
+  type: DOUBLE
+  primary_key: false
+  description: "A REAL number denoting the vehicle\u2019s altitude in meters above\
+    \ sea level."
+  hidden: false
+  format:
+    type: integer
+  sampled: 11.4 .. 9997.6
+- name: locupdatemin
+  sql: locupdatemin
+  type: INT
+  primary_key: false
+  description: "A SMALLINT specifying how frequently (in minutes) the vehicle\u2019\
+    s location data is updated."
+  hidden: false
+  format:
+    type: integer
+  sampled: 5 .. 30
+- name: locupdatemark
+  sql: locupdatemark
+  type: TIMESTAMP
+  primary_key: false
+  description: A TIMESTAMP noting the last recorded location update time.
+  hidden: false
+  sampled: 2025-02-19 08:05:08, 2025-02-19 08:16:08, 2025-02-19 08:24:08, 2025-02-19
+    08:27:08, 2025-02-19 08:10:08, 2025-02-19 08:19:08, 2025-02-19 08:21:08, 2025-02-19
+    08:02:08, 2025-02-19 08:06:08, 2025-02-19 08:07:08, 2025-02-19 08:04:08, 2025-02-19
+    08:18:08, 2025-02-19 08:17:08, 2025-02-19 08:31:08, 2025-02-19 08:03:08, 2025-02-19
+    08:09:08, 2025-02-19 08:28:08, 2025-02-19 08:15:08, 2025-02-19 08:12:08, 2025-02-19
+    08:29:08
+  sampled_values:
+  - '2025-02-19 08:05:08'
+  - '2025-02-19 08:16:08'
+  - '2025-02-19 08:24:08'
+  - '2025-02-19 08:27:08'
+  - '2025-02-19 08:10:08'
+  - '2025-02-19 08:19:08'
+  - '2025-02-19 08:21:08'
+  - '2025-02-19 08:02:08'
+  - '2025-02-19 08:06:08'
+  - '2025-02-19 08:07:08'
+  - '2025-02-19 08:04:08'
+  - '2025-02-19 08:18:08'
+  - '2025-02-19 08:17:08'
+  - '2025-02-19 08:31:08'
+  - '2025-02-19 08:03:08'
+  - '2025-02-19 08:09:08'
+  - '2025-02-19 08:28:08'
+  - '2025-02-19 08:15:08'
+  - '2025-02-19 08:12:08'
+  - '2025-02-19 08:29:08'
+  - '2025-02-19 08:08:08'
+  - '2025-02-19 08:13:08'
+  - '2025-02-19 08:26:08'
+  - '2025-02-19 08:30:08'
+  - '2025-02-19 08:20:08'
+  - '2025-02-19 08:23:08'
+  - '2025-02-19 08:25:08'
+  - '2025-02-19 08:32:08'
+  - '2025-02-19 08:22:08'
+  - '2025-02-19 08:11:08'
+  - '2025-02-19 08:14:08'
+  distinct_count: 31
+- name: transmode
+  sql: transmode
+  type: TEXT
+  primary_key: false
+  description: An enum (TransportMode_enum) indicating the mode of transport (e.g.,
+    'Road', 'Rail', 'Air', 'Sea').
+  hidden: false
+  sampled: Air, Road, Sea, Rail
+  sampled_values:
+  - Air
+  - Road
+  - Sea
+  - Rail
+  distinct_count: 4
+- name: carrlabel
+  sql: carrlabel
+  type: TEXT
+  primary_key: false
+  description: A TEXT field with carrier or transporter identification/labeling information.
+  hidden: false
+  sampled: Johnson Ltd, Lee LLC, Smith PLC, Butler Inc, Garcia Inc, George LLC, Jackson
+    PLC, Morrison Group, Obrien LLC, Ramirez Ltd, Sanchez PLC, Smith Group, Smith
+    Ltd, Torres LLC, Turner Inc, Watson Inc, Williams and Sons, Acosta PLC, Adams-Suarez,
+    Adkins Inc ... (879 distinct)
+  sampled_values:
+  - Johnson Ltd
+  - Lee LLC
+  - Smith PLC
+  - Butler Inc
+  - Garcia Inc
+  - George LLC
+  - Jackson PLC
+  - Morrison Group
+  - Obrien LLC
+  - Ramirez Ltd
+  - Sanchez PLC
+  - Smith Group
+  - Smith Ltd
+  - Torres LLC
+  - Turner Inc
+  - Watson Inc
+  - Williams and Sons
+  - Acosta PLC
+  - Adams-Suarez
+  - Adkins Inc
+  - Adkins, Tran and Payne
+  - Aguilar-Ingram
+  - Aguilar-Jackson
+  - Alexander Inc
+  - Alexander PLC
+  - Alexander, Johns and Jackson
+  - Alexander, Nelson and Hines
+  - Allen Ltd
+  - Allen-Benson
+  - Allison and Sons
+  - Alvarado LLC
+  - Alvarez, Dorsey and Ramirez
+  - Anderson, Fields and Tucker
+  - Anderson, Gray and Williams
+  - Anderson-Carter
+  - Andrews, Hart and Richardson
+  - Andrews-Shaw
+  - Arias Ltd
+  - Arias, Gonzalez and Turner
+  - Atkins-Andersen
+  - Bailey, Bryant and Jones
+  - Bailey, Houston and Conway
+  - Baker Group
+  - Baker-Moore
+  - Baldwin, Mccann and Smith
+  - Ballard-Meyer
+  - Banks-Martin
+  - Banks-Schroeder
+  - Barker-Lopez
+  - Barnes Ltd
+  distinct_count: 879
+- name: carrcert
+  sql: carrcert
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) referencing any carrier certification or license number.
+  hidden: false
+  sampled: CEIV Pharma, ISO 9001, GDP
+  sampled_values:
+  - CEIV Pharma
+  - ISO 9001
+  - GDP
+  distinct_count: 3
+- name: shiptransit
+  sql: shiptransit
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) foreign key referencing Shipments(ShipmentRegistry).
+    Links vehicle to a shipment in transit.
+  hidden: false
+  sampled: VS101443, VS101896, VS103453, VS107213, VS107478, VS108663, VS109470, VS110349,
+    VS111220, VS113526, VS116114, VS120493, VS121615, VS122057, VS122283, VS124761,
+    VS124785, VS125521, VS126219, VS126297 ... (900 distinct)
+  sampled_values:
+  - VS101443
+  - VS101896
+  - VS103453
+  - VS107213
+  - VS107478
+  - VS108663
+  - VS109470
+  - VS110349
+  - VS111220
+  - VS113526
+  - VS116114
+  - VS120493
+  - VS121615
+  - VS122057
+  - VS122283
+  - VS124761
+  - VS124785
+  - VS125521
+  - VS126219
+  - VS126297
+  - VS127092
+  - VS128180
+  - VS128465
+  - VS129414
+  - VS131248
+  - VS131616
+  - VS133967
+  - VS135208
+  - VS135323
+  - VS136255
+  - VS140768
+  - VS141136
+  - VS141866
+  - VS143336
+  - VS143586
+  - VS144344
+  - VS144593
+  - VS145015
+  - VS147256
+  - VS147622
+  - VS148137
+  - VS149025
+  - VS150281
+  - VS150918
+  - VS151303
+  - VS151690
+  - VS152703
+  - VS153208
+  - VS153333
+  - VS154617
+  distinct_count: 900
+- name: containtransit
+  sql: containtransit
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) foreign key referencing Container(ContainRegistry). Links
+    the vehicle to a container in transit.
+  hidden: false
+  sampled: C10354, C10487, C10510, C10514, C10643, C10909, C11016, C11046, C11266,
+    C11279, C11412, C11511, C11519, C11543, C11718, C11805, C11949, C11970, C12122,
+    C12271 ... (900 distinct)
+  sampled_values:
+  - C10354
+  - C10487
+  - C10510
+  - C10514
+  - C10643
+  - C10909
+  - C11016
+  - C11046
+  - C11266
+  - C11279
+  - C11412
+  - C11511
+  - C11519
+  - C11543
+  - C11718
+  - C11805
+  - C11949
+  - C11970
+  - C12122
+  - C12271
+  - C12283
+  - C12384
+  - C12393
+  - C12534
+  - C12680
+  - C12710
+  - C12718
+  - C12750
+  - C12789
+  - C12921
+  - C12953
+  - C13057
+  - C13064
+  - C13212
+  - C13246
+  - C13337
+  - C13598
+  - C13623
+  - C13653
+  - C13824
+  - C13869
+  - C13929
+  - C13958
+  - C14028
+  - C14038
+  - C14075
+  - C14208
+  - C14365
+  - C14400
+  - C14425
+  distinct_count: 900
+measures: []
+aggregations: []
+joins:
+- target_model: container
+  join_pairs:
+  - - containtransit
+    - containregistry
+  join_type: left
+- target_model: shipments
+  join_pairs:
+  - - shiptransit
+    - shipmentregistry
+  join_type: left
+filters: []
+hidden: false

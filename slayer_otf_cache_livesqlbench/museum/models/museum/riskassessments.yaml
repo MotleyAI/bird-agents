@@ -1,0 +1,215 @@
+version: 7
+name: riskassessments
+sql_table: riskassessments
+query_variables: {}
+data_source: museum
+columns:
+- name: riskassessregistry
+  sql: riskassessregistry
+  type: INT
+  primary_key: true
+  description: A BIGSERIAL primary key uniquely identifying each risk assessment record.
+  hidden: false
+  format:
+    type: integer
+- name: artrefconcerned
+  sql: artrefconcerned
+  type: TEXT
+  primary_key: false
+  description: A CHAR(10) NOT NULL foreign key referencing ArtifactsCore(ArtRegistry),
+    linking this record to a specific artifact.
+  hidden: false
+  sampled: ART10016  , ART10101  , ART10304  , ART10454  , ART10602  , ART10796  ,
+    ART10868  , ART10877  , ART11061  , ART11166  , ART11238  , ART11605  , ART11692  ,
+    ART11696  , ART11818  , ART11915  , ART11997  , ART12066  , ART12071  , ART12569   ...
+    (951 distinct)
+  sampled_values:
+  - 'ART10016  '
+  - 'ART10101  '
+  - 'ART10304  '
+  - 'ART10454  '
+  - 'ART10602  '
+  - 'ART10796  '
+  - 'ART10868  '
+  - 'ART10877  '
+  - 'ART11061  '
+  - 'ART11166  '
+  - 'ART11238  '
+  - 'ART11605  '
+  - 'ART11692  '
+  - 'ART11696  '
+  - 'ART11818  '
+  - 'ART11915  '
+  - 'ART11997  '
+  - 'ART12066  '
+  - 'ART12071  '
+  - 'ART12569  '
+  - 'ART12707  '
+  - 'ART12752  '
+  - 'ART12761  '
+  - 'ART12836  '
+  - 'ART12913  '
+  - 'ART12943  '
+  - 'ART12970  '
+  - 'ART13225  '
+  - 'ART13427  '
+  - 'ART13446  '
+  - 'ART13491  '
+  - 'ART13670  '
+  - 'ART13864  '
+  - 'ART13944  '
+  - 'ART13974  '
+  - 'ART14031  '
+  - 'ART14074  '
+  - 'ART14093  '
+  - 'ART14403  '
+  - 'ART14428  '
+  - 'ART14493  '
+  - 'ART14524  '
+  - 'ART14535  '
+  - 'ART14626  '
+  - 'ART14981  '
+  - 'ART14989  '
+  - 'ART15309  '
+  - 'ART15493  '
+  - 'ART15630  '
+  - 'ART15822  '
+  distinct_count: 951
+- name: hallrefconcerned
+  sql: hallrefconcerned
+  type: TEXT
+  primary_key: false
+  description: A CHAR(8) foreign key referencing ExhibitionHalls(HallRegistry), indicating
+    which hall is involved in this risk assessment (if any).
+  hidden: false
+  sampled: ART10016, ART10101, ART10304, ART10454, ART10602, ART10796, ART10868, ART10877,
+    ART11061, ART11166, ART11238, ART11605, ART11692, ART11696, ART11818, ART11915,
+    ART11997, ART12066, ART12071, ART12569 ... (951 distinct)
+  sampled_values:
+  - ART10016
+  - ART10101
+  - ART10304
+  - ART10454
+  - ART10602
+  - ART10796
+  - ART10868
+  - ART10877
+  - ART11061
+  - ART11166
+  - ART11238
+  - ART11605
+  - ART11692
+  - ART11696
+  - ART11818
+  - ART11915
+  - ART11997
+  - ART12066
+  - ART12071
+  - ART12569
+  - ART12707
+  - ART12752
+  - ART12761
+  - ART12836
+  - ART12913
+  - ART12943
+  - ART12970
+  - ART13225
+  - ART13427
+  - ART13446
+  - ART13491
+  - ART13670
+  - ART13864
+  - ART13944
+  - ART13974
+  - ART14031
+  - ART14074
+  - ART14093
+  - ART14403
+  - ART14428
+  - ART14493
+  - ART14524
+  - ART14535
+  - ART14626
+  - ART14981
+  - ART14989
+  - ART15309
+  - ART15493
+  - ART15630
+  - ART15822
+  distinct_count: 951
+- name: riskassesslevel
+  sql: riskassesslevel
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(50) describing the level of risk (possible values: ''Medium'',
+    ''High'', ''Low'').'
+  hidden: false
+  sampled: High, Low, Medium
+  sampled_values:
+  - High
+  - Low
+  - Medium
+  distinct_count: 3
+- name: emergresponseplan
+  sql: emergresponseplan
+  type: TEXT
+  primary_key: false
+  description: 'A TEXT field outlining the emergency response procedures if the risk
+    materializes (possible values: ''Review Required'', ''Under Revision'', ''Updated'').'
+  hidden: false
+  sampled: Under Revision, Updated, Review Required
+  sampled_values:
+  - Under Revision
+  - Updated
+  - Review Required
+  distinct_count: 3
+- name: evacpriority
+  sql: evacpriority
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(15) indicating the priority for evacuation (possible values:
+    ''Priority 3'', ''Priority 1'', ''Priority 2'').'
+  hidden: false
+  sampled: Priority 3, Priority 1, Priority 2
+  sampled_values:
+  - Priority 3
+  - Priority 1
+  - Priority 2
+  distinct_count: 3
+- name: handlerestrictions
+  sql: handlerestrictions
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(100) describing any handling restrictions (possible values:
+    ''Minimal'', ''Strict'').'
+  hidden: false
+  sampled: Strict, Minimal
+  sampled_values:
+  - Strict
+  - Minimal
+  distinct_count: 2
+- name: conservepriorityscore
+  sql: conservepriorityscore
+  type: INT
+  primary_key: false
+  description: "A SMALLINT rating (e.g., 1\u201310) indicating the urgency or priority\
+    \ for conservation actions based on identified risks."
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 100
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artrefconcerned
+    - artregistry
+  join_type: left
+- target_model: exhibitionhalls
+  join_pairs:
+  - - hallrefconcerned
+    - hallrecord
+  join_type: left
+filters: []
+hidden: false

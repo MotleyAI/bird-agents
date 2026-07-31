@@ -1,0 +1,371 @@
+version: 7
+name: assessmentsymptomsandrisk
+sql_table: assessmentsymptomsandrisk
+query_variables: {}
+data_source: mental
+columns:
+- name: asrkey
+  sql: asrkey
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(30) primary key matching ABKey from AssessmentBasics (FK).
+  hidden: false
+- name: suicideation
+  sql: suicideation
+  type: TEXT
+  primary_key: false
+  description: An enum (suicidalideation_enum) capturing suicidal ideation (Intent,
+    Active, Plan, Passive).
+  hidden: false
+  sampled: Passive, Active, Plan, Intent
+  sampled_values:
+  - Passive
+  - Active
+  - Plan
+  - Intent
+  distinct_count: 4
+- name: suicrisk
+  sql: suicrisk
+  type: TEXT
+  primary_key: false
+  description: An enum (suiciderisk_enum) describing suicide risk level (Medium, High,
+    Low, Severe).
+  hidden: false
+  sampled: High, Low, Medium, Severe
+  sampled_values:
+  - High
+  - Low
+  - Medium
+  - Severe
+  distinct_count: 4
+- name: selfharm
+  sql: selfharm
+  type: TEXT
+  primary_key: false
+  description: An enum (selfharm_enum) indicating self-harm history (Recent, Past,
+    Current).
+  hidden: false
+  sampled: Past, Current, Recent
+  sampled_values:
+  - Past
+  - Current
+  - Recent
+  distinct_count: 3
+- name: violrisk
+  sql: violrisk
+  type: TEXT
+  primary_key: false
+  description: An enum (violencerisk_enum) for violence risk (Medium, Low, High).
+  hidden: false
+  sampled: Medium, Low, High
+  sampled_values:
+  - Medium
+  - Low
+  - High
+  distinct_count: 3
+- name: subuse
+  sql: subuse
+  type: TEXT
+  primary_key: false
+  description: An enum (substanceuse_enum) describing which substance is used (Cannabis,
+    Opioids, Alcohol, Multiple).
+  hidden: false
+  sampled: Alcohol, Cannabis, Opioids, Multiple
+  sampled_values:
+  - Alcohol
+  - Cannabis
+  - Opioids
+  - Multiple
+  distinct_count: 4
+- name: subusefreq
+  sql: subusefreq
+  type: TEXT
+  primary_key: false
+  description: An enum (substanceusefrequency_enum) for how often substances are used
+    (Daily, Never, Occasional, Regular).
+  hidden: false
+  sampled: Daily, Never, Regular, Occasional
+  sampled_values:
+  - Daily
+  - Never
+  - Regular
+  - Occasional
+  distinct_count: 4
+- name: subusesev
+  sql: subusesev
+  type: TEXT
+  primary_key: false
+  description: An enum (substanceuseseverity_enum) describing severity (Mild, Moderate,
+    Severe).
+  hidden: false
+  sampled: Mild, Severe, Moderate
+  sampled_values:
+  - Mild
+  - Severe
+  - Moderate
+  distinct_count: 3
+- name: mental_health_scores
+  sql: mental_health_scores
+  type: TEXT
+  primary_key: false
+  description: JSONB column. Aggregates scores related to mental health symptoms and
+    risk factors, such as depression, anxiety, and other symptom metrics.
+  hidden: false
+  meta:
+    jsonb: true
+  sampled: '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression":
+    {"phq9_score": 0, "phq9_severity": "Severe"}, "symptom_scores": [3.0, 1.0, 4.0,
+    3.0, 10.0, 6.0, 10.0, 1.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"},
+    "depression": {"phq9_score": 0, "phq9_severity": "Severe"}, "symptom_scores":
+    [8.0, 2.0, 1.0, 2.0, 4.0, 6.0, 7.0, 5.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 10, "phq9_severity": "Severe"}, "symptom_scores":
+    [3.0, 2.0, 3.0, 9.0, 6.0, 2.0, 8.0, 9.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 12, "phq9_severity": "Mild"}, "symptom_scores":
+    [7.0, 7.0, 2.0, 6.0, 10.0, 4.0, 8.0, 7.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 14, "phq9_severity": "Mild"}, "symptom_scores":
+    [7.0, 3.0, 6.0, 4.0, 3.0, 8.0, 5.0, 1.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 14, "phq9_severity": "Severe"}, "symptom_scores":
+    [2.0, 10.0, 1.0, 6.0, 7.0, 9.0, 2.0, 9.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 15, "phq9_severity": "Mild"}, "symptom_scores":
+    [5.0, 10.0, 8.0, 1.0, 2.0, 6.0, 1.0, 9.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 16, "phq9_severity": "Severe"}, "symptom_scores":
+    [2.0, 4.0, 1.0, 1.0, 8.0, 5.0, 7.0, 4.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 17, "phq9_severity": "Severe"}, "symptom_scores":
+    [4.0, 3.0, 3.0, 7.0, 6.0, 4.0, 1.0, 8.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 2, "phq9_severity": "Mild"}, "symptom_scores":
+    [4.0, 2.0, 5.0, 1.0, 6.0, 9.0, 8.0, 8.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 2, "phq9_severity": "Severe"}, "symptom_scores":
+    [7.0, 6.0, 5.0, 8.0, 4.0, 7.0, 6.0, 1.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 20, "phq9_severity": "Mild"}, "symptom_scores":
+    [7.0, 10.0, 5.0, 2.0, 2.0, 7.0, 6.0, 3.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 21, "phq9_severity": "Mild"}, "symptom_scores":
+    [2.0, 9.0, 7.0, 10.0, 5.0, 9.0, 7.0, 2.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 22, "phq9_severity": "Severe"}, "symptom_scores":
+    [9.0, 1.0, 1.0, 8.0, 7.0, 3.0, 9.0, 2.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 25, "phq9_severity": "Moderate"}, "symptom_scores":
+    [8.0, 1.0, 10.0, 1.0, 10.0, 10.0, 7.0, 10.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 3, "phq9_severity": "Mild"}, "symptom_scores":
+    [9.0, 1.0, 3.0, 2.0, 6.0, 6.0, 10.0, 2.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 5, "phq9_severity": "Moderate"}, "symptom_scores":
+    [1.0, 4.0, 2.0, 10.0, 7.0, 9.0, 8.0, 9.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 5, "phq9_severity": "Moderate"}, "symptom_scores":
+    [10.0, 5.0, 10.0, 10.0, 4.0, 1.0, 5.0, 1.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 5, "phq9_severity": "Moderate"}, "symptom_scores":
+    [9.0, 4.0, 2.0, 5.0, 9.0, 3.0, 7.0, 8.0]}, {"anxiety": {"gad7_score": 0, "gad7_severity":
+    "Mild"}, "depression": {"phq9_score": 7, "phq9_severity": "Mild"}, "symptom_scores":
+    [5.0, 5.0, 10.0, 7.0, 2.0, 9.0, 8.0, 3.0]} ... (999 distinct)'
+  sampled_values:
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    0, "phq9_severity": "Severe"}, "symptom_scores": [3.0, 1.0, 4.0, 3.0, 10.0, 6.0,
+    10.0, 1.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    0, "phq9_severity": "Severe"}, "symptom_scores": [8.0, 2.0, 1.0, 2.0, 4.0, 6.0,
+    7.0, 5.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    10, "phq9_severity": "Severe"}, "symptom_scores": [3.0, 2.0, 3.0, 9.0, 6.0, 2.0,
+    8.0, 9.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    12, "phq9_severity": "Mild"}, "symptom_scores": [7.0, 7.0, 2.0, 6.0, 10.0, 4.0,
+    8.0, 7.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    14, "phq9_severity": "Mild"}, "symptom_scores": [7.0, 3.0, 6.0, 4.0, 3.0, 8.0,
+    5.0, 1.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    14, "phq9_severity": "Severe"}, "symptom_scores": [2.0, 10.0, 1.0, 6.0, 7.0, 9.0,
+    2.0, 9.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    15, "phq9_severity": "Mild"}, "symptom_scores": [5.0, 10.0, 8.0, 1.0, 2.0, 6.0,
+    1.0, 9.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    16, "phq9_severity": "Severe"}, "symptom_scores": [2.0, 4.0, 1.0, 1.0, 8.0, 5.0,
+    7.0, 4.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    17, "phq9_severity": "Severe"}, "symptom_scores": [4.0, 3.0, 3.0, 7.0, 6.0, 4.0,
+    1.0, 8.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    2, "phq9_severity": "Mild"}, "symptom_scores": [4.0, 2.0, 5.0, 1.0, 6.0, 9.0,
+    8.0, 8.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    2, "phq9_severity": "Severe"}, "symptom_scores": [7.0, 6.0, 5.0, 8.0, 4.0, 7.0,
+    6.0, 1.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    20, "phq9_severity": "Mild"}, "symptom_scores": [7.0, 10.0, 5.0, 2.0, 2.0, 7.0,
+    6.0, 3.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    21, "phq9_severity": "Mild"}, "symptom_scores": [2.0, 9.0, 7.0, 10.0, 5.0, 9.0,
+    7.0, 2.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    22, "phq9_severity": "Severe"}, "symptom_scores": [9.0, 1.0, 1.0, 8.0, 7.0, 3.0,
+    9.0, 2.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    25, "phq9_severity": "Moderate"}, "symptom_scores": [8.0, 1.0, 10.0, 1.0, 10.0,
+    10.0, 7.0, 10.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    3, "phq9_severity": "Mild"}, "symptom_scores": [9.0, 1.0, 3.0, 2.0, 6.0, 6.0,
+    10.0, 2.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    5, "phq9_severity": "Moderate"}, "symptom_scores": [1.0, 4.0, 2.0, 10.0, 7.0,
+    9.0, 8.0, 9.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    5, "phq9_severity": "Moderate"}, "symptom_scores": [10.0, 5.0, 10.0, 10.0, 4.0,
+    1.0, 5.0, 1.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    5, "phq9_severity": "Moderate"}, "symptom_scores": [9.0, 4.0, 2.0, 5.0, 9.0, 3.0,
+    7.0, 8.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    7, "phq9_severity": "Mild"}, "symptom_scores": [5.0, 5.0, 10.0, 7.0, 2.0, 9.0,
+    8.0, 3.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    7, "phq9_severity": "Severe"}, "symptom_scores": [9.0, 7.0, 7.0, 1.0, 5.0, 6.0,
+    2.0, 3.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Moderate"}, "depression": {"phq9_score":
+    18, "phq9_severity": "Mild"}, "symptom_scores": [5.0, 9.0, 4.0, 5.0, 7.0, 6.0,
+    4.0, 3.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Moderate"}, "depression": {"phq9_score":
+    23, "phq9_severity": "Mild"}, "symptom_scores": [6.0, 1.0, 6.0, 2.0, 7.0, 4.0,
+    2.0, 6.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Moderate"}, "depression": {"phq9_score":
+    24, "phq9_severity": "Mild"}, "symptom_scores": [9.0, 6.0, 1.0, 8.0, 4.0, 5.0,
+    10.0, 1.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Moderate"}, "depression": {"phq9_score":
+    25, "phq9_severity": "Mild"}, "symptom_scores": [3.0, 8.0, 7.0, 9.0, 5.0, 7.0,
+    7.0, 3.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Moderate"}, "depression": {"phq9_score":
+    26, "phq9_severity": "Mild"}, "symptom_scores": [2.0, 3.0, 10.0, 10.0, 10.0, 4.0,
+    1.0, 10.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Moderate"}, "depression": {"phq9_score":
+    4, "phq9_severity": "Mild"}, "symptom_scores": [1.0, 7.0, 2.0, 10.0, 6.0, 9.0,
+    6.0, 5.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Moderate"}, "depression": {"phq9_score":
+    4, "phq9_severity": "Mild"}, "symptom_scores": [6.0, 3.0, 9.0, 5.0, 1.0, 9.0,
+    9.0, 2.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    1, "phq9_severity": "Mild"}, "symptom_scores": [6.0, 4.0, 2.0, 1.0, 7.0, 4.0,
+    10.0, 9.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    1, "phq9_severity": "Moderate"}, "symptom_scores": [5.0, 3.0, 4.0, 1.0, 1.0, 8.0,
+    10.0, 4.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    1, "phq9_severity": "Moderate"}, "symptom_scores": [5.0, 7.0, 3.0, 3.0, 5.0, 4.0,
+    5.0, 1.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    10, "phq9_severity": "Mild"}, "symptom_scores": [10.0, 6.0, 1.0, 8.0, 8.0, 5.0,
+    3.0, 5.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    16, "phq9_severity": "Mild"}, "symptom_scores": [2.0, 8.0, 1.0, 2.0, 9.0, 10.0,
+    3.0, 2.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    17, "phq9_severity": "Mild"}, "symptom_scores": [5.0, 6.0, 10.0, 5.0, 10.0, 9.0,
+    6.0, 10.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    17, "phq9_severity": "Mild"}, "symptom_scores": [9.0, 5.0, 7.0, 1.0, 1.0, 6.0,
+    5.0, 6.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    19, "phq9_severity": "Mild"}, "symptom_scores": [2.0, 10.0, 6.0, 6.0, 8.0, 6.0,
+    6.0, 4.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    2, "phq9_severity": "Moderately Severe"}, "symptom_scores": [4.0, 6.0, 2.0, 3.0,
+    6.0, 3.0, 8.0, 8.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    25, "phq9_severity": "Mild"}, "symptom_scores": [1.0, 10.0, 3.0, 5.0, 6.0, 3.0,
+    4.0, 7.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    25, "phq9_severity": "Mild"}, "symptom_scores": [3.0, 10.0, 4.0, 8.0, 1.0, 3.0,
+    8.0, 3.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    4, "phq9_severity": "Mild"}, "symptom_scores": [7.0, 8.0, 1.0, 2.0, 1.0, 5.0,
+    2.0, 2.0]}'
+  - '{"anxiety": {"gad7_score": 0, "gad7_severity": "Severe"}, "depression": {"phq9_score":
+    6, "phq9_severity": "Mild"}, "symptom_scores": [9.0, 4.0, 7.0, 8.0, 9.0, 7.0,
+    6.0, 2.0]}'
+  - '{"anxiety": {"gad7_score": 1, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    0, "phq9_severity": "Severe"}, "symptom_scores": [7.0, 2.0, 1.0, 4.0, 4.0, 2.0,
+    6.0, 9.0]}'
+  - '{"anxiety": {"gad7_score": 1, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    10, "phq9_severity": "Mild"}, "symptom_scores": [9.0, 3.0, 2.0, 4.0, 10.0, 5.0,
+    6.0, 10.0]}'
+  - '{"anxiety": {"gad7_score": 1, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    10, "phq9_severity": "Moderately Severe"}, "symptom_scores": [4.0, 1.0, 3.0, 7.0,
+    7.0, 10.0, 5.0, 2.0]}'
+  - '{"anxiety": {"gad7_score": 1, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    12, "phq9_severity": "Mild"}, "symptom_scores": [1.0, 2.0, 8.0, 9.0, 5.0, 10.0,
+    10.0, 4.0]}'
+  - '{"anxiety": {"gad7_score": 1, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    14, "phq9_severity": "Mild"}, "symptom_scores": [3.0, 1.0, 10.0, 8.0, 8.0, 2.0,
+    5.0, 8.0]}'
+  - '{"anxiety": {"gad7_score": 1, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    15, "phq9_severity": "Moderate"}, "symptom_scores": [6.0, 8.0, 2.0, 6.0, 5.0,
+    3.0, 10.0, 3.0]}'
+  - '{"anxiety": {"gad7_score": 1, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    18, "phq9_severity": "Mild"}, "symptom_scores": [10.0, 7.0, 3.0, 6.0, 6.0, 10.0,
+    7.0, 10.0]}'
+  - '{"anxiety": {"gad7_score": 1, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    22, "phq9_severity": "Mild"}, "symptom_scores": [6.0, 1.0, 1.0, 2.0, 3.0, 3.0,
+    4.0, 2.0]}'
+  - '{"anxiety": {"gad7_score": 1, "gad7_severity": "Mild"}, "depression": {"phq9_score":
+    24, "phq9_severity": "Mild"}, "symptom_scores": [3.0, 3.0, 8.0, 3.0, 4.0, 3.0,
+    9.0, 9.0]}'
+  distinct_count: 999
+- name: mental_health_scores__depression__phq9_score
+  sql: JSON_EXTRACT(mental_health_scores, '$.depression.phq9_score')
+  type: INT
+  primary_key: false
+  description: "A SMALLINT for PHQ-9 score (0\u201327)."
+  label: Phq9 Score
+  hidden: false
+  meta:
+    derived_from:
+      json_col: mental_health_scores
+      path:
+      - depression
+      - phq9_score
+- name: mental_health_scores__depression__phq9_severity
+  sql: JSON_EXTRACT(mental_health_scores, '$.depression.phq9_severity')
+  type: TEXT
+  primary_key: false
+  description: An enum (phq9severity_enum) for depression severity (Moderately Severe,
+    Mild, Severe, Moderate).
+  label: Phq9 Severity
+  hidden: false
+  meta:
+    derived_from:
+      json_col: mental_health_scores
+      path:
+      - depression
+      - phq9_severity
+- name: mental_health_scores__anxiety__gad7_score
+  sql: JSON_EXTRACT(mental_health_scores, '$.anxiety.gad7_score')
+  type: INT
+  primary_key: false
+  description: "A SMALLINT for GAD-7 score (0\u201321)."
+  label: Gad7 Score
+  hidden: false
+  meta:
+    derived_from:
+      json_col: mental_health_scores
+      path:
+      - anxiety
+      - gad7_score
+- name: mental_health_scores__anxiety__gad7_severity
+  sql: JSON_EXTRACT(mental_health_scores, '$.anxiety.gad7_severity')
+  type: TEXT
+  primary_key: false
+  description: An enum (gad7severity_enum) for anxiety severity (Mild, Moderate, Severe).
+  label: Gad7 Severity
+  hidden: false
+  meta:
+    derived_from:
+      json_col: mental_health_scores
+      path:
+      - anxiety
+      - gad7_severity
+measures: []
+aggregations: []
+joins:
+- target_model: assessmentbasics
+  join_pairs:
+  - - asrkey
+    - abkey
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,767 @@
+- version: 1
+  id: museum_kb_0
+  learning: "KB 0 \u2014 Conservation Priority Index (CPI)\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 0\nknowledge: Conservation Priority Index (CPI)\ndescription:\
+    \ Calculates the overall conservation priority for an artifact based on\n  multiple\
+    \ factors.\ndefinition: 'CPI = \\frac{(HistSignRating + ResearchValRating + CultScore)\
+    \ \\times (10\n  - ConserveStatus)}{30}, \\text{where ConserveStatus is numerically\
+    \ mapped: Excellent=1,\n  Good=3, Fair=5, Poor=7, Critical=10}'\ntype: calculation_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: &id001 1970-01-01 00:00:00+00:00
+- version: 1
+  id: museum_kb_1
+  learning: "KB 1 \u2014 Sensitivity Weight Values\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 1\nknowledge: Sensitivity Weight Values\ndescription: Numerical weights for\
+    \ sensitivity calculations\ndefinition: 'EnvSensitivity: Low=1, Medium=5, High=10;\
+    \ LightSensitivity: Low=1, Medium=5,\n  High=10; TempSensitivity: Low=1, Medium=5,\
+    \ High=10; HumiditySensitivity: Low=1,\n  Medium=5, High=10'\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_2
+  learning: "KB 2 \u2014 Environmental Risk Factor (ERF)\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 2\nknowledge: Environmental Risk Factor (ERF)\ndescription:\
+    \ Quantifies the overall environmental risk to an artifact based on its\n  sensitivities.\n\
+    definition: ERF = \\frac{\\sum_{i \\in sensitivities} SensWeight_i}{|sensitivities|},\n\
+    \  \\text{where sensitivities includes EnvSensitivity, LightSensitivity, TempSensitivity,\n\
+    \  etc, with value mapping based on Sensitivity Weight Values.}\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 1"
+  entities:
+  - museum
+  - memory:museum_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_3
+  learning: "KB 3 \u2014 Artifact Vulnerability Score (AVS)\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 3\nknowledge: Artifact Vulnerability Score (AVS)\ndescription:\
+    \ Comprehensive score indicating how vulnerable an artifact is based on\n  its\
+    \ conservation priority and environmental sensitivities.\ndefinition: AVS = CPI\
+    \ \\times ERF, \\text{where higher scores indicate artifacts requiring\n  more\
+    \ urgent attention}\ntype: calculation_knowledge\nchildren_knowledge:\n- 0\n-\
+    \ 2"
+  entities:
+  - museum
+  - memory:museum_kb_0
+  - memory:museum_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_4
+  learning: "KB 4 \u2014 Display Safety Duration (DSD)\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 4\nknowledge: Display Safety Duration (DSD)\ndescription: Calculates the recommended\
+    \ maximum display duration for an artifact based\n  on its sensitivities.\ndefinition:\
+    \ DSD = \\frac{BaseDuration \\times (10 - LightSensWeight) \\times (10 - TempSensWeight)\n\
+    \  \\times (10 - HumidSensWeight)}{1000}, \\text{where BaseDuration=36 months,\
+    \ and SensWeight\n  uses Sensitivity Weight Values.}\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 1"
+  entities:
+  - museum
+  - memory:museum_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_5
+  learning: "KB 5 \u2014 Showcase Environmental Stability Rating (SESR)\n\nKB item\
+    \ (verbatim from museum_kb.jsonl):\nid: 5\nknowledge: Showcase Environmental Stability\
+    \ Rating (SESR)\ndescription: Measures how well a showcase maintains stable environmental\
+    \ conditions.\ndefinition: SESR = 10 - \\frac{(TempVar24h + \\frac{HumVar24h}{5}\
+    \ + LeakRate)}{3}, \\text{where\n  higher scores indicate more stable showcases}\n\
+    type: calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_6
+  learning: "KB 6 \u2014 Artifact Exhibition Compatibility (AEC)\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 6\nknowledge: Artifact Exhibition Compatibility\
+    \ (AEC)\ndescription: Determines how compatible an artifact is with its current\
+    \ showcase environment.\ndefinition: AEC = 10 - |ERF - SESR|, \\text{where a score\
+    \ closer to 10 indicates better\n  compatibility}\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 2\n- 5"
+  entities:
+  - museum
+  - memory:museum_kb_2
+  - memory:museum_kb_5
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_7
+  learning: "KB 7 \u2014 Material Deterioration Rate (MDR)\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 7\nknowledge: Material Deterioration Rate (MDR)\ndescription:\
+    \ Estimates the rate of material deterioration based on environmental factors.\n\
+    definition: MDR = \\frac{ArtAgeYears \\times ERF \\times (RelHumidity - 50)^2\
+    \ \\times\n  TempC}{100000}, \\text{where higher values indicate faster deterioration}\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 2"
+  entities:
+  - museum
+  - memory:museum_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_8
+  learning: "KB 8 \u2014 Light Exposure Risk (LER)\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 8\nknowledge: Light Exposure Risk (LER)\ndescription: Quantifies the risk\
+    \ from light exposure based on artifact sensitivity\n  and current light levels.\n\
+    definition: LER = \\frac{LightLux \\times LightSensWeight \\times VisibleExpLxh}{1000},\n\
+    \  \\text{where LightSensWeight uses Sensitivity Weight Values}\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 1"
+  entities:
+  - museum
+  - memory:museum_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_9
+  learning: "KB 9 \u2014 Conservation Budget Efficiency (CBE)\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 9\nknowledge: Conservation Budget Efficiency (CBE)\n\
+    description: Measures the efficiency of conservation budget allocation relative\
+    \ to\n  artifact importance.\ndefinition: CBE = \\frac{\\sum_{i \\in artifacts}\
+    \ (CPI_i \\times BudgetRatio_i)}{|artifacts|},\n  \\text{where BudgetRatio is\
+    \ the proportion of total conservation budget allocated\n  to each artifact}\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 0"
+  entities:
+  - museum
+  - memory:museum_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_10
+  learning: "KB 10 \u2014 Visitor Impact Risk (VIR)\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 10\nknowledge: Visitor Impact Risk (VIR)\ndescription: Assesses the risk posed\
+    \ by visitor traffic to artifacts in exhibition\n  halls.\ndefinition: 'VIR =\
+    \ \\frac{VisitorCountDaily \\times VisitorFlowRate \\times VisitorDwellMin}{1000},\n\
+    \  \\text{where VisitorFlowRate is numerically mapped: Low=1, Medium=3, High=5}'\n\
+    type: calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_11
+  learning: "KB 11 \u2014 High-Value Artifact\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 11\nknowledge: High-Value Artifact\ndescription: Identifies artifacts with\
+    \ exceptional historical, cultural, or monetary\n  value requiring special attention.\n\
+    definition: An artifact is considered high-value when its InsValueUSD exceeds\
+    \ $1,000,000\n  OR when both HistSignRating and CultScore are in the top 10% of\
+    \ all artifacts.\ntype: domain_knowledge\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_12
+  learning: "KB 12 \u2014 Conservation Emergency\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 12\nknowledge: Conservation Emergency\ndescription: Identifies artifacts requiring\
+    \ immediate conservation intervention.\ndefinition: A situation where an artifact\
+    \ has ConserveStatus='Critical' AND a TreatPriority='Urgent'.\ntype: domain_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_13
+  learning: "KB 13 \u2014 Environmental Instability Event\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 13\nknowledge: Environmental Instability Event\ndescription:\
+    \ Identifies periods when showcase environmental conditions fluctuate beyond\n\
+    \  acceptable parameters.\ndefinition: \"Occurs when TempVar24h > 1\\xB0C OR HumVar24h\
+    \ > 3 within a 24-hour period.\"\ntype: domain_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_14
+  learning: "KB 14 \u2014 Accelerated Deterioration Scenario\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 14\nknowledge: Accelerated Deterioration Scenario\n\
+    description: Identifies conditions that could lead to rapid artifact deterioration.\n\
+    definition: Occurs when MDR > 5 AND at least two SensitivityData values are 'High'.\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 7"
+  entities:
+  - museum
+  - memory:museum_kb_7
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_15
+  learning: "KB 15 \u2014 Exhibition Rotation Candidate\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 15\nknowledge: Exhibition Rotation Candidate\ndescription:\
+    \ Identifies artifacts that should be considered for rotation out of display.\n\
+    definition: An artifact is a rotation candidate when its current display duration\n\
+    \  exceeds 75% of its DSD OR LER > 7.\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 4\n- 8"
+  entities:
+  - museum
+  - memory:museum_kb_4
+  - memory:museum_kb_8
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_16
+  learning: "KB 16 \u2014 Showcase Failure Risk\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 16\nknowledge: Showcase Failure Risk\ndescription: Identifies showcases at\
+    \ risk of failing to maintain proper environmental\n  conditions.\ndefinition:\
+    \ 'Occurs when SESR < 4 OR at least three of the following are true: SealCondition=''Poor'',\n\
+    \  MaintStatus=''Overdue'', FilterStatus=''Replace Now'', SilicaGelStatus=''Replace\n\
+    \  Now''.'\ntype: domain_knowledge\nchildren_knowledge:\n- 5"
+  entities:
+  - museum
+  - memory:museum_kb_5
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_17
+  learning: "KB 17 \u2014 Conservation Budget Crisis\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 17\nknowledge: Conservation Budget Crisis\ndescription: Identifies when conservation\
+    \ budget allocation is insufficient for high-priority\n  artifacts.\ndefinition:\
+    \ Occurs when CBE < 0.5 AND at least one artifact has ConserveStatus='Critical'\n\
+    \  and BudgetAllocStatus='Insufficient'.\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 9"
+  entities:
+  - museum
+  - memory:museum_kb_9
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_18
+  learning: "KB 18 \u2014 Dynasty Value Artifact\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 18\nknowledge: Dynasty Value Artifact\ndescription: Identifies artifacts from\
+    \ historically significant dynasties with higher\n  research and cultural value.\n\
+    definition: Artifacts from 'Ming', 'Han', or 'Tang' dynasties that also have ResearchValRating\n\
+    \  > 8.\ntype: domain_knowledge\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_19
+  learning: "KB 19 \u2014 Visitor Crowd Risk\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 19\nknowledge: Visitor Crowd Risk\ndescription: Identifies exhibition halls\
+    \ where high visitor numbers pose risks to\n  artifact safety.\ndefinition: Occurs\
+    \ when VIR > 5 AND SecLevel='Level 1' for any artifact in the hall.\ntype: domain_knowledge\n\
+    children_knowledge:\n- 10"
+  entities:
+  - museum
+  - memory:museum_kb_10
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_20
+  learning: "KB 20 \u2014 Organic Material Vulnerability\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 20\nknowledge: Organic Material Vulnerability\ndescription:\
+    \ Identifies organic materials requiring special environmental conditions.\ndefinition:\
+    \ Artifacts with MatType='Wood', 'Textile', or 'Paper' AND EnvSensitivity='High'\n\
+    \  require specialized environmental controls with narrower humidity and temperature\n\
+    \  ranges than inorganic materials.\ntype: domain_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_21
+  learning: "KB 21 \u2014 ArtifactsCore.ConserveStatus\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 21\nknowledge: ArtifactsCore.ConserveStatus\ndescription: Illustrates the\
+    \ conservation status values and their meanings.\ndefinition: Values range from\
+    \ 'Excellent' (recently conserved, no issues), 'Good'\n  (stable with minor issues),\
+    \ 'Fair' (stable but with noticeable issues), 'Poor' (active\n  deterioration),\
+    \ to 'Critical' (severe deterioration requiring immediate intervention).\ntype:\
+    \ value_illustration\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_22
+  learning: "KB 22 \u2014 ArtifactRatings.HistSignRating\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 22\nknowledge: ArtifactRatings.HistSignRating\ndescription:\
+    \ Illustrates the historical significance rating scale.\ndefinition: A SMALLINT\
+    \ typically ranging from 1-10, where 1-3 indicates minor historical\n  significance,\
+    \ 4-7 indicates moderate significance, and 8-10 indicates exceptional\n  historical\
+    \ importance that fundamentally contributes to our understanding of past\n  cultures\
+    \ or events.\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_23
+  learning: "KB 23 \u2014 SensitivityData.LightSensitivity\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 23\nknowledge: SensitivityData.LightSensitivity\ndescription:\
+    \ Illustrates light sensitivity classifications and their implications.\ndefinition:\
+    \ Values include 'Low' (can tolerate up to 300 lux, like stone artifacts),\n \
+    \ 'Medium' (should be limited to 150-200 lux, like oil paintings), and 'High'\
+    \ (restricted\n  to 50 lux or less, like textiles and works on paper).\ntype:\
+    \ value_illustration\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_24
+  learning: "KB 24 \u2014 SensitivityData.HumiditySensitivity\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 24\nknowledge: SensitivityData.HumiditySensitivity\n\
+    description: Illustrates humidity sensitivity classifications and their implications.\n\
+    definition: Values include 'Low' (can tolerate 30-65% RH, like stone artifacts),\
+    \ 'Medium'\n  (requires 40-60% RH, like wood), and 'High' (requires 45-55% RH\
+    \ with minimal fluctuation,\n  like lacquer work).\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_25
+  learning: "KB 25 \u2014 ExhibitionHalls.CCTVCoverage\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 25\nknowledge: ExhibitionHalls.CCTVCoverage\ndescription: Illustrates CCTV\
+    \ coverage classifications.\ndefinition: '''Full'' indicates 100% exhibition space\
+    \ coverage with overlapping cameras,\n  ''Partial'' indicates 60-90% coverage\
+    \ with possible blind spots, and ''Limited''\n  indicates less than 60% coverage\
+    \ focusing only on high-value areas.'\ntype: value_illustration\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_26
+  learning: "KB 26 \u2014 Showcases.Airtightness\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 26\nknowledge: Showcases.Airtightness\ndescription: Illustrates showcase airtightness\
+    \ measurement.\ndefinition: A REAL value typically ranging from 0.01 (extremely\
+    \ airtight, less than\n  0.01 air changes per day) to 5.0 (poor airtightness,\
+    \ multiple air changes per day).\n  Museum-grade showcases typically maintain\
+    \ values below 0.1.\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_27
+  learning: "KB 27 \u2014 EnvironmentalReadingsCore.TempC\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 27\nknowledge: EnvironmentalReadingsCore.TempC\ndescription:\
+    \ Illustrates temperature readings and their conservation implications.\ndefinition:\
+    \ \"Values typically range from 15-25\\xB0C, with 18-22\\xB0C being ideal for\\\
+    \n  \\ most collections. Fluctuations greater than 2\\xB0C within 24 hours can\
+    \ stress\\\n  \\ materials. Values outside 10-30\\xB0C indicate environmental\
+    \ control failure requiring\\\n  \\ immediate attention.\"\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_28
+  learning: "KB 28 \u2014 EnvironmentalReadingsCore.RelHumidity\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 28\nknowledge: EnvironmentalReadingsCore.RelHumidity\n\
+    description: Illustrates relative humidity readings and their conservation implications.\n\
+    definition: Values typically range from 30-65%, with 45-55% being ideal for mixed\n\
+    \  collections. Fluctuations greater than 5% within 24 hours can cause dimensional\n\
+    \  changes in organic materials. Values below 30% risk embrittlement, while above\
+    \ 65%\n  risk mold growth.\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_29
+  learning: "KB 29 \u2014 LightAndRadiationReadings.LightLux\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 29\nknowledge: LightAndRadiationReadings.LightLux\n\
+    description: Illustrates light intensity measurements and their conservation implications.\n\
+    definition: Values in lux range from near-dark (5-10 lux) to typical indoor lighting\n\
+    \  (300-500 lux). Conservation standards recommend 50 lux for highly sensitive\
+    \ materials,\n  150-200 lux for paintings and wood, and up to 300 lux for stone\
+    \ and metal. Daylight\n  can exceed 10,000 lux and should be filtered.\ntype:\
+    \ value_illustration\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_30
+  learning: "KB 30 \u2014 AirQualityReadings.PM25Conc\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 30\nknowledge: AirQualityReadings.PM25Conc\ndescription: Illustrates fine\
+    \ particulate matter measurements and their conservation\n  implications.\ndefinition:\
+    \ \"Values represent PM2.5 concentration in \\xB5g/m\\xB3. Clean museum air\\\n\
+    \  \\ should measure below 5 \\xB5g/m\\xB3. Values of 5-15 indicate acceptable\
+    \ conditions,\\\n  \\ 15-30 indicate potential risk to sensitive materials, and\
+    \ above 30 represent hazardous\\\n  \\ conditions requiring immediate air filtration\
+    \ review.\"\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_31
+  learning: "KB 31 \u2014 Total Environmental Threat Level (TETL)\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 31\nknowledge: Total Environmental Threat Level\
+    \ (TETL)\ndescription: Comprehensive measurement of all environmental threats\
+    \ to an artifact\n  based on multiple risk factors.\ndefinition: \"TETL = ERF\
+    \ + LER + (MDR \\xD7 2), where ERF is the Environmental Risk\\\n  \\ Factor, LER\
+    \ is the Light Exposure Risk, and MDR is the Material Deterioration\\\n  \\ Rat.\"\
+    \ntype: calculation_knowledge\nchildren_knowledge:\n- 2\n- 8\n- 7"
+  entities:
+  - museum
+  - memory:museum_kb_2
+  - memory:museum_kb_8
+  - memory:museum_kb_7
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_32
+  learning: "KB 32 \u2014 Showcase Protection Adequacy (SPA)\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 32\nknowledge: Showcase Protection Adequacy (SPA)\n\
+    description: Measures how well a showcase protects its artifacts based on its\
+    \ stability\n  and the artifacts' requirements.\ndefinition: \"SPA = SESR - (ERF\
+    \ \\xD7 0.5), where SESR is the Showcase Environmental\\\n  \\ Stability Rating\
+    \ and ERF is the Environmental Risk Factor. Positive values indicate\\\n  \\ adequate\
+    \ protection.\"\ntype: calculation_knowledge\nchildren_knowledge:\n- 5\n- 2"
+  entities:
+  - museum
+  - memory:museum_kb_5
+  - memory:museum_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_33
+  learning: "KB 33 \u2014 Conservation Backlog Risk (CBR)\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 33\nknowledge: Conservation Backlog Risk (CBR)\ndescription:\
+    \ Quantifies the risk associated with delayed conservation treatments.\ndefinition:\
+    \ \"CBR = (CPI \\xD7 (Days since LastCleaningDate - CleanIntervalDays)) \\xF7\\\
+    \n  \\ 100, where CPI is the Conservation Priority Index. Higher values indicate\
+    \ higher\\\n  \\ risk from delayed conservation.\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 0"
+  entities:
+  - museum
+  - memory:museum_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_34
+  learning: "KB 34 \u2014 Visitor Capacity Safety Factor (VCSF)\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 34\nknowledge: Visitor Capacity Safety Factor (VCSF)\n\
+    description: Determines the safe visitor capacity for exhibition halls containing\n\
+    \  sensitive artifacts.\ndefinition: \"VCSF = VIR \\xF7 (AVS \\xD7 0.1), where\
+    \ VIR is the Visitor Impact Risk\\\n  \\ and AVS is the Artifact Vulnerability\
+    \ Score. Lower values indicate safer visitor\\\n  \\ capacities.\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 10\n- 3"
+  entities:
+  - museum
+  - memory:museum_kb_10
+  - memory:museum_kb_3
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_35
+  learning: "KB 35 \u2014 Exhibition Safety Quotient (ESQ)\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 35\nknowledge: Exhibition Safety Quotient (ESQ)\ndescription:\
+    \ Comprehensive safety rating for an exhibition based on artifacts, showcases,\n\
+    \  and visitor factors.\ndefinition: \"ESQ = ((10 - AVS) + AEC + (10 - VIR)) \\\
+    xF7 3, where AVS is the Artifact\\\n  \\ Vulnerability Score, AEC is the Artifact\
+    \ Exhibition Compatibility, and VIR is\\\n  \\ the Visitor Impact Risk. Higher\
+    \ values indicate safer exhibitions.\"\ntype: calculation_knowledge\nchildren_knowledge:\n\
+    - 3\n- 6\n- 10"
+  entities:
+  - museum
+  - memory:museum_kb_3
+  - memory:museum_kb_6
+  - memory:museum_kb_10
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_36
+  learning: "KB 36 \u2014 Conservation Resource Allocation Efficiency (CRAE)\n\nKB\
+    \ item (verbatim from museum_kb.jsonl):\nid: 36\nknowledge: Conservation Resource\
+    \ Allocation Efficiency (CRAE)\ndescription: Measures how efficiently conservation\
+    \ resources are allocated based on\n  priorities and budget.\ndefinition: \"CRAE\
+    \ = CBE \\xD7 (1 - (CBR \\xF7 10)), where CBE is the Conservation Budget\\\n \
+    \ \\ Efficiency and CBR is the Conservation Backlog Risk. Higher values indicate\
+    \ more\\\n  \\ efficient resource allocation.\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 9\n- 33"
+  entities:
+  - museum
+  - memory:museum_kb_9
+  - memory:museum_kb_33
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_37
+  learning: "KB 37 \u2014 Material Aging Projection (MAP)\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 37\nknowledge: Material Aging Projection (MAP)\ndescription:\
+    \ Projects the rate of artifact aging based on material type and environmental\n\
+    \  conditions.\ndefinition: \"MAP = MDR \\xD7 (1 + (TETL \\xF7 20)), where MDR\
+    \ is the Material Deterioration\\\n  \\ Rate and TETL is the Total Environmental\
+    \ Threat Level. Higher values indicate\\\n  \\ faster projected aging.\"\ntype:\
+    \ calculation_knowledge\nchildren_knowledge:\n- 7\n- 31"
+  entities:
+  - museum
+  - memory:museum_kb_7
+  - memory:museum_kb_31
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_38
+  learning: "KB 38 \u2014 Exhibition Rotation Priority Score (ERPS)\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 38\nknowledge: Exhibition Rotation Priority Score\
+    \ (ERPS)\ndescription: Calculates priority for rotating artifacts in and out of\
+    \ exhibition based\n  on multiple factors.\ndefinition: \"ERPS = (DSD - DisplayDurMonths)\
+    \ \\xD7 (LER + 1) \\xD7 (CPI + 1) \\xF7 100,\\\n  \\ where DSD is the Display\
+    \ Safety Duration, LER is the Light Exposure Risk, and\\\n  \\ CPI is the Conservation\
+    \ Priority Index. Lower values indicate higher rotation\\\n  \\ priority.\"\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 4\n- 8\n- 0"
+  entities:
+  - museum
+  - memory:museum_kb_4
+  - memory:museum_kb_8
+  - memory:museum_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_39
+  learning: "KB 39 \u2014 Environmental Compliance Index (ECI)\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 39\nknowledge: Environmental Compliance Index (ECI)\n\
+    description: Measures how well current environmental conditions meet the requirements\n\
+    \  for an artifact.\ndefinition: \"ECI = 10 - (|(TempC - IdealTemp)| + |(RelHumidity\
+    \ - IdealHumidity)| \\xF7\\\n  \\ 5 + ERF \\xF7 2), where ERF is the Environmental\
+    \ Risk Factor. Higher values indicate\\\n  \\ better compliance with requirements.\"\
+    \ntype: calculation_knowledge\nchildren_knowledge:\n- 2"
+  entities:
+  - museum
+  - memory:museum_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_40
+  learning: "KB 40 \u2014 Security Risk Exposure (SRE)\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 40\nknowledge: Security Risk Exposure (SRE)\ndescription: Quantifies an artifact's\
+    \ exposure to security risks based on value and\n  security measures.\ndefinition:\
+    \ \"SRE = (InsValueUSD \\xF7 100000) \\xD7 (10 - VIR) \\xF7 10, where VIR is\\\
+    \n  \\ the Visitor Impact Risk. Higher values indicate greater security risk exposure.\"\
+    \ntype: calculation_knowledge\nchildren_knowledge:\n- 10"
+  entities:
+  - museum
+  - memory:museum_kb_10
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_41
+  learning: "KB 41 \u2014 Critical Conservation Alert\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 41\nknowledge: Critical Conservation Alert\ndescription: Identifies artifacts\
+    \ in critical condition requiring immediate intervention.\ndefinition: An artifact\
+    \ that meets both the Conservation Emergency criteria AND has\n  an AVS > 8.\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 12\n- 3"
+  entities:
+  - museum
+  - memory:museum_kb_12
+  - memory:museum_kb_3
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_42
+  learning: "KB 42 \u2014 High Deterioration Risk Artifact\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 42\nknowledge: High Deterioration Risk Artifact\ndescription:\
+    \ Identifies artifacts at high risk of rapid deterioration due to environmental\n\
+    \  factors.\ndefinition: An artifact that has TETL > 15 AND falls under the Accelerated\
+    \ Deterioration\n  Scenario.\ntype: domain_knowledge\nchildren_knowledge:\n- 31\n\
+    - 14"
+  entities:
+  - museum
+  - memory:museum_kb_31
+  - memory:museum_kb_14
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_43
+  learning: "KB 43 \u2014 Exhibition Rotation Urgency\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 43\nknowledge: Exhibition Rotation Urgency\ndescription: Identifies artifacts\
+    \ that should be immediately removed from exhibition.\ndefinition: Occurs when\
+    \ an artifact is an Exhibition Rotation Candidate AND has an\n  ERPS < 0.\ntype:\
+    \ domain_knowledge\nchildren_knowledge:\n- 15\n- 38"
+  entities:
+  - museum
+  - memory:museum_kb_15
+  - memory:museum_kb_38
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_44
+  learning: "KB 44 \u2014 Showcase Compatibility Issue\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 44\nknowledge: Showcase Compatibility Issue\ndescription: Identifies incompatible\
+    \ artifact-showcase pairings requiring adjustment.\ndefinition: Occurs when SPA\
+    \ < 0 AND the artifact is classified as having High-Value.\ntype: domain_knowledge\n\
+    children_knowledge:\n- 32\n- 11"
+  entities:
+  - museum
+  - memory:museum_kb_32
+  - memory:museum_kb_11
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_45
+  learning: "KB 45 \u2014 Conservation Resource Crisis\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 45\nknowledge: Conservation Resource Crisis\ndescription: Identifies serious\
+    \ conservation resource allocation problems.\ndefinition: Occurs when CRAE < 0.3\
+    \ AND there is a Conservation Budget Crisis.\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 36\n- 17"
+  entities:
+  - museum
+  - memory:museum_kb_36
+  - memory:museum_kb_17
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_46
+  learning: "KB 46 \u2014 Dynasty Artifact at Risk\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 46\nknowledge: Dynasty Artifact at Risk\ndescription: Identifies historically\
+    \ significant dynasty artifacts at conservation\n  risk.\ndefinition: An artifact\
+    \ that qualifies as a Dynasty Value Artifact AND has a MAP >\n  3.\ntype: domain_knowledge\n\
+    children_knowledge:\n- 18\n- 37"
+  entities:
+  - museum
+  - memory:museum_kb_18
+  - memory:museum_kb_37
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_47
+  learning: "KB 47 \u2014 Environmental Control Failure\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 47\nknowledge: Environmental Control Failure\ndescription:\
+    \ Identifies situations where environmental controls are failing to protect\n\
+    \  artifacts.\ndefinition: Occurs when ECI < 4 AND there is an Environmental Instability\
+    \ Event.\ntype: domain_knowledge\nchildren_knowledge:\n- 39\n- 13"
+  entities:
+  - museum
+  - memory:museum_kb_39
+  - memory:museum_kb_13
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_48
+  learning: "KB 48 \u2014 High Security Priority Artifact\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 48\nknowledge: High Security Priority Artifact\ndescription:\
+    \ Identifies artifacts requiring enhanced security measures.\ndefinition: An artifact\
+    \ that is classified as High-Value AND has an SRE > 5.\ntype: domain_knowledge\n\
+    children_knowledge:\n- 11\n- 40"
+  entities:
+  - museum
+  - memory:museum_kb_11
+  - memory:museum_kb_40
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_49
+  learning: "KB 49 \u2014 Visitor Traffic Safety Concern\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 49\nknowledge: Visitor Traffic Safety Concern\ndescription:\
+    \ Identifies situations where visitor traffic poses safety concerns for\n  exhibitions.\n\
+    definition: Occurs when VCSF > 2 AND there is a Visitor Crowd Risk situation.\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 34\n- 19"
+  entities:
+  - museum
+  - memory:museum_kb_34
+  - memory:museum_kb_19
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_50
+  learning: "KB 50 \u2014 Organic Material Emergency\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 50\nknowledge: Organic Material Emergency\ndescription: Identifies emergency\
+    \ situations for organic materials.\ndefinition: Occurs when an artifact falls\
+    \ under the Organic Material Vulnerability\n  classification AND has a TETL >\
+    \ 12.\ntype: domain_knowledge\nchildren_knowledge:\n- 20\n- 31"
+  entities:
+  - museum
+  - memory:museum_kb_20
+  - memory:museum_kb_31
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_51
+  learning: "KB 51 \u2014 High-Value Category\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 51\nknowledge: High-Value Category\ndescription: Classification system for\
+    \ categorizing high-value artifacts based on\n  their monetary or cultural/historical\
+    \ significance.\ndefinition: An artifact falls into 'Monetary High-Value' category\
+    \ when its InsValueUSD\n  exceeds $1,000,000. It qualifies as 'Cultural/Historical\
+    \ High-Value' when both its\n  HistSignRating and CultScore are in the top 10%\
+    \ of all artifacts (percentile rank\n  = 1). Otherwise 'Other'.\ntype: domain_knowledge\n\
+    children_knowledge:\n- 11"
+  entities:
+  - museum
+  - memory:museum_kb_11
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_52
+  learning: "KB 52 \u2014 ERPS Decision Threshold\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 52\nknowledge: ERPS Decision Threshold\ndescription: Converts ERPS scores\
+    \ into conservation actions\ndefinition: When ERPS < 0, trigger 'Immediate Rotation';\
+    \ otherwise 'Monitor'.\ntype: domain_knowledge\nchildren_knowledge:\n- 38"
+  entities:
+  - museum
+  - memory:museum_kb_38
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_53
+  learning: "KB 53 \u2014 Light Exposure Thresholds\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 53\nknowledge: Light Exposure Thresholds\ndescription: Defines maximum safe\
+    \ light exposure levels for artifacts based on material\n  sensitivity\ndefinition:\
+    \ High sensitivity artifacts (textiles, paper) must not exceed 50 lux; Medium\n\
+    \  sensitivity (paintings, wood) must not exceed 200 lux. Based on conservation\
+    \ research\n  about light-induced deterioration rates.\ntype: domain_knowledge\n\
+    children_knowledge:\n- 8\n- 21"
+  entities:
+  - museum
+  - memory:museum_kb_8
+  - memory:museum_kb_21
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_54
+  learning: "KB 54 \u2014 Conservation Environment Chronology (CEC)\n\nKB item (verbatim\
+    \ from museum_kb.jsonl):\nid: 54\nknowledge: Conservation Environment Chronology\
+    \ (CEC)\ndescription: A methodological approach used in museum conservation to\
+    \ segment environmental\n  monitoring data into chronological intervals. This\
+    \ approach enables curators to\n  identify seasonal trends, long-term shifts,\
+    \ and anomalies in environmental conditions\n  that can affect artifact stability\
+    \ and preservation.\ndefinition: CEC involves grouping readings (e.g., temperature,\
+    \ humidity, air pressure)\n  by fixed time intervals (such as by year) to discern\
+    \ patterns and inform conservation\n  strategies.\ntype: domain_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_55
+  learning: "KB 55 \u2014 Artifact Rarity & Valuation (ARV)\n\nKB item (verbatim from\
+    \ museum_kb.jsonl):\nid: 55\nknowledge: Artifact Rarity & Valuation (ARV)\ndescription:\
+    \ Establishes criteria for identifying artifacts of exceptional rarity\n  and\
+    \ valuation that demand heightened preservation measures and limited public access.\n\
+    definition: Artifacts are categorized as ARV if their insurance value exceed $1,000,000.\n\
+    type: domain_knowledge\nchildren_knowledge: -1"
+  entities:
+  - museum
+  query: null
+  created_at: *id001
+- version: 1
+  id: museum_kb_56
+  learning: "KB 56 \u2014 Conservation Priority Level\n\nKB item (verbatim from museum_kb.jsonl):\n\
+    id: 56\nknowledge: Conservation Priority Level\ndescription: Classifies artifacts\
+    \ into priority levels based on their CPI scores\ndefinition: \"'High Priority':\
+    \ CPI > 7 (Artifacts requiring immediate conservation\\\n  \\ attention); 'Medium\
+    \ Priority': 4 < CPI \\u2264 7 (Artifacts needing monitoring\\\n  \\ and planned\
+    \ conservation); 'Low Priority': CPI \\u2264 4 (Artifacts in stable condition).\"\
+    \ntype: domain_knowledge\nchildren_knowledge:\n- 0"
+  entities:
+  - museum
+  - memory:museum_kb_0
+  query: null
+  created_at: *id001

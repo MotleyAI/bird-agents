@@ -1,0 +1,252 @@
+version: 7
+name: high_value_artifacts
+source_queries:
+- version: 3
+  name: stage1
+  source_model:
+    name: stage1_src
+    data_source: museum
+    sql: WITH base AS (SELECT a.artref AS artref, MAX(a.insvalueusd) AS ins_value_usd,
+      MAX(r.histsignrating) AS hist_sign_rating, MAX(r.cultscore) AS cult_score FROM
+      artifactsecurityaccess a LEFT JOIN artifactratings r ON a.ratingref = r.ratingrecordregistry
+      GROUP BY a.artref) SELECT artref, ins_value_usd, hist_sign_rating, cult_score,
+      PERCENT_RANK() OVER (ORDER BY hist_sign_rating DESC) AS hist_pr, PERCENT_RANK()
+      OVER (ORDER BY cult_score DESC) AS cult_pr FROM base
+    columns:
+    - name: artref
+      sql: artref
+      type: TEXT
+    - name: ins_value_usd
+      sql: ins_value_usd
+      type: DOUBLE
+    - name: hist_sign_rating
+      sql: hist_sign_rating
+      type: DOUBLE
+    - name: cult_score
+      sql: cult_score
+      type: DOUBLE
+    - name: hist_pr
+      sql: hist_pr
+      type: DOUBLE
+    - name: cult_pr
+      sql: cult_pr
+      type: DOUBLE
+  dimensions:
+  - name: artref
+  - name: ins_value_usd
+  - name: hist_sign_rating
+  - name: cult_score
+  - name: hist_pr
+  - name: cult_pr
+  whole_periods_only: false
+- version: 3
+  name: final
+  source_model:
+    source_name: stage1
+    columns:
+    - name: is_high_value
+      sql: CAST(CASE WHEN stage1.ins_value_usd > 1000000 OR (stage1.hist_pr <= 0.10
+        AND stage1.cult_pr <= 0.10) THEN 1 ELSE 0 END AS INTEGER)
+      type: INT
+    - name: high_value_category
+      sql: CASE WHEN stage1.ins_value_usd > 1000000 THEN 'Monetary High-Value' WHEN
+        stage1.hist_pr <= 0.10 AND stage1.cult_pr <= 0.10 THEN 'Cultural/Historical
+        High-Value' ELSE 'Other' END
+      type: TEXT
+      label: High-Value Category
+      description: "[kb=51] An artifact falls into 'Monetary High-Value' category\
+        \ when its InsValueUSD exceeds $1,000,000. It qualifies as 'Cultural/Historical\
+        \ High-Value' when both its HistSignRating and CultScore are in the top 10%\
+        \ of all artifacts (percentile rank = 1). Otherwise 'Other'. \u2014 Classification\
+        \ system for categorizing high-value artifacts based on their monetary or\
+        \ cultural/historical significance. [/kb=51] Note: in the museum dataset,\
+        \ max InsValueUSD is ~$998K so the 'Monetary High-Value' bucket is empty in\
+        \ current data. 'Top 10%' is operationalised as percent_rank <= 0.10 against\
+        \ descending-rank columns hist_pr / cult_pr (where 0 = top), matching the\
+        \ convention used by KB 11."
+      meta:
+        kb_id: 51
+  dimensions:
+  - name: artref
+  - name: ins_value_usd
+  - name: hist_sign_rating
+  - name: cult_score
+  - name: hist_pr
+  - name: cult_pr
+  - name: is_high_value
+  - name: high_value_category
+  whole_periods_only: false
+query_variables: {}
+backing_query_sql: "SELECT \"stage1.artref\" AS artref, \"stage1.ins_value_usd\" AS\
+  \ ins_value_usd, \"stage1.hist_sign_rating\" AS hist_sign_rating, \"stage1.cult_score\"\
+  \ AS cult_score, \"stage1.hist_pr\" AS hist_pr, \"stage1.cult_pr\" AS cult_pr, \"\
+  stage1.is_high_value\" AS is_high_value, \"stage1.high_value_category\" AS high_value_category\
+  \ FROM (SELECT\n  stage1.artref AS \"stage1.artref\",\n  stage1.ins_value_usd AS\
+  \ \"stage1.ins_value_usd\",\n  stage1.hist_sign_rating AS \"stage1.hist_sign_rating\"\
+  ,\n  stage1.cult_score AS \"stage1.cult_score\",\n  stage1.hist_pr AS \"stage1.hist_pr\"\
+  ,\n  stage1.cult_pr AS \"stage1.cult_pr\",\n  CAST(CASE\n    WHEN stage1.ins_value_usd\
+  \ > 1000000\n    OR (\n      stage1.hist_pr <= 0.10 AND stage1.cult_pr <= 0.10\n\
+  \    )\n    THEN 1\n    ELSE 0\n  END AS INTEGER) AS \"stage1.is_high_value\",\n\
+  \  CASE\n    WHEN stage1.ins_value_usd > 1000000\n    THEN 'Monetary High-Value'\n\
+  \    WHEN stage1.hist_pr <= 0.10 AND stage1.cult_pr <= 0.10\n    THEN 'Cultural/Historical\
+  \ High-Value'\n    ELSE 'Other'\n  END AS \"stage1.high_value_category\"\nFROM (\n\
+  \  SELECT\n    \"stage1_src.artref\" AS artref,\n    \"stage1_src.ins_value_usd\"\
+  \ AS ins_value_usd,\n    \"stage1_src.hist_sign_rating\" AS hist_sign_rating,\n\
+  \    \"stage1_src.cult_score\" AS cult_score,\n    \"stage1_src.hist_pr\" AS hist_pr,\n\
+  \    \"stage1_src.cult_pr\" AS cult_pr\n  FROM (\n    SELECT\n      stage1_src.artref\
+  \ AS \"stage1_src.artref\",\n      stage1_src.ins_value_usd AS \"stage1_src.ins_value_usd\"\
+  ,\n      stage1_src.hist_sign_rating AS \"stage1_src.hist_sign_rating\",\n     \
+  \ stage1_src.cult_score AS \"stage1_src.cult_score\",\n      stage1_src.hist_pr\
+  \ AS \"stage1_src.hist_pr\",\n      stage1_src.cult_pr AS \"stage1_src.cult_pr\"\
+  \n    FROM (\n      WITH base AS (\n        SELECT\n          a.artref AS artref,\n\
+  \          MAX(a.insvalueusd) AS ins_value_usd,\n          MAX(r.histsignrating)\
+  \ AS hist_sign_rating,\n          MAX(r.cultscore) AS cult_score\n        FROM artifactsecurityaccess\
+  \ AS a\n        LEFT JOIN artifactratings AS r\n          ON a.ratingref = r.ratingrecordregistry\n\
+  \        GROUP BY\n          a.artref\n      )\n      SELECT\n        artref,\n\
+  \        ins_value_usd,\n        hist_sign_rating,\n        cult_score,\n      \
+  \  PERCENT_RANK() OVER (ORDER BY hist_sign_rating DESC) AS hist_pr,\n        PERCENT_RANK()\
+  \ OVER (ORDER BY cult_score DESC) AS cult_pr\n      FROM base\n    ) AS stage1_src\n\
+  \    GROUP BY\n      stage1_src.artref,\n      stage1_src.ins_value_usd,\n     \
+  \ stage1_src.hist_sign_rating,\n      stage1_src.cult_score,\n      stage1_src.hist_pr,\n\
+  \      stage1_src.cult_pr\n  ) AS _inner\n) AS stage1\nGROUP BY\n  stage1.artref,\n\
+  \  stage1.ins_value_usd,\n  stage1.hist_sign_rating,\n  stage1.cult_score,\n  stage1.hist_pr,\n\
+  \  stage1.cult_pr,\n  CAST(CASE\n    WHEN stage1.ins_value_usd > 1000000\n    OR\
+  \ (\n      stage1.hist_pr <= 0.10 AND stage1.cult_pr <= 0.10\n    )\n    THEN 1\n\
+  \    ELSE 0\n  END AS INTEGER),\n  CASE\n    WHEN stage1.ins_value_usd > 1000000\n\
+  \    THEN 'Monetary High-Value'\n    WHEN stage1.hist_pr <= 0.10 AND stage1.cult_pr\
+  \ <= 0.10\n    THEN 'Cultural/Historical High-Value'\n    ELSE 'Other'\n  END) AS\
+  \ _inner"
+data_source: museum
+columns:
+- name: artref
+  sql: artref
+  type: TEXT
+  primary_key: false
+  hidden: false
+  sampled: ART10016  , ART10101  , ART10304  , ART10454  , ART10602  , ART10796  ,
+    ART10868  , ART10877  , ART11061  , ART11166  , ART11238  , ART11605  , ART11692  ,
+    ART11696  , ART11818  , ART11915  , ART11997  , ART12066  , ART12071  , ART12569   ...
+    (951 distinct)
+  sampled_values:
+  - 'ART10016  '
+  - 'ART10101  '
+  - 'ART10304  '
+  - 'ART10454  '
+  - 'ART10602  '
+  - 'ART10796  '
+  - 'ART10868  '
+  - 'ART10877  '
+  - 'ART11061  '
+  - 'ART11166  '
+  - 'ART11238  '
+  - 'ART11605  '
+  - 'ART11692  '
+  - 'ART11696  '
+  - 'ART11818  '
+  - 'ART11915  '
+  - 'ART11997  '
+  - 'ART12066  '
+  - 'ART12071  '
+  - 'ART12569  '
+  - 'ART12707  '
+  - 'ART12752  '
+  - 'ART12761  '
+  - 'ART12836  '
+  - 'ART12913  '
+  - 'ART12943  '
+  - 'ART12970  '
+  - 'ART13225  '
+  - 'ART13427  '
+  - 'ART13446  '
+  - 'ART13491  '
+  - 'ART13670  '
+  - 'ART13864  '
+  - 'ART13944  '
+  - 'ART13974  '
+  - 'ART14031  '
+  - 'ART14074  '
+  - 'ART14093  '
+  - 'ART14403  '
+  - 'ART14428  '
+  - 'ART14493  '
+  - 'ART14524  '
+  - 'ART14535  '
+  - 'ART14626  '
+  - 'ART14981  '
+  - 'ART14989  '
+  - 'ART15309  '
+  - 'ART15493  '
+  - 'ART15630  '
+  - 'ART15822  '
+  distinct_count: 951
+- name: ins_value_usd
+  sql: ins_value_usd
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  sampled: 10055.0 .. 997619.0
+- name: hist_sign_rating
+  sql: hist_sign_rating
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  sampled: 1 .. 10
+- name: cult_score
+  sql: cult_score
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  sampled: 1 .. 100
+- name: hist_pr
+  sql: hist_pr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  sampled: 0.0 .. 0.8968421052631579
+- name: cult_pr
+  sql: cult_pr
+  type: DOUBLE
+  primary_key: false
+  hidden: false
+  sampled: 0.0 .. 0.988421052631579
+- name: is_high_value
+  sql: is_high_value
+  type: INT
+  primary_key: false
+  hidden: false
+  sampled: 0 .. 1
+- name: high_value_category
+  sql: high_value_category
+  type: TEXT
+  primary_key: false
+  description: "[kb=51] An artifact falls into 'Monetary High-Value' category when\
+    \ its InsValueUSD exceeds $1,000,000. It qualifies as 'Cultural/Historical High-Value'\
+    \ when both its HistSignRating and CultScore are in the top 10% of all artifacts\
+    \ (percentile rank = 1). Otherwise 'Other'. \u2014 Classification system for categorizing\
+    \ high-value artifacts based on their monetary or cultural/historical significance.\
+    \ [/kb=51] Note: in the museum dataset, max InsValueUSD is ~$998K so the 'Monetary\
+    \ High-Value' bucket is empty in current data. 'Top 10%' is operationalised as\
+    \ percent_rank <= 0.10 against descending-rank columns hist_pr / cult_pr (where\
+    \ 0 = top), matching the convention used by KB 11."
+  label: High-Value Category
+  hidden: false
+  sampled: Other, Cultural/Historical High-Value
+  sampled_values:
+  - Other
+  - Cultural/Historical High-Value
+  distinct_count: 2
+measures: []
+aggregations: []
+joins: []
+filters: []
+description: "[kb=11] An artifact is considered high-value when its InsValueUSD exceeds\
+  \ $1,000,000 OR when both HistSignRating and CultScore are in the top 10% of all\
+  \ artifacts. \u2014 Identifies artifacts with exceptional historical, cultural,\
+  \ or monetary value requiring special attention. [/kb=11]\n\nOne row per artifact\
+  \ (keyed by artref) with the percentile-rank columns needed to evaluate KB 11. Includes\
+  \ a derived column `is_high_value` that materialises the boolean. The \"top 10%\"\
+  \ cutoff is interpreted as `percent_rank <= 0.10` (descending PERCENT_RANK over\
+  \ all 951 artifacts; ties at the top all share rank 0)."
+hidden: false
+meta:
+  kb_id: 11

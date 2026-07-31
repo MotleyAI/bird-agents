@@ -1,0 +1,325 @@
+version: 7
+name: facilities
+sql_table: facilities
+query_variables: {}
+data_source: mental
+columns:
+- name: fackey
+  sql: fackey
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key uniquely identifying the facility (e.g.,
+    'FAC001').
+  hidden: false
+- name: rsource
+  sql: rsource
+  type: TEXT
+  primary_key: false
+  description: An enum (referralsource_enum) for how the patient was referred (Self,
+    Court, Physician, Emergency, Family).
+  hidden: false
+  sampled: Emergency, Court, Physician, Family, Self
+  sampled_values:
+  - Emergency
+  - Court
+  - Physician
+  - Family
+  - Self
+  distinct_count: 5
+- name: envstress
+  sql: envstress
+  type: TEXT
+  primary_key: false
+  description: An enum (environmentalstressors_enum) describing stressors in the environment
+    (Mild, Moderate, Severe).
+  hidden: false
+  sampled: Mild, Severe, Moderate
+  sampled_values:
+  - Mild
+  - Severe
+  - Moderate
+  distinct_count: 3
+- name: lifeimpact
+  sql: lifeimpact
+  type: TEXT
+  primary_key: false
+  description: An enum (lifeeventsimpact_enum) showing how life events impact the
+    patient (Mild, Moderate, Severe).
+  hidden: false
+  sampled: Mild, Severe, Moderate
+  sampled_values:
+  - Mild
+  - Severe
+  - Moderate
+  distinct_count: 3
+- name: seasonpat
+  sql: seasonpat
+  type: TEXT
+  primary_key: false
+  description: An enum (seasonalpattern_enum) capturing any seasonal pattern in symptoms
+    (Summer, Winter, Variable).
+  hidden: false
+  sampled: Variable, Winter, Summer
+  sampled_values:
+  - Variable
+  - Winter
+  - Summer
+  distinct_count: 3
+- name: leglissue
+  sql: leglissue
+  type: TEXT
+  primary_key: false
+  description: An enum (legalissues_enum) describing the patient's legal issues (Resolved,
+    Pending, Ongoing).
+  hidden: false
+  sampled: Resolved, Ongoing, Pending
+  sampled_values:
+  - Resolved
+  - Ongoing
+  - Pending
+  distinct_count: 3
+- name: ssystemchg
+  sql: ssystemchg
+  type: TEXT
+  primary_key: false
+  description: An enum (supportsystemchanges_enum) describing changes in support system
+    (Variable, Improved, Declined).
+  hidden: false
+  sampled: Variable, Improved, Declined
+  sampled_values:
+  - Variable
+  - Improved
+  - Declined
+  distinct_count: 3
+- name: support_and_resources
+  sql: support_and_resources
+  type: TEXT
+  primary_key: false
+  description: JSONB column. Stores information about the facility's support services,
+    community resources, emergency contacts, and plan statuses.
+  hidden: false
+  meta:
+    jsonb: true
+  sampled: '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not
+    Needed"}, "support_services": "", "emergency_contact": "7", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "In Place", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "2", "community_resources":
+    "Comprehensive"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "10", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "9", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "In Place", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "3", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "2", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "5", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "6", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "In Place"}, "support_services": "", "emergency_contact": "3", "community_resources":
+    "Adequate"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "In Place"}, "support_services": "", "emergency_contact": "6", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "Needs Update"}, "support_services": "", "emergency_contact": "2", "community_resources":
+    "Comprehensive"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "0", "community_resources":
+    "Adequate"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "0", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "4", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "5", "community_resources":
+    "Comprehensive"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "5", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "Not Needed"}, "support_services": "", "emergency_contact": "9", "community_resources":
+    "Comprehensive"}, {"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status":
+    "Not Needed"}, "support_services": "Legal", "emergency_contact": "3", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "In Place", "safety_plan_status":
+    "In Place"}, "support_services": "Employment", "emergency_contact": "3", "community_resources":
+    "Limited"}, {"plans": {"crisis_plan_status": "In Place", "safety_plan_status":
+    "Needs Update"}, "support_services": "", "emergency_contact": "4", "community_resources":
+    "Limited"} ... (515 distinct)'
+  sampled_values:
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "7", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "2", "community_resources": "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "10", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "9", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "3", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "2", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "5", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "6", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "In Place"},
+    "support_services": "", "emergency_contact": "3", "community_resources": "Adequate"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "In Place"},
+    "support_services": "", "emergency_contact": "6", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Needs Update"},
+    "support_services": "", "emergency_contact": "2", "community_resources": "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "0", "community_resources": "Adequate"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "0", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "4", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "5", "community_resources": "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "5", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "9", "community_resources": "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not Needed"},
+    "support_services": "Legal", "emergency_contact": "3", "community_resources":
+    "Limited"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "In Place"},
+    "support_services": "Employment", "emergency_contact": "3", "community_resources":
+    "Limited"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "Needs Update"},
+    "support_services": "", "emergency_contact": "4", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "1", "community_resources": "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "1", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "10", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "4", "community_resources": "Adequate"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "5", "community_resources": "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "7", "community_resources": "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "9", "community_resources": "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "In Place", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "9", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "In Place"},
+    "support_services": "", "emergency_contact": "2", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "In Place"},
+    "support_services": "", "emergency_contact": "3", "community_resources": "Adequate"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "In Place"},
+    "support_services": "", "emergency_contact": "4", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "Needs
+    Update"}, "support_services": "", "emergency_contact": "4", "community_resources":
+    "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "Needs
+    Update"}, "support_services": "", "emergency_contact": "5", "community_resources":
+    "Adequate"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "Needs
+    Update"}, "support_services": "", "emergency_contact": "7", "community_resources":
+    "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "3", "community_resources": "Adequate"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "3", "community_resources": "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "4", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "9", "community_resources": "Adequate"}'
+  - '{"plans": {"crisis_plan_status": "Needs Update", "safety_plan_status": "Not Needed"},
+    "support_services": "Employment", "emergency_contact": "9", "community_resources":
+    "Adequate"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "In Place"},
+    "support_services": "", "emergency_contact": "0", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "In Place"},
+    "support_services": "", "emergency_contact": "1", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "In Place"},
+    "support_services": "", "emergency_contact": "7", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Needs Update"},
+    "support_services": "", "emergency_contact": "10", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Needs Update"},
+    "support_services": "", "emergency_contact": "3", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Needs Update"},
+    "support_services": "", "emergency_contact": "4", "community_resources": "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Needs Update"},
+    "support_services": "", "emergency_contact": "7", "community_resources": "Adequate"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Needs Update"},
+    "support_services": "", "emergency_contact": "9", "community_resources": "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Needs Update"},
+    "support_services": "Employment,Legal", "emergency_contact": "6", "community_resources":
+    "Limited"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Needs Update"},
+    "support_services": "Housing", "emergency_contact": "3", "community_resources":
+    "Comprehensive"}'
+  - '{"plans": {"crisis_plan_status": "Not Needed", "safety_plan_status": "Not Needed"},
+    "support_services": "", "emergency_contact": "1", "community_resources": "Limited"}'
+  distinct_count: 515
+- name: support_and_resources__support_services
+  sql: JSON_EXTRACT(support_and_resources, '$.support_services')
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(200) listing available or recommended support services (e.g.,
+    'Peer support group, vocational rehab').
+  label: Support Services
+  hidden: false
+  meta:
+    derived_from:
+      json_col: support_and_resources
+      path:
+      - support_services
+- name: support_and_resources__community_resources
+  sql: JSON_EXTRACT(support_and_resources, '$.community_resources')
+  type: TEXT
+  primary_key: false
+  description: An enum (communityresources_enum) describing local resource availability
+    (Limited, Comprehensive, Adequate).
+  label: Community Resources
+  hidden: false
+  meta:
+    derived_from:
+      json_col: support_and_resources
+      path:
+      - community_resources
+- name: support_and_resources__emergency_contact
+  sql: JSON_EXTRACT(support_and_resources, '$.emergency_contact')
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(200) capturing emergency contact info or phone numbers (e.g.,
+    ''Hotline: 1-800-xxx'').'
+  label: Emergency Contact
+  hidden: false
+  meta:
+    derived_from:
+      json_col: support_and_resources
+      path:
+      - emergency_contact
+- name: support_and_resources__plans__safety_plan_status
+  sql: JSON_EXTRACT(support_and_resources, '$.plans.safety_plan_status')
+  type: TEXT
+  primary_key: false
+  description: An enum (safetyplanstatus_enum) for the safety plan status (Needs Update,
+    In Place, Not Needed).
+  label: Safety Plan Status
+  hidden: false
+  meta:
+    derived_from:
+      json_col: support_and_resources
+      path:
+      - plans
+      - safety_plan_status
+- name: support_and_resources__plans__crisis_plan_status
+  sql: JSON_EXTRACT(support_and_resources, '$.plans.crisis_plan_status')
+  type: TEXT
+  primary_key: false
+  description: An enum (crisisplanstatus_enum) for the crisis plan status (Not Needed,
+    Needs Update, In Place).
+  label: Crisis Plan Status
+  hidden: false
+  meta:
+    derived_from:
+      json_col: support_and_resources
+      path:
+      - plans
+      - crisis_plan_status
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

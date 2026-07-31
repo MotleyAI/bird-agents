@@ -1,0 +1,193 @@
+version: 7
+name: conditionassessments
+sql_table: conditionassessments
+query_variables: {}
+data_source: museum
+columns:
+- name: conditionassessregistry
+  sql: conditionassessregistry
+  type: INT
+  primary_key: true
+  description: BIGSERIAL PRIMARY KEY, unique ID for each condition assessment record.
+  hidden: false
+  format:
+    type: integer
+- name: artrefexamined
+  sql: artrefexamined
+  type: TEXT
+  primary_key: false
+  description: TEXT NOT NULL FOREIGN KEY referencing ArtifactsCore(ArtRegistry). Links
+    to the artifact under assessment. (In practice, should match CHAR(10) type if
+    needed.)
+  hidden: false
+  sampled: ART10016, ART10101, ART10304, ART10454, ART10602, ART10796, ART10868, ART10877,
+    ART11061, ART11166, ART11238, ART11605, ART11692, ART11696, ART11818, ART11915,
+    ART11997, ART12066, ART12071, ART12569 ... (951 distinct)
+  sampled_values:
+  - ART10016
+  - ART10101
+  - ART10304
+  - ART10454
+  - ART10602
+  - ART10796
+  - ART10868
+  - ART10877
+  - ART11061
+  - ART11166
+  - ART11238
+  - ART11605
+  - ART11692
+  - ART11696
+  - ART11818
+  - ART11915
+  - ART11997
+  - ART12066
+  - ART12071
+  - ART12569
+  - ART12707
+  - ART12752
+  - ART12761
+  - ART12836
+  - ART12913
+  - ART12943
+  - ART12970
+  - ART13225
+  - ART13427
+  - ART13446
+  - ART13491
+  - ART13670
+  - ART13864
+  - ART13944
+  - ART13974
+  - ART14031
+  - ART14074
+  - ART14093
+  - ART14403
+  - ART14428
+  - ART14493
+  - ART14524
+  - ART14535
+  - ART14626
+  - ART14981
+  - ART14989
+  - ART15309
+  - ART15493
+  - ART15630
+  - ART15822
+  distinct_count: 951
+- name: showcaserefexamined
+  sql: showcaserefexamined
+  type: TEXT
+  primary_key: false
+  description: TEXT FOREIGN KEY referencing Showcases(ShowcaseReg). Ties the record
+    to the showcase if it was part of the assessment.
+  hidden: false
+  sampled: SC1006, SC1007, SC1015, SC1038, SC1043, SC1060, SC1062, SC1077, SC1112,
+    SC1125, SC1127, SC1135, SC1141, SC1158, SC1164, SC1183, SC1193, SC1201, SC1211,
+    SC1214 ... (951 distinct)
+  sampled_values:
+  - SC1006
+  - SC1007
+  - SC1015
+  - SC1038
+  - SC1043
+  - SC1060
+  - SC1062
+  - SC1077
+  - SC1112
+  - SC1125
+  - SC1127
+  - SC1135
+  - SC1141
+  - SC1158
+  - SC1164
+  - SC1183
+  - SC1193
+  - SC1201
+  - SC1211
+  - SC1214
+  - SC1224
+  - SC1226
+  - SC1232
+  - SC1242
+  - SC1251
+  - SC1253
+  - SC1260
+  - SC1269
+  - SC1271
+  - SC1285
+  - SC1286
+  - SC1292
+  - SC1296
+  - SC1305
+  - SC1319
+  - SC1326
+  - SC1350
+  - SC1351
+  - SC1353
+  - SC1376
+  - SC1402
+  - SC1443
+  - SC1445
+  - SC1447
+  - SC1487
+  - SC1490
+  - SC1491
+  - SC1498
+  - SC1511
+  - SC1525
+  distinct_count: 951
+- name: lightreadrefobserved
+  sql: lightreadrefobserved
+  type: INT
+  primary_key: false
+  description: BIGINT FOREIGN KEY referencing LightAndRadiationReadings(LightRadRegistry).
+    Associates the assessment with relevant light data.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 951
+- name: condassessscore
+  sql: condassessscore
+  type: INT
+  primary_key: false
+  description: INT rating or score representing the artifact/showcase condition (scale
+    is flexible).
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 100
+- name: conserveassessdate
+  sql: conserveassessdate
+  type: DATE
+  primary_key: false
+  description: DATE when the conservation assessment took place.
+  hidden: false
+  sampled: 2024-02-20 .. 2025-02-19
+- name: nextassessdue
+  sql: nextassessdue
+  type: DATE
+  primary_key: false
+  description: DATE by which the next condition assessment should occur.
+  hidden: false
+  sampled: 2025-02-20 .. 2026-02-19
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artrefexamined
+    - artregistry
+  join_type: left
+- target_model: lightandradiationreadings
+  join_pairs:
+  - - lightreadrefobserved
+    - lightradregistry
+  join_type: left
+- target_model: showcases
+  join_pairs:
+  - - showcaserefexamined
+    - showcasereg
+  join_type: left
+filters: []
+hidden: false

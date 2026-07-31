@@ -1,0 +1,403 @@
+version: 7
+name: treatmentbasics
+sql_table: treatmentbasics
+query_variables: {}
+data_source: mental
+columns:
+- name: txkey
+  sql: txkey
+  type: INT
+  primary_key: true
+  description: A SERIAL primary key for each treatment record (e.g., 101).
+  hidden: false
+  format:
+    type: integer
+- name: encref
+  sql: encref
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(30) FK referencing Encounters(EncKey).
+  hidden: false
+  sampled: MH125603, MH100725, MH104257, MH105640, MH105643, MH105659, MH108395, MH110405,
+    MH110938, MH112193, MH112294, MH113258, MH113729, MH114119, MH114961, MH115939,
+    MH116568, MH117455, MH118921, MH120392 ... (999 distinct)
+  sampled_values:
+  - MH125603
+  - MH100725
+  - MH104257
+  - MH105640
+  - MH105643
+  - MH105659
+  - MH108395
+  - MH110405
+  - MH110938
+  - MH112193
+  - MH112294
+  - MH113258
+  - MH113729
+  - MH114119
+  - MH114961
+  - MH115939
+  - MH116568
+  - MH117455
+  - MH118921
+  - MH120392
+  - MH120707
+  - MH122042
+  - MH122689
+  - MH122943
+  - MH127607
+  - MH127824
+  - MH128412
+  - MH129000
+  - MH129236
+  - MH129878
+  - MH131570
+  - MH132642
+  - MH133229
+  - MH133363
+  - MH133403
+  - MH134187
+  - MH134315
+  - MH136078
+  - MH137106
+  - MH139157
+  - MH139697
+  - MH140204
+  - MH143049
+  - MH144168
+  - MH145954
+  - MH146886
+  - MH147639
+  - MH147702
+  - MH148502
+  - MH148781
+  distinct_count: 999
+- name: curmed
+  sql: curmed
+  type: TEXT
+  primary_key: false
+  description: A TEXT field listing current medications (e.g., 'SSRIs, Mood stabilizer').
+  hidden: false
+  sampled: ', Mood Stabilizer, Antipsychotic, Antidepressant, Anxiolytic, Antidepressant,Anxiolytic,
+    Antipsychotic,Mood Stabilizer, Anxiolytic,Antidepressant, Mood Stabilizer,Antipsychotic,
+    None,Mood Stabilizer, None,Anxiolytic, Antipsychotic,Antidepressant, Antipsychotic,Anxiolytic,
+    Antipsychotic,None, Anxiolytic,None, Mood Stabilizer,None, Antidepressant,Mood
+    Stabilizer, Antidepressant,None, Antipsychotic,Anxiolytic,Mood Stabilizer, Mood
+    Stabilizer,Antidepressant ... (84 distinct)'
+  sampled_values:
+  - ''
+  - Mood Stabilizer
+  - Antipsychotic
+  - Antidepressant
+  - Anxiolytic
+  - Antidepressant,Anxiolytic
+  - Antipsychotic,Mood Stabilizer
+  - Anxiolytic,Antidepressant
+  - Mood Stabilizer,Antipsychotic
+  - None,Mood Stabilizer
+  - None,Anxiolytic
+  - Antipsychotic,Antidepressant
+  - Antipsychotic,Anxiolytic
+  - Antipsychotic,None
+  - Anxiolytic,None
+  - Mood Stabilizer,None
+  - Antidepressant,Mood Stabilizer
+  - Antidepressant,None
+  - Antipsychotic,Anxiolytic,Mood Stabilizer
+  - Mood Stabilizer,Antidepressant
+  - Mood Stabilizer,Anxiolytic
+  - None,Antipsychotic
+  - None,Antipsychotic,Anxiolytic
+  - None,Antidepressant
+  - Antidepressant,Antipsychotic
+  - Antipsychotic,Anxiolytic,None
+  - Anxiolytic,Antidepressant,None
+  - Anxiolytic,Antipsychotic
+  - Mood Stabilizer,Antidepressant,Antipsychotic
+  - Mood Stabilizer,Antidepressant,Anxiolytic
+  - Mood Stabilizer,Anxiolytic,None
+  - None,Mood Stabilizer,Antidepressant
+  - Antidepressant,Anxiolytic,Mood Stabilizer
+  - Antidepressant,Mood Stabilizer,Antipsychotic
+  - Antipsychotic,Antidepressant,None
+  - Antipsychotic,Mood Stabilizer,Antidepressant
+  - Antipsychotic,None,Antidepressant
+  - Anxiolytic,Antidepressant,Mood Stabilizer
+  - Anxiolytic,Mood Stabilizer
+  - Mood Stabilizer,Antipsychotic,Anxiolytic
+  - None,Antipsychotic,Antidepressant
+  - Antidepressant,None,Antipsychotic
+  - Antipsychotic,Antidepressant,Anxiolytic
+  - Antipsychotic,None,Anxiolytic
+  - Antipsychotic,None,Mood Stabilizer
+  - Anxiolytic,None,Antidepressant
+  - Anxiolytic,None,Antipsychotic
+  - Mood Stabilizer,Anxiolytic,Antidepressant
+  - Mood Stabilizer,None,Antidepressant
+  - Mood Stabilizer,None,Antipsychotic
+  distinct_count: 84
+- name: medadh
+  sql: medadh
+  type: TEXT
+  primary_key: false
+  description: An enum (medicationadherence_enum) for medication adherence (Medium,
+    Low, Non-compliant, High).
+  hidden: false
+  sampled: Medium, High, Low, Non-compliant
+  sampled_values:
+  - Medium
+  - High
+  - Low
+  - Non-compliant
+  distinct_count: 4
+- name: medside
+  sql: medside
+  type: TEXT
+  primary_key: false
+  description: An enum (medicationsideeffects_enum) describing side effect severity
+    (Mild, Moderate, Severe).
+  hidden: false
+  sampled: Mild, Severe, Moderate
+  sampled_values:
+  - Mild
+  - Severe
+  - Moderate
+  distinct_count: 3
+- name: medchg
+  sql: medchg
+  type: TEXT
+  primary_key: false
+  description: An enum (medicationchanges_enum) for medication changes (Dose Adjustment,
+    Augmentation, Switch).
+  hidden: false
+  sampled: Dose Adjustment, Switch, Augmentation
+  sampled_values:
+  - Dose Adjustment
+  - Switch
+  - Augmentation
+  distinct_count: 3
+- name: crisisint
+  sql: crisisint
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(2,1) capturing any crisis interventions count or measure
+    (e.g., 2.0).
+  hidden: false
+  format:
+    type: float
+  sampled: 0.0 .. 5.0
+- name: therapy_details
+  sql: therapy_details
+  type: TEXT
+  primary_key: false
+  description: JSONB column. Captures details about the therapy provided, including
+    type, frequency, duration, engagement, and changes.
+  hidden: false
+  meta:
+    jsonb: true
+  sampled: '{"type": "CBT", "changes": "Frequency Change", "frequency": "Biweekly",
+    "engagement": "Low", "duration_months": 20}, {"type": "CBT", "changes": "Frequency
+    Change", "frequency": "Weekly", "engagement": "Low", "duration_months": 34}, {"type":
+    "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement": "Non-compliant",
+    "duration_months": 9}, {"type": "CBT", "changes": "Modality Change", "frequency":
+    "Weekly", "engagement": "Medium", "duration_months": 25}, {"type": "CBT", "changes":
+    "Frequency Change", "frequency": "Biweekly", "engagement": "Low", "duration_months":
+    22}, {"type": "CBT", "changes": "Frequency Change", "frequency": "Biweekly", "engagement":
+    "Low", "duration_months": 34}, {"type": "CBT", "changes": "Frequency Change",
+    "frequency": "Biweekly", "engagement": "Non-compliant", "duration_months": 57},
+    {"type": "CBT", "changes": "Frequency Change", "frequency": "Monthly", "engagement":
+    "High", "duration_months": 28}, {"type": "CBT", "changes": "Frequency Change",
+    "frequency": "Monthly", "engagement": "High", "duration_months": 32}, {"type":
+    "CBT", "changes": "Frequency Change", "frequency": "Monthly", "engagement": "High",
+    "duration_months": 8}, {"type": "CBT", "changes": "Frequency Change", "frequency":
+    "Monthly", "engagement": "Medium", "duration_months": 12}, {"type": "CBT", "changes":
+    "Frequency Change", "frequency": "Monthly", "engagement": "Non-compliant", "duration_months":
+    28}, {"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "High", "duration_months": 40}, {"type": "CBT", "changes": "Frequency Change",
+    "frequency": "Weekly", "engagement": "High", "duration_months": 57}, {"type":
+    "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement": "Low",
+    "duration_months": 15}, {"type": "CBT", "changes": "Frequency Change", "frequency":
+    "Weekly", "engagement": "Low", "duration_months": 18}, {"type": "CBT", "changes":
+    "Frequency Change", "frequency": "Weekly", "engagement": "Low", "duration_months":
+    22}, {"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 2}, {"type": "CBT", "changes": "Frequency Change", "frequency":
+    "Weekly", "engagement": "Low", "duration_months": 50}, {"type": "CBT", "changes":
+    "Frequency Change", "frequency": "Weekly", "engagement": "Medium", "duration_months":
+    19} ... (921 distinct)'
+  sampled_values:
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Biweekly", "engagement":
+    "Low", "duration_months": 20}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 34}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Non-compliant", "duration_months": 9}'
+  - '{"type": "CBT", "changes": "Modality Change", "frequency": "Weekly", "engagement":
+    "Medium", "duration_months": 25}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Biweekly", "engagement":
+    "Low", "duration_months": 22}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Biweekly", "engagement":
+    "Low", "duration_months": 34}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Biweekly", "engagement":
+    "Non-compliant", "duration_months": 57}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Monthly", "engagement":
+    "High", "duration_months": 28}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Monthly", "engagement":
+    "High", "duration_months": 32}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Monthly", "engagement":
+    "High", "duration_months": 8}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Monthly", "engagement":
+    "Medium", "duration_months": 12}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Monthly", "engagement":
+    "Non-compliant", "duration_months": 28}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "High", "duration_months": 40}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "High", "duration_months": 57}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 15}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 18}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 22}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 2}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 50}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Medium", "duration_months": 19}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Medium", "duration_months": 38}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Medium", "duration_months": 45}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Medium", "duration_months": 9}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Non-compliant", "duration_months": 43}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Non-compliant", "duration_months": 50}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Non-compliant", "duration_months": 52}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Non-compliant", "duration_months": 5}'
+  - '{"type": "CBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Non-compliant", "duration_months": 8}'
+  - '{"type": "CBT", "changes": "Modality Change", "frequency": "Biweekly", "engagement":
+    "Medium", "duration_months": 30}'
+  - '{"type": "CBT", "changes": "Modality Change", "frequency": "Biweekly", "engagement":
+    "Non-compliant", "duration_months": 47}'
+  - '{"type": "CBT", "changes": "Modality Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 36}'
+  - '{"type": "CBT", "changes": "Modality Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 49}'
+  - '{"type": "CBT", "changes": "Therapist Change", "frequency": "Biweekly", "engagement":
+    "High", "duration_months": 34}'
+  - '{"type": "CBT", "changes": "Therapist Change", "frequency": "Monthly", "engagement":
+    "Low", "duration_months": 42}'
+  - '{"type": "CBT", "changes": "Therapist Change", "frequency": "Weekly", "engagement":
+    "High", "duration_months": 38}'
+  - '{"type": "CBT", "changes": "Therapist Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 1}'
+  - '{"type": "CBT", "changes": "Therapist Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 28}'
+  - '{"type": "CBT", "changes": "Therapist Change", "frequency": "Weekly", "engagement":
+    "Non-compliant", "duration_months": 15}'
+  - '{"type": "CBT", "changes": "Therapist Change", "frequency": "Weekly", "engagement":
+    "Non-compliant", "duration_months": 3}'
+  - '{"type": "DBT", "changes": "Frequency Change", "frequency": "Monthly", "engagement":
+    "Low", "duration_months": 18}'
+  - '{"type": "DBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "High", "duration_months": 31}'
+  - '{"type": "DBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "High", "duration_months": 43}'
+  - '{"type": "DBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "High", "duration_months": 7}'
+  - '{"type": "DBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Low", "duration_months": 18}'
+  - '{"type": "DBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Medium", "duration_months": 60}'
+  - '{"type": "DBT", "changes": "Frequency Change", "frequency": "Weekly", "engagement":
+    "Non-compliant", "duration_months": 49}'
+  - '{"type": "DBT", "changes": "Modality Change", "frequency": "Monthly", "engagement":
+    "High", "duration_months": 14}'
+  - '{"type": "DBT", "changes": "Therapist Change", "frequency": "Biweekly", "engagement":
+    "Medium", "duration_months": 23}'
+  - '{"type": "DBT", "changes": "Therapist Change", "frequency": "Weekly", "engagement":
+    "Non-compliant", "duration_months": 27}'
+  - '{"type": "Group", "changes": "Frequency Change", "frequency": "Biweekly", "engagement":
+    "High", "duration_months": 23}'
+  distinct_count: 921
+- name: therapy_details__type
+  sql: JSON_EXTRACT(therapy_details, '$.type')
+  type: TEXT
+  primary_key: false
+  description: An enum (therapytype_enum) describing therapy modality (DBT, Group,
+    Psychodynamic, CBT).
+  label: Type
+  hidden: false
+  meta:
+    derived_from:
+      json_col: therapy_details
+      path:
+      - type
+- name: therapy_details__frequency
+  sql: JSON_EXTRACT(therapy_details, '$.frequency')
+  type: TEXT
+  primary_key: false
+  description: An enum (therapyfrequency_enum) describing therapy frequency (Biweekly,
+    Monthly, Weekly).
+  label: Frequency
+  hidden: false
+  meta:
+    derived_from:
+      json_col: therapy_details
+      path:
+      - frequency
+- name: therapy_details__duration_months
+  sql: JSON_EXTRACT(therapy_details, '$.duration_months')
+  type: INT
+  primary_key: false
+  description: A SMALLINT capturing the therapy duration in months (e.g., 6).
+  label: Duration Months
+  hidden: false
+  meta:
+    derived_from:
+      json_col: therapy_details
+      path:
+      - duration_months
+- name: therapy_details__engagement
+  sql: JSON_EXTRACT(therapy_details, '$.engagement')
+  type: TEXT
+  primary_key: false
+  description: An enum (therapyengagement_enum) describing engagement (Medium, High,
+    Low, Non-compliant).
+  label: Engagement
+  hidden: false
+  meta:
+    derived_from:
+      json_col: therapy_details
+      path:
+      - engagement
+- name: therapy_details__changes
+  sql: JSON_EXTRACT(therapy_details, '$.changes')
+  type: TEXT
+  primary_key: false
+  description: An enum (therapychanges_enum) for therapy changes (Frequency Change,
+    Modality Change, Therapist Change).
+  label: Changes
+  hidden: false
+  meta:
+    derived_from:
+      json_col: therapy_details
+      path:
+      - changes
+measures: []
+aggregations: []
+joins:
+- target_model: encounters
+  join_pairs:
+  - - encref
+    - enckey
+  join_type: left
+filters: []
+hidden: false

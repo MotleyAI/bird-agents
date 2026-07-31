@@ -1,0 +1,413 @@
+version: 7
+name: conservationandmaintenance
+sql_table: conservationandmaintenance
+query_variables: {}
+data_source: museum
+columns:
+- name: conservemaintregistry
+  sql: conservemaintregistry
+  type: INT
+  primary_key: true
+  description: A BIGSERIAL primary key uniquely identifying each record of conservation
+    and maintenance.
+  hidden: false
+  format:
+    type: integer
+- name: artrefmaintained
+  sql: artrefmaintained
+  type: TEXT
+  primary_key: false
+  description: A CHAR(10) NOT NULL foreign key referencing ArtifactsCore(ArtRegistry).
+    Ties this record to the maintained artifact.
+  hidden: false
+  sampled: ART10016  , ART10101  , ART10304  , ART10454  , ART10602  , ART10796  ,
+    ART10868  , ART10877  , ART11061  , ART11166  , ART11238  , ART11605  , ART11692  ,
+    ART11696  , ART11818  , ART11915  , ART11997  , ART12066  , ART12071  , ART12569   ...
+    (951 distinct)
+  sampled_values:
+  - 'ART10016  '
+  - 'ART10101  '
+  - 'ART10304  '
+  - 'ART10454  '
+  - 'ART10602  '
+  - 'ART10796  '
+  - 'ART10868  '
+  - 'ART10877  '
+  - 'ART11061  '
+  - 'ART11166  '
+  - 'ART11238  '
+  - 'ART11605  '
+  - 'ART11692  '
+  - 'ART11696  '
+  - 'ART11818  '
+  - 'ART11915  '
+  - 'ART11997  '
+  - 'ART12066  '
+  - 'ART12071  '
+  - 'ART12569  '
+  - 'ART12707  '
+  - 'ART12752  '
+  - 'ART12761  '
+  - 'ART12836  '
+  - 'ART12913  '
+  - 'ART12943  '
+  - 'ART12970  '
+  - 'ART13225  '
+  - 'ART13427  '
+  - 'ART13446  '
+  - 'ART13491  '
+  - 'ART13670  '
+  - 'ART13864  '
+  - 'ART13944  '
+  - 'ART13974  '
+  - 'ART14031  '
+  - 'ART14074  '
+  - 'ART14093  '
+  - 'ART14403  '
+  - 'ART14428  '
+  - 'ART14493  '
+  - 'ART14524  '
+  - 'ART14535  '
+  - 'ART14626  '
+  - 'ART14981  '
+  - 'ART14989  '
+  - 'ART15309  '
+  - 'ART15493  '
+  - 'ART15630  '
+  - 'ART15822  '
+  distinct_count: 951
+- name: hallrefmaintained
+  sql: hallrefmaintained
+  type: TEXT
+  primary_key: false
+  description: A CHAR(8) foreign key referencing ExhibitionHalls(HallRegistry), if
+    the conservation applies to a specific hall area.
+  hidden: false
+  sampled: ART10016, ART10101, ART10304, ART10454, ART10602, ART10796, ART10868, ART10877,
+    ART11061, ART11166, ART11238, ART11605, ART11692, ART11696, ART11818, ART11915,
+    ART11997, ART12066, ART12071, ART12569 ... (951 distinct)
+  sampled_values:
+  - ART10016
+  - ART10101
+  - ART10304
+  - ART10454
+  - ART10602
+  - ART10796
+  - ART10868
+  - ART10877
+  - ART11061
+  - ART11166
+  - ART11238
+  - ART11605
+  - ART11692
+  - ART11696
+  - ART11818
+  - ART11915
+  - ART11997
+  - ART12066
+  - ART12071
+  - ART12569
+  - ART12707
+  - ART12752
+  - ART12761
+  - ART12836
+  - ART12913
+  - ART12943
+  - ART12970
+  - ART13225
+  - ART13427
+  - ART13446
+  - ART13491
+  - ART13670
+  - ART13864
+  - ART13944
+  - ART13974
+  - ART14031
+  - ART14074
+  - ART14093
+  - ART14403
+  - ART14428
+  - ART14493
+  - ART14524
+  - ART14535
+  - ART14626
+  - ART14981
+  - ART14989
+  - ART15309
+  - ART15493
+  - ART15630
+  - ART15822
+  distinct_count: 951
+- name: surfreadrefobserved
+  sql: surfreadrefobserved
+  type: INT
+  primary_key: false
+  description: A BIGINT foreign key referencing SurfaceAndPhysicalReadings(SurfPhysRegistry).
+    Links to surface/physical readings used in this maintenance record.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 951
+- name: conservetreatstatus
+  sql: conservetreatstatus
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(50) describing the status of conservation treatment (possible
+    values: ''In Progress'', ''Not Required'', ''Scheduled'').'
+  hidden: false
+  sampled: Not Required, In Progress, Scheduled
+  sampled_values:
+  - Not Required
+  - In Progress
+  - Scheduled
+  distinct_count: 3
+- name: treatpriority
+  sql: treatpriority
+  type: TEXT
+  primary_key: false
+  description: 'A CHAR(10) indicating the priority of the treatment (possible values:
+    ''High'', ''Medium'', ''Low'', ''Urgent'').'
+  hidden: false
+  sampled: 'Medium    , Urgent    , Low       , High      '
+  sampled_values:
+  - 'Medium    '
+  - 'Urgent    '
+  - 'Low       '
+  - 'High      '
+  distinct_count: 4
+- name: lastcleaningdate
+  sql: lastcleaningdate
+  type: DATE
+  primary_key: false
+  description: A DATE specifying the last cleaning date of the artifact/hall/showcase.
+  hidden: false
+  sampled: 2024-11-21 .. 2025-02-18
+- name: nextcleaningdue
+  sql: nextcleaningdue
+  type: DATE
+  primary_key: false
+  description: A DATE indicating when the next cleaning is scheduled or recommended.
+  hidden: false
+  sampled: 2025-02-20 .. 2025-05-20
+- name: cleanintervaldays
+  sql: cleanintervaldays
+  type: INT
+  primary_key: false
+  description: A SMALLINT capturing the recommended cleaning interval in days.
+  hidden: false
+  format:
+    type: integer
+  sampled: 7 .. 90
+- name: maintlog
+  sql: maintlog
+  type: TEXT
+  primary_key: false
+  description: 'A TEXT field describing any notes, log details, or issues encountered
+    during maintenance activities (possible values: ''Updated'', ''Pending'', ''Review'').'
+  hidden: false
+  sampled: Updated, Pending, Review
+  sampled_values:
+  - Updated
+  - Pending
+  - Review
+  distinct_count: 3
+- name: incidentreportstatus
+  sql: incidentreportstatus
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(50) summarizing the status of any incident reports (possible
+    values: ''Closed'', ''Open'').'
+  hidden: false
+  sampled: Closed, Open
+  sampled_values:
+  - Closed
+  - Open
+  distinct_count: 2
+- name: emergencydrillstatus
+  sql: emergencydrillstatus
+  type: TEXT
+  primary_key: false
+  description: A CHAR(15) indicating whether emergency drills are 'Current', 'Overdue',
+    'Due', etc.
+  hidden: false
+  sampled: 'Current                  , Due                      , Overdue                  '
+  sampled_values:
+  - 'Current                  '
+  - 'Due                      '
+  - 'Overdue                  '
+  distinct_count: 3
+- name: stafftrainstatus
+  sql: stafftrainstatus
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(20) describing staff training status (possible values: ''Current'',
+    ''Overdue'', ''Due'').'
+  hidden: false
+  sampled: 'Due                 , Overdue             , Current             '
+  sampled_values:
+  - 'Due                 '
+  - 'Overdue             '
+  - 'Current             '
+  distinct_count: 3
+- name: budgetallocstatus
+  sql: budgetallocstatus
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(50) describing budget allocation status (possible values:
+    ''Review Required'', ''Insufficient'', ''Adequate'').'
+  hidden: false
+  sampled: Insufficient, Adequate, Review Required
+  sampled_values:
+  - Insufficient
+  - Adequate
+  - Review Required
+  distinct_count: 3
+- name: maintbudgetstatus
+  sql: maintbudgetstatus
+  type: TEXT
+  primary_key: false
+  description: A CHAR(15) indicating if the current maintenance budget is 'Limited',
+    'Depleted', 'Available', etc.
+  hidden: false
+  sampled: 'Available                , Limited                  , Depleted                 '
+  sampled_values:
+  - 'Available                '
+  - 'Limited                  '
+  - 'Depleted                 '
+  distinct_count: 3
+- name: conservefreq
+  sql: conservefreq
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(30) describing the frequency of conservation efforts (possible
+    values: ''Rare'', ''Occasional'', ''Frequent'').'
+  hidden: false
+  sampled: Frequent, Rare, Occasional
+  sampled_values:
+  - Frequent
+  - Rare
+  - Occasional
+  distinct_count: 3
+- name: intervhistory
+  sql: intervhistory
+  type: TEXT
+  primary_key: false
+  description: 'A TEXT field detailing the intervention or treatment history (possible
+    values: ''Extensive'', ''Minimal'', ''Moderate'').'
+  hidden: false
+  sampled: Extensive, Moderate, Minimal
+  sampled_values:
+  - Extensive
+  - Moderate
+  - Minimal
+  distinct_count: 3
+- name: prevtreatments
+  sql: prevtreatments
+  type: INT
+  primary_key: false
+  description: A SMALLINT counting how many significant treatments have been done
+    previously on this artifact/hall.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: treateffectiveness
+  sql: treateffectiveness
+  type: TEXT
+  primary_key: false
+  description: 'A VARCHAR(100) summarizing how effective previous treatments were
+    (possible values: ''Low'', ''Medium'', ''High'').'
+  hidden: false
+  sampled: Low, High, Medium
+  sampled_values:
+  - Low
+  - High
+  - Medium
+  distinct_count: 3
+- name: reversibilitypotential
+  sql: reversibilitypotential
+  type: TEXT
+  primary_key: false
+  description: 'A TEXT field describing if and how treatments can be reversed (possible
+    values: ''Medium'', ''High'', ''Low'').'
+  hidden: false
+  sampled: Medium, Low, High
+  sampled_values:
+  - Medium
+  - Low
+  - High
+  distinct_count: 3
+- name: conservation_emergency
+  sql: CASE WHEN LOWER(TRIM(artifactscore.conservestatus)) = 'critical' AND LOWER(TRIM(treatpriority))
+    = 'urgent' THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=12] A situation where an artifact has ConserveStatus='Critical'\
+    \ AND a TreatPriority='Urgent'. \u2014 Identifies artifacts requiring immediate\
+    \ conservation intervention. [/kb=12]"
+  label: Conservation Emergency
+  hidden: false
+  meta:
+    kb_id: 12
+  sampled: 0, 1
+  sampled_values:
+  - '0'
+  - '1'
+  distinct_count: 2
+- name: conservation_backlog_risk
+  sql: (artifactratings.cpi * ((julianday('now') - julianday(conservationandmaintenance.lastcleaningdate))
+    - conservationandmaintenance.cleanintervaldays)) / 100.0
+  type: DOUBLE
+  primary_key: false
+  description: "Note: 'Days since LastCleaningDate' is interpreted as julianday('now')\
+    \ - julianday(lastcleaningdate), so this metric is evaluated relative to the query's\
+    \ wall-clock time. [kb=33] CBR = (CPI \xD7 (Days since LastCleaningDate - CleanIntervalDays))\
+    \ \xF7 100, where CPI is the Conservation Priority Index. Higher values indicate\
+    \ higher risk from delayed conservation. \u2014 Quantifies the risk associated\
+    \ with delayed conservation treatments. [/kb=33]"
+  label: Conservation Backlog Risk (CBR)
+  hidden: false
+  meta:
+    kb_id: 33
+  sampled: 0.0 .. 165.49957031045204
+- name: critical_conservation_alert
+  sql: CASE WHEN conservation_emergency = 1 AND artifactratings.avs > 8 THEN 1 ELSE
+    0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=41] An artifact that meets both the Conservation Emergency criteria\
+    \ AND has an AVS > 8. \u2014 Identifies artifacts in critical condition requiring\
+    \ immediate intervention. [/kb=41]"
+  label: Critical Conservation Alert
+  hidden: false
+  meta:
+    kb_id: 41
+  sampled: '0'
+  sampled_values:
+  - '0'
+  distinct_count: 1
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artrefmaintained
+    - artregistry
+  join_type: left
+- target_model: exhibitionhalls
+  join_pairs:
+  - - hallrefmaintained
+    - hallrecord
+  join_type: left
+- target_model: surfaceandphysicalreadings
+  join_pairs:
+  - - surfreadrefobserved
+    - surfphysregistry
+  join_type: left
+- target_model: artifactratings
+  join_pairs:
+  - - artrefmaintained
+    - artref
+  join_type: left
+filters: []
+hidden: false

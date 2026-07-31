@@ -1,0 +1,270 @@
+version: 7
+name: patients
+sql_table: patients
+query_variables: {}
+data_source: mental
+columns:
+- name: patkey
+  sql: patkey
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key uniquely identifying each patient (e.g.,
+    'PAT001').
+  hidden: false
+- name: patage
+  sql: patage
+  type: INT
+  primary_key: false
+  description: A SMALLINT indicating the patient's age in years.
+  hidden: false
+  format:
+    type: integer
+  sampled: 18 .. 85
+- name: patgender
+  sql: patgender
+  type: TEXT
+  primary_key: false
+  description: An enum (patientgender_enum) for the patient's gender (Other, F, M).
+  hidden: false
+  sampled: Other, M, F
+  sampled_values:
+  - Other
+  - M
+  - F
+  distinct_count: 3
+- name: pateth
+  sql: pateth
+  type: TEXT
+  primary_key: false
+  description: An enum (patientethnicity_enum) indicating the patient's ethnicity
+    (Other, Hispanic, African, Asian, Caucasian).
+  hidden: false
+  sampled: Asian, Other, Hispanic, African, Caucasian
+  sampled_values:
+  - Asian
+  - Other
+  - Hispanic
+  - African
+  - Caucasian
+  distinct_count: 5
+- name: edulevel
+  sql: edulevel
+  type: TEXT
+  primary_key: false
+  description: An enum (educationlevel_enum) describing highest education achieved
+    (High School, Other, Bachelor, Master, Doctorate).
+  hidden: false
+  sampled: Bachelor, Doctorate, Master, Other, High School
+  sampled_values:
+  - Bachelor
+  - Doctorate
+  - Master
+  - Other
+  - High School
+  distinct_count: 5
+- name: empstat
+  sql: empstat
+  type: TEXT
+  primary_key: false
+  description: An enum (employmentstatus_enum) capturing employment status (Retired,
+    Employed, Unemployed, Disabled, Student).
+  hidden: false
+  sampled: Employed, Disabled, Unemployed, Retired, Student
+  sampled_values:
+  - Employed
+  - Disabled
+  - Unemployed
+  - Retired
+  - Student
+  distinct_count: 5
+- name: maristat
+  sql: maristat
+  type: TEXT
+  primary_key: false
+  description: An enum (maritalstatus_enum) describing marital status (Widowed, Married,
+    Single, Divorced).
+  hidden: false
+  sampled: Widowed, Married, Single, Divorced
+  sampled_values:
+  - Widowed
+  - Married
+  - Single
+  - Divorced
+  distinct_count: 4
+- name: livingarr
+  sql: livingarr
+  type: TEXT
+  primary_key: false
+  description: An enum (livingarrangement_enum) for living arrangement (Alone, Partner,
+    Family, Group Home, Homeless).
+  hidden: false
+  sampled: Alone, Group Home, Homeless, Partner, Family
+  sampled_values:
+  - Alone
+  - Group Home
+  - Homeless
+  - Partner
+  - Family
+  distinct_count: 5
+- name: insurtype
+  sql: insurtype
+  type: TEXT
+  primary_key: false
+  description: An enum (insurancetype_enum) referencing type of insurance (Medicaid,
+    Medicare, Private).
+  hidden: false
+  sampled: Private, Medicare, Medicaid
+  sampled_values:
+  - Private
+  - Medicare
+  - Medicaid
+  distinct_count: 3
+- name: insurstat
+  sql: insurstat
+  type: TEXT
+  primary_key: false
+  description: An enum (insurancestatus_enum) describing insurance status (Pending,
+    Approved, Denied).
+  hidden: false
+  sampled: Approved, Denied, Pending
+  sampled_values:
+  - Approved
+  - Denied
+  - Pending
+  distinct_count: 3
+- name: disabstat
+  sql: disabstat
+  type: TEXT
+  primary_key: false
+  description: An enum (disabilitystatus_enum) indicating disability status (Pending,
+    Permanent, Temporary).
+  hidden: false
+  sampled: Pending, Permanent, Temporary
+  sampled_values:
+  - Pending
+  - Permanent
+  - Temporary
+  distinct_count: 3
+- name: housestable
+  sql: housestable
+  type: TEXT
+  primary_key: false
+  description: An enum (housingstability_enum) describing housing stability (Homeless,
+    Stable, At Risk, Unstable).
+  hidden: false
+  sampled: At Risk, Unstable, Stable, Homeless
+  sampled_values:
+  - At Risk
+  - Unstable
+  - Stable
+  - Homeless
+  distinct_count: 4
+- name: cultfactor
+  sql: cultfactor
+  type: TEXT
+  primary_key: false
+  description: An enum (culturalfactors_enum) capturing relevant cultural factors
+    (Language, Beliefs, Family, Multiple).
+  hidden: false
+  sampled: Language, Family, Beliefs, Multiple
+  sampled_values:
+  - Language
+  - Family
+  - Beliefs
+  - Multiple
+  distinct_count: 4
+- name: stigmaimp
+  sql: stigmaimp
+  type: TEXT
+  primary_key: false
+  description: An enum (stigmaimpact_enum) describing stigma impact (Moderate, Mild,
+    Severe).
+  hidden: false
+  sampled: Mild, Severe, Moderate
+  sampled_values:
+  - Mild
+  - Severe
+  - Moderate
+  distinct_count: 3
+- name: finstress
+  sql: finstress
+  type: TEXT
+  primary_key: false
+  description: An enum (financialstress_enum) describing financial stress level (Severe,
+    Mild, Moderate).
+  hidden: false
+  sampled: Mild, Severe, Moderate
+  sampled_values:
+  - Mild
+  - Severe
+  - Moderate
+  distinct_count: 3
+- name: clinleadref
+  sql: clinleadref
+  type: TEXT
+  primary_key: false
+  hidden: false
+  sampled: C2695, C2875, C7119, C1100, C1215, C1418, C1479, C1518, C1628, C1767, C1842,
+    C1917, C1984, C2991, C3241, C3323, C3418, C3463, C3578, C3601 ... (941 distinct)
+  sampled_values:
+  - C2695
+  - C2875
+  - C7119
+  - C1100
+  - C1215
+  - C1418
+  - C1479
+  - C1518
+  - C1628
+  - C1767
+  - C1842
+  - C1917
+  - C1984
+  - C2991
+  - C3241
+  - C3323
+  - C3418
+  - C3463
+  - C3578
+  - C3601
+  - C3918
+  - C4110
+  - C4495
+  - C4592
+  - C4630
+  - C4773
+  - C4814
+  - C5379
+  - C5412
+  - C5799
+  - C5880
+  - C5927
+  - C5940
+  - C6526
+  - C6553
+  - C6673
+  - C6676
+  - C6752
+  - C7325
+  - C7382
+  - C7390
+  - C7588
+  - C7689
+  - C7795
+  - C7913
+  - C8094
+  - C8406
+  - C8517
+  - C8635
+  - C8706
+  distinct_count: 941
+measures: []
+aggregations: []
+joins:
+- target_model: clinicians
+  join_pairs:
+  - - clinleadref
+    - clinkey
+  join_type: left
+filters: []
+hidden: false

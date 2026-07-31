@@ -1,0 +1,230 @@
+version: 7
+name: credit_and_compliance
+sql_table: credit_and_compliance
+query_variables: {}
+data_source: credit
+columns:
+- name: compbankref
+  sql: compbankref
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key referencing bank_and_transactions(BankExpRef).
+  hidden: false
+- name: sancresult
+  sql: sancresult
+  type: TEXT
+  primary_key: false
+  description: An enum (SanctionsScreeningResult_enum) for sanctions screening (Fail,
+    Flag, Pass).
+  hidden: false
+  sampled: Fail, Pass, Flag
+  sampled_values:
+  - Fail
+  - Pass
+  - Flag
+  distinct_count: 3
+- name: pepresult
+  sql: pepresult
+  type: TEXT
+  primary_key: false
+  description: An enum (PEPScreeningResult_enum) for PEP screening (Flag, Pass, Fail).
+  hidden: false
+  sampled: Fail, Flag, Pass
+  sampled_values:
+  - Fail
+  - Flag
+  - Pass
+  distinct_count: 3
+- name: legalstat
+  sql: legalstat
+  type: TEXT
+  primary_key: false
+  description: An enum (LegalStatus_enum) describing legal status (Clear, Under Review,
+    Restricted).
+  hidden: false
+  sampled: Restricted, Under Review, Clear
+  sampled_values:
+  - Restricted
+  - Under Review
+  - Clear
+  distinct_count: 3
+- name: regcompliance
+  sql: regcompliance
+  type: TEXT
+  primary_key: false
+  description: An enum (RegulatoryCompliance_enum) capturing compliance (Non-compliant,
+    Compliant).
+  hidden: false
+  sampled: Compliant, Non-compliant
+  sampled_values:
+  - Compliant
+  - Non-compliant
+  distinct_count: 2
+- name: credscore
+  sql: credscore
+  type: INT
+  primary_key: false
+  description: A SMALLINT holding the credit score (e.g., '720').
+  hidden: false
+  format:
+    type: integer
+  sampled: 300 .. 850
+- name: risklev
+  sql: risklev
+  type: TEXT
+  primary_key: false
+  description: An enum (RiskLevel_enum) denoting risk level (Low, Medium, High, Very
+    High).
+  hidden: false
+  sampled: Medium, Very High, Low, High
+  sampled_values:
+  - Medium
+  - Very High
+  - Low
+  - High
+  distinct_count: 4
+- name: defhist
+  sql: defhist
+  type: TEXT
+  primary_key: false
+  description: 'An enum (PaymentHistory_enum) indicating default history. Possible
+    values: Poor, Fair, Good, Excellent, Current, Past.'
+  hidden: false
+  sampled: Current, Past
+  sampled_values:
+  - Current
+  - Past
+  distinct_count: 2
+- name: delinqcount
+  sql: delinqcount
+  type: INT
+  primary_key: false
+  description: A SMALLINT counting delinquencies (e.g., '2').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 10
+- name: latepaycount
+  sql: latepaycount
+  type: INT
+  primary_key: false
+  description: A SMALLINT counting late payments (e.g., '1').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 20
+- name: collacc
+  sql: collacc
+  type: INT
+  primary_key: false
+  description: An INTEGER representing how many collection accounts (e.g., '0').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 5
+- name: choffs
+  sql: choffs
+  type: INT
+  primary_key: false
+  description: A SMALLINT for number of charge-offs (e.g., '1').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 3
+- name: bankr
+  sql: bankr
+  type: INT
+  primary_key: false
+  description: A SMALLINT indicating how many bankruptcies (e.g., '0').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 1
+- name: taxlien
+  sql: taxlien
+  type: INT
+  primary_key: false
+  description: A SMALLINT for any tax liens (e.g., '0').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 1
+- name: civiljudge
+  sql: civiljudge
+  type: INT
+  primary_key: false
+  description: A SMALLINT counting civil judgments (e.g., '1').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 2
+- name: credinq
+  sql: credinq
+  type: INT
+  primary_key: false
+  description: A SMALLINT for total credit inquiries (e.g., '3').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 15
+- name: hardinq
+  sql: hardinq
+  type: INT
+  primary_key: false
+  description: A SMALLINT for hard inquiries (e.g., '2').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 10
+- name: softinq
+  sql: softinq
+  type: INT
+  primary_key: false
+  description: A SMALLINT for soft inquiries (e.g., '1').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 20
+- name: credrepdisp
+  sql: credrepdisp
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) capturing credit report disputes or notes (e.g., '2 disputes').
+  hidden: false
+  sampled: 4, 0, 2, 1, 3, 5
+  sampled_values:
+  - '4'
+  - '0'
+  - '2'
+  - '1'
+  - '3'
+  - '5'
+  distinct_count: 6
+- name: credageyrs
+  sql: credageyrs
+  type: INT
+  primary_key: false
+  description: A SMALLINT storing how many years of credit history (e.g., '10').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 30
+- name: oldaccage
+  sql: oldaccage
+  type: INT
+  primary_key: false
+  description: A SMALLINT age in years of the oldest account (e.g., '15').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 30
+measures: []
+aggregations: []
+joins:
+- target_model: bank_and_transactions
+  join_pairs:
+  - - compbankref
+    - bankexpref
+  join_type: left
+filters: []
+hidden: false

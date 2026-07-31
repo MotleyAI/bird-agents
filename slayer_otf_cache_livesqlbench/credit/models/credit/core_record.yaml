@@ -1,0 +1,548 @@
+version: 7
+name: core_record
+sql_table: core_record
+query_variables: {}
+data_source: credit
+columns:
+- name: coreregistry
+  sql: coreregistry
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key uniquely identifying each core record (e.g.,
+    'CRD001234').
+  hidden: false
+- name: timemark
+  sql: timemark
+  type: TIMESTAMP
+  primary_key: false
+  description: A TIMESTAMP(6) indicating when the record was created (e.g., '2025-02-19
+    14:23:15.123456').
+  hidden: false
+  sampled: 2025-02-19 08:29:36.566292, 2025-02-19 08:29:36.577399, 2025-02-19 08:29:36.608336,
+    2025-02-19 08:29:36.6283, 2025-02-19 08:29:36.647932, 2025-02-19 08:29:36.529488,
+    2025-02-19 08:29:36.532559, 2025-02-19 08:29:36.539753, 2025-02-19 08:29:36.544709,
+    2025-02-19 08:29:36.548419, 2025-02-19 08:29:36.555418, 2025-02-19 08:29:36.557769,
+    2025-02-19 08:29:36.578564, 2025-02-19 08:29:36.582817, 2025-02-19 08:29:36.59647,
+    2025-02-19 08:29:36.598363, 2025-02-19 08:29:36.604455, 2025-02-19 08:29:36.605452,
+    2025-02-19 08:29:36.621391, 2025-02-19 08:29:36.627256 ... (198 distinct)
+  sampled_values:
+  - '2025-02-19 08:29:36.566292'
+  - '2025-02-19 08:29:36.577399'
+  - '2025-02-19 08:29:36.608336'
+  - '2025-02-19 08:29:36.6283'
+  - '2025-02-19 08:29:36.647932'
+  - '2025-02-19 08:29:36.529488'
+  - '2025-02-19 08:29:36.532559'
+  - '2025-02-19 08:29:36.539753'
+  - '2025-02-19 08:29:36.544709'
+  - '2025-02-19 08:29:36.548419'
+  - '2025-02-19 08:29:36.555418'
+  - '2025-02-19 08:29:36.557769'
+  - '2025-02-19 08:29:36.578564'
+  - '2025-02-19 08:29:36.582817'
+  - '2025-02-19 08:29:36.59647'
+  - '2025-02-19 08:29:36.598363'
+  - '2025-02-19 08:29:36.604455'
+  - '2025-02-19 08:29:36.605452'
+  - '2025-02-19 08:29:36.621391'
+  - '2025-02-19 08:29:36.627256'
+  - '2025-02-19 08:29:36.632423'
+  - '2025-02-19 08:29:36.638338'
+  - '2025-02-19 08:29:36.640298'
+  - '2025-02-19 08:29:36.643445'
+  - '2025-02-19 08:29:36.530495'
+  - '2025-02-19 08:29:36.531468'
+  - '2025-02-19 08:29:36.534421'
+  - '2025-02-19 08:29:36.535422'
+  - '2025-02-19 08:29:36.536479'
+  - '2025-02-19 08:29:36.537485'
+  - '2025-02-19 08:29:36.540793'
+  - '2025-02-19 08:29:36.542486'
+  - '2025-02-19 08:29:36.543397'
+  - '2025-02-19 08:29:36.546305'
+  - '2025-02-19 08:29:36.547392'
+  - '2025-02-19 08:29:36.54942'
+  - '2025-02-19 08:29:36.552395'
+  - '2025-02-19 08:29:36.554412'
+  - '2025-02-19 08:29:36.559492'
+  - '2025-02-19 08:29:36.560516'
+  - '2025-02-19 08:29:36.562937'
+  - '2025-02-19 08:29:36.565272'
+  - '2025-02-19 08:29:36.567559'
+  - '2025-02-19 08:29:36.570495'
+  - '2025-02-19 08:29:36.571506'
+  - '2025-02-19 08:29:36.573388'
+  - '2025-02-19 08:29:36.581816'
+  - '2025-02-19 08:29:36.583823'
+  - '2025-02-19 08:29:36.584822'
+  - '2025-02-19 08:29:36.588279'
+  distinct_count: 198
+- name: clientref
+  sql: clientref
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) referencing the customer ID (e.g., 'CUST00987').
+  hidden: false
+  sampled: CU100745, CU100984, CU101582, CU102183, CU102268, CU102579, CU103256, CU105697,
+    CU105928, CU108218, CU108275, CU108478, CU108748, CU109366, CU111646, CU111772,
+    CU112222, CU113079, CU113759, CU114230 ... (1000 distinct)
+  sampled_values:
+  - CU100745
+  - CU100984
+  - CU101582
+  - CU102183
+  - CU102268
+  - CU102579
+  - CU103256
+  - CU105697
+  - CU105928
+  - CU108218
+  - CU108275
+  - CU108478
+  - CU108748
+  - CU109366
+  - CU111646
+  - CU111772
+  - CU112222
+  - CU113079
+  - CU113759
+  - CU114230
+  - CU116003
+  - CU116344
+  - CU116429
+  - CU116774
+  - CU117942
+  - CU118520
+  - CU120813
+  - CU120960
+  - CU121152
+  - CU121420
+  - CU121543
+  - CU124290
+  - CU124787
+  - CU127224
+  - CU128076
+  - CU129032
+  - CU131150
+  - CU131243
+  - CU132464
+  - CU132484
+  - CU132608
+  - CU132632
+  - CU132900
+  - CU132910
+  - CU133084
+  - CU133124
+  - CU133588
+  - CU133820
+  - CU135314
+  - CU136378
+  distinct_count: 1000
+- name: appref
+  sql: appref
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) referencing the application ID (e.g., 'APP001122').
+  hidden: false
+  sampled: AP405578, AP741230, AP103937, AP105891, AP107092, AP111700, AP112114, AP112153,
+    AP112969, AP113543, AP114170, AP115180, AP116733, AP119828, AP122579, AP123454,
+    AP123606, AP124141, AP124403, AP125266 ... (998 distinct)
+  sampled_values:
+  - AP405578
+  - AP741230
+  - AP103937
+  - AP105891
+  - AP107092
+  - AP111700
+  - AP112114
+  - AP112153
+  - AP112969
+  - AP113543
+  - AP114170
+  - AP115180
+  - AP116733
+  - AP119828
+  - AP122579
+  - AP123454
+  - AP123606
+  - AP124141
+  - AP124403
+  - AP125266
+  - AP126355
+  - AP127129
+  - AP127257
+  - AP128439
+  - AP128514
+  - AP128731
+  - AP128857
+  - AP128932
+  - AP129313
+  - AP129422
+  - AP130116
+  - AP130522
+  - AP131806
+  - AP133899
+  - AP134006
+  - AP134281
+  - AP134285
+  - AP135109
+  - AP136140
+  - AP137811
+  - AP139065
+  - AP141154
+  - AP143036
+  - AP143529
+  - AP144285
+  - AP149040
+  - AP149630
+  - AP150703
+  - AP151085
+  - AP151168
+  distinct_count: 998
+- name: modelline
+  sql: modelline
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(10) storing the model or version reference (e.g., '1.2').
+  hidden: false
+  sampled: v2.1, v4.9, v5.2, v5.4, v3.6, v1.6, v2.5, v2.6, v1.9, v3.0, v4.7, v1.3,
+    v1.4, v1.7, v1.8, v4.8, v1.1, v2.3, v2.8, v3.5
+  sampled_values:
+  - v2.1
+  - v4.9
+  - v5.2
+  - v5.4
+  - v3.6
+  - v1.6
+  - v2.5
+  - v2.6
+  - v1.9
+  - v3.0
+  - v4.7
+  - v1.3
+  - v1.4
+  - v1.7
+  - v1.8
+  - v4.8
+  - v1.1
+  - v2.3
+  - v2.8
+  - v3.5
+  - v4.1
+  - v4.2
+  - v4.6
+  - v1.5
+  - v2.7
+  - v3.3
+  - v5.3
+  - v5.5
+  - v2.2
+  - v2.9
+  - v3.2
+  - v4.3
+  - v4.5
+  - v1.2
+  - v2.0
+  - v3.4
+  - v3.8
+  - v5.6
+  - v3.9
+  - v4.0
+  - v5.1
+  - v5.9
+  - v3.1
+  - v5.0
+  - v1.0
+  - v5.8
+  - v2.4
+  - v3.7
+  - v4.4
+  - v5.7
+  distinct_count: 50
+- name: scoredate
+  sql: scoredate
+  type: DATE
+  primary_key: false
+  description: A DATE capturing when scoring took place (e.g., '2025-02-19').
+  hidden: false
+  sampled: '2025-02-19'
+  sampled_values:
+  - '2025-02-19'
+  distinct_count: 1
+- name: nextcheck
+  sql: nextcheck
+  type: DATE
+  primary_key: false
+  description: A DATE noting the next review date (e.g., '2026-02-19').
+  hidden: false
+  sampled: 2025-08-07, 2025-09-06, 2025-11-15, 2025-11-05, 2025-05-15, 2025-07-27,
+    2025-09-11, 2025-11-07, 2025-12-10, 2025-03-31, 2025-05-25, 2025-07-06, 2025-07-07,
+    2025-08-29, 2025-09-04, 2025-09-16, 2025-09-26, 2025-10-06, 2025-10-28, 2025-11-14
+    ... (321 distinct)
+  sampled_values:
+  - '2025-08-07'
+  - '2025-09-06'
+  - '2025-11-15'
+  - '2025-11-05'
+  - '2025-05-15'
+  - '2025-07-27'
+  - '2025-09-11'
+  - '2025-11-07'
+  - '2025-12-10'
+  - '2025-03-31'
+  - '2025-05-25'
+  - '2025-07-06'
+  - '2025-07-07'
+  - '2025-08-29'
+  - '2025-09-04'
+  - '2025-09-16'
+  - '2025-09-26'
+  - '2025-10-06'
+  - '2025-10-28'
+  - '2025-11-14'
+  - '2025-12-04'
+  - '2025-12-06'
+  - '2025-12-16'
+  - '2025-12-17'
+  - '2026-01-07'
+  - '2026-02-04'
+  - '2026-02-11'
+  - '2025-03-27'
+  - '2025-04-09'
+  - '2025-05-03'
+  - '2025-05-07'
+  - '2025-06-07'
+  - '2025-06-14'
+  - '2025-07-01'
+  - '2025-07-05'
+  - '2025-07-11'
+  - '2025-07-12'
+  - '2025-07-15'
+  - '2025-07-26'
+  - '2025-08-24'
+  - '2025-08-25'
+  - '2025-08-31'
+  - '2025-09-10'
+  - '2025-09-20'
+  - '2025-09-25'
+  - '2025-10-01'
+  - '2025-10-02'
+  - '2025-10-04'
+  - '2025-10-19'
+  - '2025-10-21'
+  distinct_count: 321
+- name: dataqscore
+  sql: dataqscore
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(5,3) tracking data quality (e.g., '0.975').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.0 .. 1.0
+- name: confscore
+  sql: confscore
+  type: DOUBLE
+  primary_key: false
+  description: "A NUMERIC(5,3) indicating confidence in the model\u2019s output (e.g.,\
+    \ '0.835')."
+  hidden: false
+  format:
+    type: float
+  sampled: 0.0 .. 1.0
+- name: overridestat
+  sql: overridestat
+  type: TEXT
+  primary_key: false
+  description: An enum (OverrideStatus_enum) describing override status (Policy, Manual).
+  hidden: false
+  sampled: Policy, Manual
+  sampled_values:
+  - Policy
+  - Manual
+  distinct_count: 2
+- name: overridenote
+  sql: overridenote
+  type: TEXT
+  primary_key: false
+  description: An enum (OverrideReason_enum) capturing why an override occurred (Policy
+    Exception, Management Decision).
+  hidden: false
+  sampled: Management Decision, Policy Exception
+  sampled_values:
+  - Management Decision
+  - Policy Exception
+  distinct_count: 2
+- name: decidestat
+  sql: decidestat
+  type: TEXT
+  primary_key: false
+  description: An enum (DecisionStatus_enum) storing the final decision (Pending,
+    Rejected, Approved).
+  hidden: false
+  sampled: Pending, Approved, Rejected
+  sampled_values:
+  - Pending
+  - Approved
+  - Rejected
+  distinct_count: 3
+- name: decidedate
+  sql: decidedate
+  type: DATE
+  primary_key: false
+  description: A DATE recording when the final decision was made (e.g., '2025-02-19').
+  hidden: false
+  sampled: '2025-02-19'
+  sampled_values:
+  - '2025-02-19'
+  distinct_count: 1
+- name: agespan
+  sql: agespan
+  type: INT
+  primary_key: false
+  description: "A SMALLINT for the customer\u2019s age in years (e.g., '35')."
+  hidden: false
+  format:
+    type: integer
+  sampled: 18 .. 80
+- name: gendlabel
+  sql: gendlabel
+  type: TEXT
+  primary_key: false
+  description: An enum (Gender_enum) for gender (M, F).
+  hidden: false
+  sampled: F, M
+  sampled_values:
+  - F
+  - M
+  distinct_count: 2
+- name: maritalform
+  sql: maritalform
+  type: TEXT
+  primary_key: false
+  description: An enum (MaritalStatus_enum) capturing marital status (Single, Married,
+    Widowed, Divorced).
+  hidden: false
+  sampled: Married, Single, Divorced, Widowed
+  sampled_values:
+  - Married
+  - Single
+  - Divorced
+  - Widowed
+  distinct_count: 4
+- name: depcount
+  sql: depcount
+  type: INT
+  primary_key: false
+  description: A SMALLINT counting how many dependents (e.g., '2').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 5
+- name: resdform
+  sql: resdform
+  type: TEXT
+  primary_key: false
+  description: An enum (ResidentialStatus_enum) describing residency (Temporary, Permanent,
+    Foreign).
+  hidden: false
+  sampled: Temporary, Foreign, Permanent
+  sampled_values:
+  - Temporary
+  - Foreign
+  - Permanent
+  distinct_count: 3
+- name: addrstab
+  sql: addrstab
+  type: INT
+  primary_key: false
+  description: A SMALLINT indicating address stability (e.g., '5').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 20
+- name: phonestab
+  sql: phonestab
+  type: INT
+  primary_key: false
+  description: A SMALLINT for phone number stability (e.g., '3').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 15
+- name: emailstab
+  sql: emailstab
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) capturing email stability or validation result (e.g.,
+    'Valid12m').
+  hidden: false
+  sampled: 8, 9, 4, 0, 6, 1, 10, 7, 5, 2, 3
+  sampled_values:
+  - '8'
+  - '9'
+  - '4'
+  - '0'
+  - '6'
+  - '1'
+  - '10'
+  - '7'
+  - '5'
+  - '2'
+  - '3'
+  distinct_count: 11
+- name: clientseg
+  sql: clientseg
+  type: TEXT
+  primary_key: false
+  description: An enum (CustomerSegment_enum) labeling the customer segment (Premium,
+    Standard, Basic).
+  hidden: false
+  sampled: Basic, Standard, Premium
+  sampled_values:
+  - Basic
+  - Standard
+  - Premium
+  distinct_count: 3
+- name: tenureyrs
+  sql: tenureyrs
+  type: INT
+  primary_key: false
+  description: A SMALLINT for how many years the customer has been with the institution
+    (e.g., '4').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 30
+- name: crossratio
+  sql: crossratio
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(4,3) ratio measuring cross-sell opportunities (e.g., '0.275').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.001 .. 0.999
+- name: profitscore
+  sql: profitscore
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(4,3) indicating profitability (e.g., '0.765').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.0 .. 0.998
+- name: churnrate
+  sql: churnrate
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(4,3) risk of customer churn (e.g., '0.220').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.001 .. 0.999
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

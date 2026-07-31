@@ -1,0 +1,890 @@
+- version: 1
+  id: mental_kb_0
+  learning: "KB 0 \u2014 Average PHQ-9 Score by Facility (APSF)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 0\nknowledge: Average PHQ-9 Score by Facility (APSF)\n\
+    description: Calculates the average PHQ-9 depression score for patients assessed\
+    \ at\n  a specific facility.\ndefinition: APSF = \\frac{\\sum_{i \\in assessmentsymptomsandrisk}\
+    \ (mental\\_health\\_scores_i['depression']['phq9\\_score'])}\n  {|assessmentsymptomsandrisk|}\n\
+    type: calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: &id001 1970-01-01 00:00:00+00:00
+- version: 1
+  id: mental_kb_1
+  learning: "KB 1 \u2014 Average GAD-7 Score by Facility (AGSF)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 1\nknowledge: Average GAD-7 Score by Facility (AGSF)\n\
+    description: Calculates the average GAD-7 anxiety score for patients assessed\
+    \ at a\n  specific facility.\ndefinition: AGSF = \\frac{\\sum_{i \\in assessmentsymptomsandrisk}\
+    \ (mental\\_health\\_scores_i['anxiety']['gad7\\_score'])}\n  {|assessmentsymptomsandrisk|},\
+    \ \\text{where } mental\\_health\\_scores_i['anxiety']['gad7\\_score']\n  \\text{\
+    \ is the GAD-7 score for each assessment in the assessmentsymptomsandrisk table,\n\
+    \  linked to a facility via encounters.facid}\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_2
+  learning: "KB 2 \u2014 Treatment Adherence Rate (TAR)\n\nKB item (verbatim from\
+    \ mental_kb.jsonl):\nid: 2\nknowledge: Treatment Adherence Rate (TAR)\ndescription:\
+    \ Measures the proportion of patients with high or medium treatment adherence\n\
+    \  at a facility.\ndefinition: TAR = \\frac{|treatmentoutcomes \\text{ with }\
+    \ txadh \\in \\{High, Medium\\}|}\n  {|treatmentoutcomes|}\ntype: calculation_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_3
+  learning: "KB 3 \u2014 Suicide Risk Prevalence (SRP)\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 3\nknowledge: Suicide Risk Prevalence (SRP)\ndescription: Calculates the percentage\
+    \ of assessments indicating high or severe suicide\n  risk at a facility.\ndefinition:\
+    \ SRP = \\frac{|assessmentsymptomsandrisk \\text{ with } suicrisk \\in \\{High,\n\
+    \  Severe\\}|} {|assessmentsymptomsandrisk|} \\times 100\ntype: calculation_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_4
+  learning: "KB 4 \u2014 Therapy Engagement Score (TES)\n\nKB item (verbatim from\
+    \ mental_kb.jsonl):\nid: 4\nknowledge: Therapy Engagement Score (TES)\ndescription:\
+    \ Computes an average engagement score across therapy sessions.\ndefinition: TES\
+    \ = \\frac{\\sum_{i \\in treatmentbasics} (therapy\\_details_i['engagement\\_score'])}\n\
+    \  {|treatmentbasics|}, \\text{where } engagement\\_score = \\begin{cases} 3 &\
+    \ \\text{if\n  } therapy\\_details['engagement'] = High \\\\ 2 & \\text{if } therapy\\\
+    _details['engagement']\n  = Medium \\\\ 1 & \\text{if } therapy\\_details['engagement']\
+    \ = Low \\\\ 0 & \\text{if\n  } therapy\\_details['engagement'] = Non-compliant\
+    \ \\end{cases}, \\text{and } therapy\\_details\n  \\text{ is the JSONB column\
+    \ in the treatmentbasics table}\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_5
+  learning: "KB 5 \u2014 Facility Resource Adequacy Index (FRAI)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 5\nknowledge: Facility Resource Adequacy Index (FRAI)\n\
+    description: Quantifies the adequacy of community resources available at a facility.\n\
+    definition: FRAI = \\frac{\\sum_{i \\in facilities} resource\\_score_i} {|facilities|},\n\
+    \  \\text{where } resource\\_score = \\begin{cases} 3 & \\text{if } support\\\
+    _and\\_resources['community\\_resources']\n  = Comprehensive \\\\ 2 & \\text{if\
+    \ } support\\_and\\_resources['community\\_resources']\n  = Adequate \\\\ 1 &\
+    \ \\text{if } support\\_and\\_resources['community\\_resources'] = Limited\n \
+    \ \\end{cases}, \\text{and } support\\_and\\_resources \\text{ is the JSONB column\
+    \ in the\n  facilities table}\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_6
+  learning: "KB 6 \u2014 Patient Functional Impairment Score (PFIS)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 6\nknowledge: Patient Functional Impairment Score\
+    \ (PFIS)\ndescription: Calculates an average functional impairment score across\
+    \ patients.\ndefinition: PFIS = \\frac{\\sum_{i \\in assessmentsocialanddiagnosis}\
+    \ funcimp\\_score_i}\n  {|assessmentsocialanddiagnosis|}, \\text{where } funcimp\\\
+    _score = \\begin{cases} 3\n  & \\text{if } funcimp = Severe \\\\ 2 & \\text{if\
+    \ } funcimp = Moderate \\\\ 1 & \\text{if\n  } funcimp = Mild \\end{cases}\ntype:\
+    \ calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_7
+  learning: "KB 7 \u2014 Crisis Intervention Frequency (CIF)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 7\nknowledge: Crisis Intervention Frequency (CIF)\n\
+    description: Measures the average number of crisis interventions per patient at\
+    \ a\n  facility.\ndefinition: CIF = \\frac{\\sum_{i \\in treatmentbasics} crisisint_i}\
+    \ {|patients|}\ntype: calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_8
+  learning: "KB 8 \u2014 Social Support Effectiveness (SSE)\n\nKB item (verbatim from\
+    \ mental_kb.jsonl):\nid: 8\nknowledge: Social Support Effectiveness (SSE)\ndescription:\
+    \ Evaluates the effectiveness of social support based on social support\n  level\
+    \ and relationship quality.\ndefinition: SSE = \\frac{\\sum_{i \\in assessmentsocialanddiagnosis}\
+    \ (socsup\\_score_i\n  + relqual\\_score_i)} {|assessmentsocialanddiagnosis|},\
+    \ \\text{where } socsup\\_score\n  = \\begin{cases} 3 & \\text{if } socsup = Strong\
+    \ \\\\ 2 & \\text{if } socsup = Moderate\n  \\\\ 1 & \\text{if } socsup = Limited\
+    \ \\end{cases}, \\text{and } relqual\\_score = \\begin{cases}\n  3 & \\text{if\
+    \ } relqual = Good \\\\ 2 & \\text{if } relqual = Fair \\\\ 1 & \\text{if }\n\
+    \  relqual = Poor \\\\ 0 & \\text{if } relqual = Conflicted \\end{cases}\ntype:\
+    \ calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_9
+  learning: "KB 9 \u2014 Missed Appointment Rate (MAR)\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 9\nknowledge: Missed Appointment Rate (MAR)\ndescription: Calculates the average\
+    \ number of missed appointments per patient at a\n  facility.\ndefinition: MAR\
+    \ = \\frac{\\sum_{i \\in encounters} missappt_i} {|patients|}\ntype: calculation_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_10
+  learning: "KB 10 \u2014 High-Risk Patient\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 10\nknowledge: High-Risk Patient\ndescription: Identifies patients with elevated\
+    \ suicide risk or severe symptoms.\ndefinition: A patient with suicrisk \\in \\\
+    {High, Severe\\} or mental\\_health\\_scores['depression']['phq9\\_score']\n \
+    \ > 15 or mental\\_health\\_scores['anxiety']['gad7\\_score'] > 15,\ntype: domain_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_11
+  learning: "KB 11 \u2014 Treatment-Resistant Patient\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 11\nknowledge: Treatment-Resistant Patient\ndescription: Identifies patients\
+    \ with poor treatment response despite adherence.\ndefinition: A patient with\
+    \ txresp = Poor and txadh \\in \\{Medium, High\\}\ntype: domain_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_12
+  learning: "KB 12 \u2014 Complex Care Needs\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 12\nknowledge: Complex Care Needs\ndescription: Identifies patients requiring\
+    \ intensive care coordination due to multiple\n  risk factors.\ndefinition: A\
+    \ patient with SRP > 20\\% and PFIS > 2.5 and subuse \\in \\{Opioids, Multiple\\\
+    }\ntype: domain_knowledge\nchildren_knowledge:\n- 3\n- 6"
+  entities:
+  - mental
+  - memory:mental_kb_3
+  - memory:mental_kb_6
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_13
+  learning: "KB 13 \u2014 Stable Recovery Patient\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 13\nknowledge: Stable Recovery Patient\ndescription: Identifies patients showing\
+    \ stable recovery with good functional outcomes.\ndefinition: A patient with recstatus\
+    \ = Stable and funcimpv \\in \\{Moderate, Significant\\}\ntype: domain_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_14
+  learning: "KB 14 \u2014 Low Engagement Risk\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 14\nknowledge: Low Engagement Risk\ndescription: Identifies patients at risk\
+    \ of disengagement from therapy.\ndefinition: A patient with TES < 1.5 and txeng\
+    \ \\in \\{Low, Non-compliant\\}\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 4"
+  entities:
+  - mental
+  - memory:mental_kb_4
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_15
+  learning: "KB 15 \u2014 Resource-Supported Facility\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 15\nknowledge: Resource-Supported Facility\ndescription: Identifies facilities\
+    \ with adequate or comprehensive community resources.\ndefinition: A facility\
+    \ with resource_score \\geq 2 \\text{where } resource_score = \\begin{cases}\n\
+    \  3 & \\text{if } support\\_and\\_resources['community\\_resources'] = Comprehensive\
+    \ \\\\\n  2 & \\text{if } support\\_and\\_resources['community\\_resources'] =\
+    \ Adequate \\\\ 1 &\n  \\text{if } support\\_and\\_resources['community\\_resources']\
+    \ = Limited \\end{cases}.\ntype: domain_knowledge\nchildren_knowledge:\n- 5"
+  entities:
+  - mental
+  - memory:mental_kb_5
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_16
+  learning: "KB 16 \u2014 High Social Support Patient\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 16\nknowledge: High Social Support Patient\ndescription: Identifies patients\
+    \ with strong social support and good relationship\n  quality.\ndefinition: A\
+    \ patient with SSE \\geq 5\ntype: domain_knowledge\nchildren_knowledge:\n- 8"
+  entities:
+  - mental
+  - memory:mental_kb_8
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_17
+  learning: "KB 17 \u2014 Frequent Crisis Patient\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 17\nknowledge: Frequent Crisis Patient\ndescription: Identifies patients with\
+    \ frequent crisis interventions.\ndefinition: A patient with CIF > 2\ntype: domain_knowledge\n\
+    children_knowledge:\n- 7"
+  entities:
+  - mental
+  - memory:mental_kb_7
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_18
+  learning: "KB 18 \u2014 Non-Compliant Patient\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 18\nknowledge: Non-Compliant Patient\ndescription: Identifies patients with\
+    \ consistent non-compliance in treatment.\ndefinition: A patient with txadh =\
+    \ Non-compliant and medadh = Non-compliant\ntype: domain_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_19
+  learning: "KB 19 \u2014 High Appointment Adherence\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 19\nknowledge: High Appointment Adherence\ndescription: Identifies patients\
+    \ with low missed appointment rates.\ndefinition: A patient with MAR < 1\ntype:\
+    \ domain_knowledge\nchildren_knowledge:\n- 9"
+  entities:
+  - mental
+  - memory:mental_kb_9
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_20
+  learning: "KB 20 \u2014 PHQ-9 Score (Depression)\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 20\nknowledge: PHQ-9 Score (Depression)\ndescription: Illustrates the value\
+    \ of the PHQ-9 score for depression severity.\ndefinition: \"Ranges from 0 to\
+    \ 27. A score of 0\\u20134 indicates minimal depression,\\\n  \\ 5\\u20139 mild,\
+    \ 10\\u201314 moderate, 15\\u201319 moderately severe, and 20\\u2013\\\n  27 severe.\"\
+    \ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_21
+  learning: "KB 21 \u2014 GAD-7 Score (Anxiety)\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 21\nknowledge: GAD-7 Score (Anxiety)\ndescription: Illustrates the value of\
+    \ the GAD-7 score for anxiety severity.\ndefinition: \"Ranges from 0 to 21. A\
+    \ score of 0\\u20134 indicates minimal anxiety, 5\\u2013\\\n  9 mild, 10\\u201314\
+    \ moderate, and 15\\u201321 severe.\"\ntype: value_illustration\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_22
+  learning: "KB 22 \u2014 Suicide Risk Level\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 22\nknowledge: Suicide Risk Level\ndescription: Illustrates the value of the\
+    \ suicide risk level.\ndefinition: Ranges from Low to Severe. Low indicates minimal\
+    \ risk, Medium indicates\n  some concern, High indicates immediate concern, and\
+    \ Severe indicates urgent intervention\n  needed.\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_23
+  learning: "KB 23 \u2014 Therapy Engagement\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 23\nknowledge: Therapy Engagement\ndescription: Illustrates the value of therapy\
+    \ engagement levels.\ndefinition: Ranges from Non-compliant to High. Non-compliant\
+    \ indicates no participation,\n  Low indicates minimal participation, Medium indicates\
+    \ regular participation, and\n  High indicates active engagement.\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_24
+  learning: "KB 24 \u2014 Community Resources\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 24\nknowledge: Community Resources\ndescription: Illustrates the value of\
+    \ community resource availability.\ndefinition: Ranges from Limited to Comprehensive.\
+    \ Limited indicates few or no resources,\n  Adequate indicates sufficient resources,\
+    \ and Comprehensive indicates extensive resources.\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_25
+  learning: "KB 25 \u2014 Functional Impairment\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 25\nknowledge: Functional Impairment\ndescription: Illustrates the value of\
+    \ functional impairment levels.\ndefinition: Ranges from Mild to Severe. Mild\
+    \ indicates minimal impact on daily life,\n  Moderate indicates noticeable impact,\
+    \ and Severe indicates significant disruption.\ntype: value_illustration\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_26
+  learning: "KB 26 \u2014 Treatment Adherence\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 26\nknowledge: Treatment Adherence\ndescription: Illustrates the value of\
+    \ treatment adherence levels.\ndefinition: Ranges from Non-compliant to High.\
+    \ Non-compliant indicates no adherence,\n  Low indicates occasional adherence,\
+    \ Medium indicates regular adherence, and High\n  indicates consistent adherence.\n\
+    type: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_27
+  learning: "KB 27 \u2014 Crisis Intervention Count\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 27\nknowledge: Crisis Intervention Count\ndescription: Illustrates the value\
+    \ of the crisis intervention count.\ndefinition: A numeric value indicating the\
+    \ number of crisis interventions. A value\n  of 0 indicates no interventions,\
+    \ while higher values (e.g., 3) indicate frequent\n  interventions.\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_28
+  learning: "KB 28 \u2014 Social Support Level\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 28\nknowledge: Social Support Level\ndescription: Illustrates the value of\
+    \ social support levels.\ndefinition: Ranges from Limited to Strong. Limited indicates\
+    \ minimal support, Moderate\n  indicates some support, and Strong indicates robust\
+    \ support.\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_29
+  learning: "KB 29 \u2014 Missed Appointment Count\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 29\nknowledge: Missed Appointment Count\ndescription: Illustrates the value\
+    \ of the missed appointment count.\ndefinition: A numeric value indicating the\
+    \ number of missed appointments. A value\n  of 0 indicates perfect attendance,\
+    \ while higher values (e.g., 5) indicate frequent\n  absences.\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_30
+  learning: "KB 30 \u2014 Symptom Severity Index (SSI)\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 30\nknowledge: Symptom Severity Index (SSI)\ndescription: Calculates a combined\
+    \ average symptom severity score for a facility,\n  based on depression and anxiety.\n\
+    definition: SSI = \\frac{APSF + AGSF}{2}, \\text{using Average PHQ-9 Score (APSF)\
+    \ and\n  Average GAD-7 Score (AGSF)}\ntype: calculation_knowledge\nchildren_knowledge:\n\
+    - 0\n- 1"
+  entities:
+  - mental
+  - memory:mental_kb_0
+  - memory:mental_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_31
+  learning: "KB 31 \u2014 Engagement-Adherence Score (EAS)\n\nKB item (verbatim from\
+    \ mental_kb.jsonl):\nid: 31\nknowledge: Engagement-Adherence Score (EAS)\ndescription:\
+    \ Computes a composite score reflecting patient participation and adherence\n\
+    \  to treatment plans at a facility.\ndefinition: EAS = \\frac{TES + (TAR \\times\
+    \ 3)}{2}, \\text{normalizing Treatment Adherence\n  Rate (TAR) to the Therapy\
+    \ Engagement Score (TES) scale (0-3)}\ntype: calculation_knowledge\nchildren_knowledge:\n\
+    - 4\n- 2"
+  entities:
+  - mental
+  - memory:mental_kb_4
+  - memory:mental_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_32
+  learning: "KB 32 \u2014 Facility Risk Profile Index (FRPI)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 32\nknowledge: Facility Risk Profile Index (FRPI)\n\
+    description: Generates an index indicating the overall risk level associated with\n\
+    \  the patient population at a facility.\ndefinition: FRPI = (\\frac{SRP}{100}\
+    \ \\times 5) + PFIS, \\text{weighting Suicide Risk\n  Prevalence (SRP) and combining\
+    \ with Patient Functional Impairment Score (PFIS)}\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 3\n- 6"
+  entities:
+  - mental
+  - memory:mental_kb_3
+  - memory:mental_kb_6
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_33
+  learning: "KB 33 \u2014 Patient Stability Metric (PSM)\n\nKB item (verbatim from\
+    \ mental_kb.jsonl):\nid: 33\nknowledge: Patient Stability Metric (PSM)\ndescription:\
+    \ Calculates an index reflecting patient stability, inversely related to\n  crisis\
+    \ frequency and missed appointments.\ndefinition: PSM = \\frac{1}{1 + CIF + MAR},\
+    \ \\text{where higher values indicate greater\n  stability based on Crisis Intervention\
+    \ Frequency (CIF) and Missed Appointment Rate\n  (MAR)}\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 7\n- 9"
+  entities:
+  - mental
+  - memory:mental_kb_7
+  - memory:mental_kb_9
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_34
+  learning: "KB 34 \u2014 Resource-Demand Differential (RDD)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 34\nknowledge: Resource-Demand Differential (RDD)\n\
+    description: Measures the potential gap between average patient functional needs\
+    \ and\n  available facility resources.\ndefinition: RDD = PFIS - FRAI, \\text{comparing\
+    \ Patient Functional Impairment Score\n  (PFIS) to Facility Resource Adequacy\
+    \ Index (FRAI)}\ntype: calculation_knowledge\nchildren_knowledge:\n- 6\n- 5"
+  entities:
+  - mental
+  - memory:mental_kb_6
+  - memory:mental_kb_5
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_35
+  learning: "KB 35 \u2014 Socio-Environmental Support Index (SESI)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 35\nknowledge: Socio-Environmental Support Index\
+    \ (SESI)\ndescription: Computes a composite index reflecting the quality of the\
+    \ patient's social\n  environment and the facility's resource context.\ndefinition:\
+    \ SESI = \\frac{SSE_{avg} + FRAI}{2}, \\text{combining average Social Support\n\
+    \  Effectiveness (SSE) across patients with Facility Resource Adequacy Index (FRAI)}\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 8\n- 5"
+  entities:
+  - mental
+  - memory:mental_kb_8
+  - memory:mental_kb_5
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_36
+  learning: "KB 36 \u2014 Adherence Effectiveness Ratio (AER)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 36\nknowledge: Adherence Effectiveness Ratio (AER)\n\
+    description: Calculates a ratio comparing treatment adherence rate to the average\n\
+    \  functional impairment, suggesting potential treatment impact relative to need.\n\
+    definition: AER = \\frac{TAR}{PFIS}, \\text{using Treatment Adherence Rate (TAR)\
+    \ and\n  Patient Functional Impairment Score (PFIS) (handle PFIS=0)}\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 2\n- 6"
+  entities:
+  - mental
+  - memory:mental_kb_2
+  - memory:mental_kb_6
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_37
+  learning: "KB 37 \u2014 Engagement Deficit Index (EDI)\n\nKB item (verbatim from\
+    \ mental_kb.jsonl):\nid: 37\nknowledge: Engagement Deficit Index (EDI)\ndescription:\
+    \ Quantifies the degree of patient disengagement, considering both therapy\n \
+    \ engagement scores and appointment attendance.\ndefinition: EDI = (3 - TES) \\\
+    times (1 + MAR), \\text{calculating the gap from maximum\n  Therapy Engagement\
+    \ Score (TES) weighted by Missed Appointment Rate (MAR)}\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 4\n- 9"
+  entities:
+  - mental
+  - memory:mental_kb_4
+  - memory:mental_kb_9
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_38
+  learning: "KB 38 \u2014 Comprehensive Facility Risk Score (CFRS)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 38\nknowledge: Comprehensive Facility Risk Score\
+    \ (CFRS)\ndescription: A normalized index assessing overall facility risk based\
+    \ on combined\n  depression severity, suicide risk prevalence, and functional\
+    \ impairment.\ndefinition: CFRS = \\frac{APSF}{27} + \\frac{SRP}{100} + \\frac{PFIS}{3},\
+    \ \\text{normalizing\n  Average PHQ-9 Score (APSF), Suicide Risk Prevalence (SRP),\
+    \ and Patient Functional\n  Impairment Score (PFIS) to a 0-1 scale and summing}\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 0\n- 3\n- 6"
+  entities:
+  - mental
+  - memory:mental_kb_0
+  - memory:mental_kb_3
+  - memory:mental_kb_6
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_39
+  learning: "KB 39 \u2014 Support System Pressure Index (SSPI)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 39\nknowledge: Support System Pressure Index (SSPI)\n\
+    description: Index assessing the pressure on support systems based on crisis frequency\n\
+    \  relative to social support effectiveness.\ndefinition: SSPI = \\frac{CIF}{SSE_{avg}\
+    \ + 1}, \\text{calculating Crisis Intervention\n  Frequency (CIF) relative to\
+    \ average Social Support Effectiveness (SSE) (adding 1\n  to avoid division by\
+    \ zero)}\ntype: calculation_knowledge\nchildren_knowledge:\n- 7\n- 8"
+  entities:
+  - mental
+  - memory:mental_kb_7
+  - memory:mental_kb_8
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_40
+  learning: "KB 40 \u2014 High-Need, Under-Resourced Facility\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 40\nknowledge: High-Need, Under-Resourced Facility\n\
+    description: Identifies facilities facing significant aggregate patient risk without\n\
+    \  adequate community resources.\ndefinition: A facility where FRPI > 4.5 and\
+    \ FRAI < 1.5, \\text{indicating high Facility\n  Risk Profile Index (FRPI) and\
+    \ low Facility Resource Adequacy Index (FRAI)}\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 32\n- 5"
+  entities:
+  - mental
+  - memory:mental_kb_32
+  - memory:mental_kb_5
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_41
+  learning: "KB 41 \u2014 Facility with Engaged but High-Impairment Population\n\n\
+    KB item (verbatim from mental_kb.jsonl):\nid: 41\nknowledge: Facility with Engaged\
+    \ but High-Impairment Population\ndescription: Identifies facilities where the\
+    \ patient population is generally engaged\n  and adherent but continues to struggle\
+    \ with high functional impairment.\ndefinition: A facility where EAS > 2.0 and\
+    \ PFIS > 2.0, \\text{showing high Engagement-Adherence\n  Score (EAS) alongside\
+    \ high Patient Functional Impairment Score (PFIS)}\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 31\n- 6"
+  entities:
+  - mental
+  - memory:mental_kb_31
+  - memory:mental_kb_6
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_42
+  learning: "KB 42 \u2014 Patient with Strong Recovery Capital\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 42\nknowledge: Patient with Strong Recovery Capital\n\
+    description: Identifies patients demonstrating high social support effectiveness\
+    \ coupled\n  with low functional impairment.\ndefinition: A patient where SSE\
+    \ \\geq 5 and their funcimp value corresponds to a score\n  of 1 (Mild), potentially\
+    \ indicating strong basis for sustained recovery. Relates\n  to concepts measured\
+    \ by SSE and PFIS.\ntype: domain_knowledge\nchildren_knowledge:\n- 8\n- 6"
+  entities:
+  - mental
+  - memory:mental_kb_8
+  - memory:mental_kb_6
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_43
+  learning: "KB 43 \u2014 Facility Attrition Risk Indicator\n\nKB item (verbatim from\
+    \ mental_kb.jsonl):\nid: 43\nknowledge: Facility Attrition Risk Indicator\ndescription:\
+    \ Identifies facilities potentially experiencing high patient dropout,\n  characterized\
+    \ by low engagement/adherence and high missed appointment rates.\ndefinition:\
+    \ A facility where EAS < 1.5 and MAR > 2.5, \\text{based on low Engagement-Adherence\n\
+    \  Score (EAS) and high Missed Appointment Rate (MAR)}\ntype: domain_knowledge\n\
+    children_knowledge:\n- 31\n- 9"
+  entities:
+  - mental
+  - memory:mental_kb_31
+  - memory:mental_kb_9
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_44
+  learning: "KB 44 \u2014 Well-Resourced High-Support Environment\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 44\nknowledge: Well-Resourced High-Support Environment\n\
+    description: Identifies facilities that are well-resourced and serve a patient\
+    \ population\n  with generally high levels of social support effectiveness.\n\
+    definition: A facility where FRAI \\geq 2.0 and the average SSE \\geq 4.5, \\\
+    text{indicating\n  high Facility Resource Adequacy Index (FRAI) and high average\
+    \ Social Support Effectiveness\n  (SSE)}\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 5\n- 8"
+  entities:
+  - mental
+  - memory:mental_kb_5
+  - memory:mental_kb_8
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_45
+  learning: "KB 45 \u2014 Patient with Severe Comorbid Distress Profile\n\nKB item\
+    \ (verbatim from mental_kb.jsonl):\nid: 45\nknowledge: Patient with Severe Comorbid\
+    \ Distress Profile\ndescription: Identifies patients experiencing significant\
+    \ simultaneous distress across\n  depression, anxiety, and functional domains.\n\
+    definition: A patient where mental_health_scores['depression']['phq9_score'] \\\
+    geq\n  15 AND mental_health_scores['anxiety']['gad7_score'] \\geq 15 AND funcimp\
+    \ = 'Severe'.\n  \\text{This profile relates to high individual contributions\
+    \ to APSF, AGSF, and PFIS}.\ntype: domain_knowledge\nchildren_knowledge:\n- 0\n\
+    - 1\n- 6"
+  entities:
+  - mental
+  - memory:mental_kb_0
+  - memory:mental_kb_1
+  - memory:mental_kb_6
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_46
+  learning: "KB 46 \u2014 Facility with Potential Treatment Inertia\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 46\nknowledge: Facility with Potential Treatment\
+    \ Inertia\ndescription: Identifies facilities where patients seem engaged in therapy\
+    \ (high TES)\n  but struggle with overall treatment adherence (low TAR), suggesting\
+    \ potential systemic\n  barriers or resistance.\ndefinition: A facility where\
+    \ TES > 2.2 and TAR < 0.6, \\text{based on Therapy Engagement\n  Score (TES) and\
+    \ Treatment Adherence Rate (TAR)}\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 4\n- 2"
+  entities:
+  - mental
+  - memory:mental_kb_4
+  - memory:mental_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_47
+  learning: "KB 47 \u2014 Patient with High Crisis & Low Support Profile\n\nKB item\
+    \ (verbatim from mental_kb.jsonl):\nid: 47\nknowledge: Patient with High Crisis\
+    \ & Low Support Profile\ndescription: Identifies patients characterized by frequent\
+    \ crisis interventions and\n  weak social support systems.\ndefinition: A patient\
+    \ where their individual crisisint count (from treatmentbasics\n  table) > 2 AND\
+    \ their individual SSE score (calculated from assessmentsocialanddiagnosis)\n\
+    \  < 3. \\text{This profile relates to high contribution to CIF and low individual\
+    \ SSE}.\ntype: domain_knowledge\nchildren_knowledge:\n- 7\n- 8"
+  entities:
+  - mental
+  - memory:mental_kb_7
+  - memory:mental_kb_8
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_48
+  learning: "KB 48 \u2014 Facility Demonstrating Strong Patient Retention\n\nKB item\
+    \ (verbatim from mental_kb.jsonl):\nid: 48\nknowledge: Facility Demonstrating\
+    \ Strong Patient Retention\ndescription: Identifies facilities showing positive\
+    \ performance indicators related\n  to high patient adherence and low missed appointment\
+    \ rates.\ndefinition: A facility where TAR > 0.75 and MAR < 1.0, \\text{based\
+    \ on Treatment Adherence\n  Rate (TAR) and Missed Appointment Rate (MAR)}\ntype:\
+    \ domain_knowledge\nchildren_knowledge:\n- 2\n- 9"
+  entities:
+  - mental
+  - memory:mental_kb_2
+  - memory:mental_kb_9
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_49
+  learning: "KB 49 \u2014 High Severity, High Risk Patient Group\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 49\nknowledge: High Severity, High Risk Patient\
+    \ Group\ndescription: Identifies patients presenting with both high symptom severity\
+    \ (depression/anxiety)\n  and elevated suicide risk.\ndefinition: A patient where\
+    \ (mental_health_scores['depression']['phq9_score'] > 19\n  OR mental_health_scores['anxiety']['gad7_score']\
+    \ > 14) AND suicrisk IN {'High',\n  'Severe'}.\ntype: domain_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_50
+  learning: "KB 50 \u2014 Clinical Improvement Potential Index (CIPI)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 50\nknowledge: Clinical Improvement Potential Index\
+    \ (CIPI)\ndescription: Calculates a ratio comparing patient engagement/adherence\
+    \ to overall\n  symptom severity at a facility, suggesting potential responsiveness\
+    \ to intervention.\ndefinition: CIPI = \\frac{EAS}{SSI + 1}, \\text{using Engagement-Adherence\
+    \ Score (EAS)\n  and Symptom Severity Index (SSI). Higher values suggest higher\
+    \ engagement relative\n  to current symptom burden.}\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 31\n- 30"
+  entities:
+  - mental
+  - memory:mental_kb_31
+  - memory:mental_kb_30
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_51
+  learning: "KB 51 \u2014 Facility Efficiency Index (FEI)\n\nKB item (verbatim from\
+    \ mental_kb.jsonl):\nid: 51\nknowledge: Facility Efficiency Index (FEI)\ndescription:\
+    \ Estimates facility efficiency by relating the achieved patient stability\n \
+    \ metric to the available facility resource adequacy.\ndefinition: FEI = PSM \\\
+    times FRAI, \\text{multiplying Patient Stability Metric (PSM)\n  by Facility Resource\
+    \ Adequacy Index (FRAI). Higher scores suggest better stability\n  achieved per\
+    \ resource level.}\ntype: calculation_knowledge\nchildren_knowledge:\n- 33\n-\
+    \ 5"
+  entities:
+  - mental
+  - memory:mental_kb_33
+  - memory:mental_kb_5
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_52
+  learning: "KB 52 \u2014 Therapeutic Alliance & Engagement Score (TAES)\n\nKB item\
+    \ (verbatim from mental_kb.jsonl):\nid: 52\nknowledge: Therapeutic Alliance &\
+    \ Engagement Score (TAES)\ndescription: Computes a combined score reflecting both\
+    \ the average clinician-reported\n  therapeutic alliance and the calculated therapy\
+    \ engagement score for a facility.\ndefinition: TAES = \\frac{Average(theralliance\\\
+    _score) + TES}{2}, \\text{where } theralliance\\_score\n  = \\begin{cases} 3 &\
+    \ \\text{if } theralliance = Strong \\\\ 2 & \\text{if } theralliance\n  = Moderate\
+    \ \\\\ 1 & \\text{if } theralliance = Weak \\\\ 0 & \\text{if } theralliance\n\
+    \  = Poor \\end{cases}, \\text{averaged across treatmentoutcomes, combined with\
+    \ Therapy\n  Engagement Score (TES)}.\ntype: calculation_knowledge\nchildren_knowledge:\n\
+    - 4"
+  entities:
+  - mental
+  - memory:mental_kb_4
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_53
+  learning: "KB 53 \u2014 Recovery Trajectory Index (RTI)\n\nKB item (verbatim from\
+    \ mental_kb.jsonl):\nid: 53\nknowledge: Recovery Trajectory Index (RTI)\ndescription:\
+    \ Estimates the effectiveness of treatment adherence in achieving functional\n\
+    \  improvement at a facility.\ndefinition: RTI = \\frac{\\sum_{i \\in treatmentoutcomes}\
+    \ (funcimpv\\_score_i)}{|treatmentoutcomes|}\n  \\times TAR, \\text{where } funcimpv\\\
+    _score = \\begin{cases} 3 & \\text{if } funcimpv\n  = Significant \\\\ 2 & \\\
+    text{if } funcimpv = Moderate \\\\ 1 & \\text{if } funcimpv =\n  Minimal \\end{cases}\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 2"
+  entities:
+  - mental
+  - memory:mental_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_54
+  learning: "KB 54 \u2014 Crisis Adherence Ratio (CAR)\n\nKB item (verbatim from mental_kb.jsonl):\n\
+    id: 54\nknowledge: Crisis Adherence Ratio (CAR)\ndescription: Calculates the ratio\
+    \ of crisis intervention frequency to the treatment\n  adherence rate, indicating\
+    \ crises occurring per unit of adherence.\ndefinition: CAR = \\frac{CIF}{TAR +\
+    \ 0.01}, \\text{dividing Crisis Intervention Frequency\n  (CIF) by Treatment Adherence\
+    \ Rate (TAR) (adjusted to prevent division by zero).\n  Higher values indicate\
+    \ more crises relative to adherence levels.}\ntype: calculation_knowledge\nchildren_knowledge:\n\
+    - 7\n- 2"
+  entities:
+  - mental
+  - memory:mental_kb_7
+  - memory:mental_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_55
+  learning: "KB 55 \u2014 Facility with High Clinical Leverage Potential\n\nKB item\
+    \ (verbatim from mental_kb.jsonl):\nid: 55\nknowledge: Facility with High Clinical\
+    \ Leverage Potential\ndescription: Identifies facilities with a highly engaged\
+    \ and adherent patient population\n  that still experiences significant symptom\
+    \ severity, suggesting readiness for potentially\n  more intensive or alternative\
+    \ interventions.\ndefinition: A facility where EAS > 2.5 AND SSI > 15, \\text{indicating\
+    \ high Engagement-Adherence\n  Score (EAS) alongside a high Symptom Severity Index\
+    \ (SSI).}\ntype: domain_knowledge\nchildren_knowledge:\n- 31\n- 30"
+  entities:
+  - mental
+  - memory:mental_kb_31
+  - memory:mental_kb_30
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_56
+  learning: "KB 56 \u2014 Patient Exhibiting Fragile Stability\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 56\nknowledge: Patient Exhibiting Fragile Stability\n\
+    description: Identifies patients currently classified as 'Stable Recovery' but\
+    \ who\n  exhibit risk factors like frequent missed appointments or low social\
+    \ support, suggesting\n  potential for destabilization.\ndefinition: A patient\
+    \ meeting Stable Recovery Patient criteria BUT having an average\n  missappt >\
+    \ 2 across their encounters OR an individual SSE score < 3. \\text{Combines\n\
+    \  Stable Recovery Patient status with risk factors related to MAR and SSE}.\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 13\n- 9\n- 8"
+  entities:
+  - mental
+  - memory:mental_kb_13
+  - memory:mental_kb_9
+  - memory:mental_kb_8
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_57
+  learning: "KB 57 \u2014 Resource-Intensive High-Risk Patient Cohort\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 57\nknowledge: Resource-Intensive High-Risk Patient\
+    \ Cohort\ndescription: Identifies patients requiring significant care coordination\
+    \ and intervention\n  due to possessing characteristics of both Complex Care Needs\
+    \ and Frequent Crisis\n  Patterns.\ndefinition: A patient meeting criteria for\
+    \ both Complex Care Needs AND Frequent Crisis\n  Patient (17).\ntype: domain_knowledge\n\
+    children_knowledge:\n- 12\n- 17"
+  entities:
+  - mental
+  - memory:mental_kb_12
+  - memory:mental_kb_17
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_58
+  learning: "KB 58 \u2014 Facility with Potential Engagement-Outcome Disconnect\n\n\
+    KB item (verbatim from mental_kb.jsonl):\nid: 58\nknowledge: Facility with Potential\
+    \ Engagement-Outcome Disconnect\ndescription: Identifies facilities where high\
+    \ therapy engagement scores do not seem\n  to translate into expected functional\
+    \ improvements or recovery progression.\ndefinition: A facility where TES > 2.0\
+    \ AND RTI < 0.8, \\text{indicating high Therapy\n  Engagement Score (TES) but\
+    \ a low Recovery Trajectory Index (RTI).}\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 4\n- 53"
+  entities:
+  - mental
+  - memory:mental_kb_4
+  - memory:mental_kb_53
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_59
+  learning: "KB 59 \u2014 Systemically Stressed Facility Environment\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 59\nknowledge: Systemically Stressed Facility Environment\n\
+    description: Identifies facilities potentially facing overwhelming systemic stress,\n\
+    \  characterized by a significant gap between patient needs and resources, compounded\n\
+    \  by high patient attrition risk.\ndefinition: A facility where RDD > 1.0 AND\
+    \ meeting criteria for Facility Attrition\n  Risk Indicator. \\text{Combines a\
+    \ high Resource-Demand Differential (RDD) with indicators\n  of high attrition\
+    \ risk.}\ntype: domain_knowledge\nchildren_knowledge:\n- 34\n- 43"
+  entities:
+  - mental
+  - memory:mental_kb_34
+  - memory:mental_kb_43
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_60
+  learning: "KB 60 \u2014 Correlation Between Resource Adequacy and Adherence (CRAA)\n\
+    \nKB item (verbatim from mental_kb.jsonl):\nid: 60\nknowledge: Correlation Between\
+    \ Resource Adequacy and Adherence (CRAA)\ndescription: Measures the correlation\
+    \ between individual facility resource adequacy\n  scores and treatment adherence\
+    \ rates.\ndefinition: CRAA = \\text{CORR}(resource\\_score, tar), \\text{where\
+    \ } resource\\_score\n  \\text{ is the facility's resource adequacy score, and\
+    \ } tar \\text{ is the treatment\n  adherence rate for the facility.}\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 5\n- 2"
+  entities:
+  - mental
+  - memory:mental_kb_5
+  - memory:mental_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_61
+  learning: "KB 61 \u2014 Facility Performance Quadrant (FPQ)\n\nKB item (verbatim\
+    \ from mental_kb.jsonl):\nid: 61\nknowledge: Facility Performance Quadrant (FPQ)\n\
+    description: Categorizes facilities into performance quadrants based on their\
+    \ Treatment\n  Adherence Rate and Patient Stability Metric relative to median\
+    \ thresholds.\ndefinition: \"A facility is assigned to one of four quadrants:\
+    \ 'High Adherence, High\\\n  \\ Stability' if TAR \\u2265 median_tar and PSM \\\
+    u2265 median_psm; 'High Adherence,\\\n  \\ Low Stability' if TAR \\u2265 median_tar\
+    \ and PSM < median_psm; 'Low Adherence,\\\n  \\ High Stability' if TAR < median_tar\
+    \ and PSM \\u2265 median_psm; 'Low Adherence,\\\n  \\ Low Stability' if TAR <\
+    \ median_tar and PSM < median_psm.\"\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 2\n- 33"
+  entities:
+  - mental
+  - memory:mental_kb_2
+  - memory:mental_kb_33
+  query: null
+  created_at: *id001
+- version: 1
+  id: mental_kb_62
+  learning: "KB 62 \u2014 Stale Treatment Outcome Records\n\nKB item (verbatim from\
+    \ mental_kb.jsonl):\nid: 62\nknowledge: Stale Treatment Outcome Records\ndescription:\
+    \ Treatment outcome records associated with encounters that occurred before\n\
+    \  a specific time threshold (e.g., older than 60 days).\ndefinition: Records\
+    \ in the `treatmentoutcomes` table where the `timemark` of the linked\n  encounter\
+    \ in the `encounters` table is older than a defined interval (e.g., 60 days).\n\
+    type: domain_knowledge\nchildren_knowledge: -1"
+  entities:
+  - mental
+  query: null
+  created_at: *id001

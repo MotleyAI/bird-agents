@@ -1,0 +1,298 @@
+version: 7
+name: surfaceandphysicalreadings
+sql_table: surfaceandphysicalreadings
+query_variables: {}
+data_source: museum
+columns:
+- name: surfphysregistry
+  sql: surfphysregistry
+  type: INT
+  primary_key: true
+  description: BIGSERIAL PRIMARY KEY, unique ID for each surface/physical reading
+    record.
+  hidden: false
+  format:
+    type: integer
+- name: envreadref
+  sql: envreadref
+  type: INT
+  primary_key: false
+  description: BIGINT FOREIGN KEY referencing EnvironmentalReadingsCore(EnvReadRegistry).
+    Ties surface data to a general environment reading.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 951
+- name: vibralvlmms2
+  sql: vibralvlmms2
+  type: DOUBLE
+  primary_key: false
+  description: "REAL measuring vibration level in mm/s\xB2 (millimeters per second\
+    \ squared)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 0.001 .. 0.5
+- name: noisedb
+  sql: noisedb
+  type: INT
+  primary_key: false
+  description: SMALLINT capturing noise level in decibels (dB).
+  hidden: false
+  format:
+    type: integer
+  sampled: 30 .. 60
+- name: dustaccummgm2
+  sql: dustaccummgm2
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(5,2) for dust accumulation in milligrams per square meter\
+    \ (mg/m\xB2)."
+  hidden: false
+  format:
+    type: float
+  sampled: 0.01 .. 5.0
+- name: microbialcountcfu
+  sql: microbialcountcfu
+  type: INT
+  primary_key: false
+  description: INT counting colony-forming units (CFU) of microbes on surfaces.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 500
+- name: moldriskidx
+  sql: moldriskidx
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(4,2) representing a calculated mold risk index (e.g., 0\u2013\
+    10)."
+  hidden: false
+  format:
+    type: float
+  sampled: 0.01 .. 1.0
+- name: pestactivitylvl
+  sql: pestactivitylvl
+  type: TEXT
+  primary_key: false
+  description: VARCHAR(50) noting observed pest activity (could be enumerations like
+    'Medium', 'Low', 'High').
+  hidden: false
+  sampled: Medium, High, Low
+  sampled_values:
+  - Medium
+  - High
+  - Low
+  distinct_count: 3
+- name: pesttrapcount
+  sql: pesttrapcount
+  type: INT
+  primary_key: false
+  description: SMALLINT indicating how many pests were caught in traps (if applicable).
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: pestspeciesdetected
+  sql: pestspeciesdetected
+  type: TEXT
+  primary_key: false
+  description: TEXT listing pest species observed or identified (e.g., 'Beetles',
+    'Booklice', 'Moths', 'Silverfish').
+  hidden: false
+  sampled: Booklice, Moths, Beetles, Silverfish
+  sampled_values:
+  - Booklice
+  - Moths
+  - Beetles
+  - Silverfish
+  distinct_count: 4
+- name: surfaceph
+  sql: surfaceph
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(3,1) measuring pH on the artifact\u2019s surface."
+  hidden: false
+  format:
+    type: float
+  sampled: 6.0 .. 8.0
+- name: matmoistcontent
+  sql: matmoistcontent
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(4,2) for the material\u2019s moisture content in percentage\
+    \ (0\u2013100%)."
+  hidden: false
+  format:
+    type: float
+  sampled: 6.0 .. 12.0
+- name: saltcrystalrisk
+  sql: saltcrystalrisk
+  type: TEXT
+  primary_key: false
+  description: 'CHAR(20) describing risk of salt crystallization (possible values:
+    ''High'', ''Low'', ''Medium'').'
+  hidden: false
+  sampled: 'Low                 , Medium              , High                '
+  sampled_values:
+  - 'Low                 '
+  - 'Medium              '
+  - 'High                '
+  distinct_count: 3
+- name: metalcorroderate
+  sql: metalcorroderate
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(4,2) capturing corrosion rate for metal surfaces, e.g., mg/cm\xB2\
+    \ per day."
+  hidden: false
+  format:
+    type: float
+  sampled: 0.0 .. 0.1
+- name: organicdegradidx
+  sql: organicdegradidx
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(4,2) measuring potential organic degradation (e.g., 0\u2013\
+    10 scale)."
+  hidden: false
+  format:
+    type: float
+  sampled: 0.01 .. 1.0
+- name: colorchangedeltae
+  sql: colorchangedeltae
+  type: DOUBLE
+  primary_key: false
+  description: REAL indicating color change (Delta E) measurement.
+  hidden: false
+  format:
+    type: integer
+  sampled: 0.01 .. 2
+- name: surfacetempc
+  sql: surfacetempc
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(5,2) temperature of the surface in Celsius.
+  hidden: false
+  format:
+    type: float
+  sampled: 18.0 .. 21.99
+- name: surfacerh
+  sql: surfacerh
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(4,1) relative humidity at the surface (percentage).
+  hidden: false
+  format:
+    type: float
+  sampled: 45.0 .. 55.0
+- name: condenserisk
+  sql: condenserisk
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(60) describing condensation risk level (possible values: ''Medium'',
+    ''High'', ''Low'').'
+  hidden: false
+  sampled: High, Low, Medium
+  sampled_values:
+  - High
+  - Low
+  - Medium
+  distinct_count: 3
+- name: thermalimgstatus
+  sql: thermalimgstatus
+  type: TEXT
+  primary_key: false
+  description: 'CHAR(15) summarizing thermal imaging results (possible values: ''Normal'',
+    ''Critical'', ''Attention Required'').'
+  hidden: false
+  sampled: 'Critical                 , Attention Required       , Normal                   '
+  sampled_values:
+  - 'Critical                 '
+  - 'Attention Required       '
+  - 'Normal                   '
+  distinct_count: 3
+- name: structstability
+  sql: structstability
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(50) describing structural stability (possible values: ''Stable'',
+    ''Minor Issues'', ''Major Issues'').'
+  hidden: false
+  sampled: Stable, Minor Issues, Major Issues
+  sampled_values:
+  - Stable
+  - Minor Issues
+  - Major Issues
+  distinct_count: 3
+- name: crackmonitor
+  sql: crackmonitor
+  type: TEXT
+  primary_key: false
+  description: 'TEXT field noting crack monitoring details (possible values: ''Significant
+    Changes'', ''Minor Changes'', ''No Changes'').'
+  hidden: false
+  sampled: Significant Changes, Minor Changes, No Changes
+  sampled_values:
+  - Significant Changes
+  - Minor Changes
+  - No Changes
+  distinct_count: 3
+- name: deformmm
+  sql: deformmm
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(5,2) measuring any deformation in millimeters.
+  hidden: false
+  format:
+    type: float
+  sampled: 0.01 .. 0.5
+- name: wtchangepct
+  sql: wtchangepct
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(6,5) capturing weight change in percentage (e.g., 0.00001\u2013\
+    99.99999)."
+  hidden: false
+  format:
+    type: float
+  sampled: -0.1 .. 0.1
+- name: surfdustcoverage
+  sql: surfdustcoverage
+  type: INT
+  primary_key: false
+  description: "SMALLINT representing the percentage of surface area covered by dust\
+    \ (0\u2013100%)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 10
+- name: o2concentration
+  sql: o2concentration
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(4,2) measuring oxygen concentration (e.g., 21.00% for normal
+    air).
+  hidden: false
+  format:
+    type: float
+  sampled: 20.0 .. 21.0
+- name: n2concentration
+  sql: n2concentration
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(4,2) measuring nitrogen concentration (often ~78.00% in air).
+  hidden: false
+  format:
+    type: float
+  sampled: 78.0 .. 79.0
+measures: []
+aggregations: []
+joins:
+- target_model: environmentalreadingscore
+  join_pairs:
+  - - envreadref
+    - envreadregistry
+  join_type: left
+filters: []
+hidden: false

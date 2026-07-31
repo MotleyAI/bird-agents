@@ -1,0 +1,6 @@
+[     612ms] [INFO] [AssetsLoadingErrorTracker] Initialize @ https://account.jetbrains.com/assets/bad/assetsLoadingErrorTracker.63440e09bb686d9831d7.bundle.js?v=d11dffbc:0
+[     612ms] [INFO] [AssetsLoadingErrorTracker] Attach error handler @ https://account.jetbrains.com/assets/bad/assetsLoadingErrorTracker.63440e09bb686d9831d7.bundle.js?v=d11dffbc:0
+[     612ms] [INFO] [AssetsLoadingErrorTracker] Attach auto-flusher @ https://account.jetbrains.com/assets/bad/assetsLoadingErrorTracker.63440e09bb686d9831d7.bundle.js?v=d11dffbc:0
+[     663ms] [LOG] jetprofile, release: 2026.06-4295, env: production, sentry: true (replays: false) @ https://account.jetbrains.com/assets/bad/jetprofile.legacy.d253ad5c5ae970ca2bc2.bundle.js?v=c8fe1641:1
+[     668ms] [INFO] [AssetsLoadingErrorTracker] Set capturer @ https://account.jetbrains.com/assets/bad/jetprofile.legacy.d253ad5c5ae970ca2bc2.bundle.js?v=c8fe1641:1
+[     743ms] [LOG] [WebChat] v0.6.0 @ https://account.jetbrains.com/assets/bad/jetprofile.legacy.d253ad5c5ae970ca2bc2.bundle.js?v=c8fe1641:1

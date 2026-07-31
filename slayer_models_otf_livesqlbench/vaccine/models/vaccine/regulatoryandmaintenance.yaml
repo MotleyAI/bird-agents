@@ -1,0 +1,562 @@
+version: 7
+name: regulatoryandmaintenance
+sql_table: regulatoryandmaintenance
+query_variables: {}
+data_source: vaccine
+columns:
+- name: regmaintregistry
+  sql: regmaintregistry
+  type: INT
+  primary_key: true
+  description: A SERIAL primary key uniquely identifying each regulatory/maintenance
+    record.
+  hidden: false
+  format:
+    type: integer
+- name: maintflag
+  sql: maintflag
+  type: TEXT
+  primary_key: false
+  description: "A VARCHAR(20) showing the maintenance status (e.g., \u2018Overdue\u2019\
+    , \u2018Up to Date\u2019, \u2018Due\u2019)."
+  hidden: false
+  sampled: Up to Date, Due, Overdue
+  sampled_values:
+  - Up to Date
+  - Due
+  - Overdue
+  distinct_count: 3
+- name: maintdatelast
+  sql: maintdatelast
+  type: DATE
+  primary_key: false
+  description: A DATE indicating the date of the most recent maintenance operation.
+  hidden: false
+  sampled: 2024-11-21 .. 2025-02-19
+- name: maintdatenext
+  sql: maintdatenext
+  type: DATE
+  primary_key: false
+  description: A DATE specifying the scheduled or expected date for the next maintenance.
+  hidden: false
+  sampled: 2025-02-20 .. 2025-05-20
+- name: calibflag
+  sql: calibflag
+  type: TEXT
+  primary_key: false
+  description: "A VARCHAR(20) describing calibration status (e.g., \u2018Expired\u2019\
+    , \u2018Valid\u2019, \u2018Due\u2019)."
+  hidden: false
+  sampled: Expired, Due, Valid
+  sampled_values:
+  - Expired
+  - Due
+  - Valid
+  distinct_count: 3
+- name: calibdatelast
+  sql: calibdatelast
+  type: DATE
+  primary_key: false
+  description: A DATE for the most recent calibration event.
+  hidden: false
+  sampled: 2024-08-23 .. 2025-02-19
+- name: calibdatenext
+  sql: calibdatenext
+  type: DATE
+  primary_key: false
+  description: A DATE for the next scheduled calibration.
+  hidden: false
+  sampled: 2025-02-20 .. 2025-08-18
+- name: docuflag
+  sql: docuflag
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) indicating documentation completeness (e.g., 'Missing',
+    'Complete', 'Partial').
+  hidden: false
+  sampled: Missing, Partial, Complete
+  sampled_values:
+  - Missing
+  - Partial
+  - Complete
+  distinct_count: 3
+- name: compscore
+  sql: compscore
+  type: DOUBLE
+  primary_key: false
+  description: "Sample values range 0.1 .. 100 (not 0..1), so the KB's literal \"\
+    >0.9\" threshold does not match the data scale; any downstream caller needing\
+    \ the \"excellent compliance\" cutoff must clarify whether the KB means >0.9 on\
+    \ a normalized 0-1 scale (i.e. >90 on the stored scale) or >0.9 literally. A REAL\
+    \ number reflecting a compliance or condition score assigned to the shipment/vehicle.\
+    \ [kb=21] A score above 0.9 indicates excellent compliance with all regulatory\
+    \ requirements. \u2014 Illustrates excellent compliance level [/kb=21]"
+  label: CompScore Value
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 21
+  sampled: 0.1 .. 100
+- name: riskflag
+  sql: riskflag
+  type: TEXT
+  primary_key: false
+  description: "A VARCHAR(50) denoting risk level or category (e.g., \u2018High Risk\u2019\
+    , \u2018Low Risk\u2019, \u2018Medium Risk\u2019)."
+  hidden: false
+  sampled: High Risk, Low Risk, Medium Risk
+  sampled_values:
+  - High Risk
+  - Low Risk
+  - Medium Risk
+  distinct_count: 3
+- name: incidents
+  sql: incidents
+  type: INT
+  primary_key: false
+  description: A SMALLINT counting the number of recorded incidents or violations.
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 5
+- name: resolveflag
+  sql: resolveflag
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) specifying how or if those incidents were resolved.
+  hidden: false
+  sampled: Escalated, Pending, Resolved
+  sampled_values:
+  - Escalated
+  - Pending
+  - Resolved
+  distinct_count: 3
+- name: respperson
+  sql: respperson
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(100) naming the responsible person or officer in charge.
+  hidden: false
+  sampled: Angel Miller, Brian Moore, David Smith, Jessica Wilson, Michael Lamb, Taylor
+    Rodriguez, Aaron Waters, Abigail Cantrell, Abigail Valencia, Adam Castro, Adam
+    Miller, Adam Owens, Adam Phillips, Adam Wilson, Aimee Crawford, Alex Petersen,
+    Alexander Anderson, Alexander Solomon, Alexander Warren, Alexander Wright ...
+    (894 distinct)
+  sampled_values:
+  - Angel Miller
+  - Brian Moore
+  - David Smith
+  - Jessica Wilson
+  - Michael Lamb
+  - Taylor Rodriguez
+  - Aaron Waters
+  - Abigail Cantrell
+  - Abigail Valencia
+  - Adam Castro
+  - Adam Miller
+  - Adam Owens
+  - Adam Phillips
+  - Adam Wilson
+  - Aimee Crawford
+  - Alex Petersen
+  - Alexander Anderson
+  - Alexander Solomon
+  - Alexander Warren
+  - Alexander Wright
+  - Alexandra Bray
+  - Alexandra Padilla DDS
+  - Alexandra Stewart
+  - Alexandria Barnett
+  - Alexandria Kennedy
+  - Alexis Ayala
+  - Alexis Hart
+  - Alexis Kelly
+  - Alfred Wise
+  - Alice Castro
+  - Alicia Davis
+  - Alicia Ibarra
+  - Alicia Jackson
+  - Allen Frederick
+  - Allison Smith
+  - Allison Taylor
+  - Alyssa Bradshaw
+  - Alyssa Frank
+  - Alyssa Payne
+  - Amanda Boone
+  - Amanda Cruz
+  - Amanda Duran
+  - Amanda Fox
+  - Amanda Gibson
+  - Amanda Harrington
+  - Amanda Houston
+  - Amanda Jones
+  - Amanda Nguyen
+  - Amanda Perez
+  - Amanda Reed
+  distinct_count: 894
+- name: contactno
+  sql: contactno
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) for the primary contact phone/ID.
+  hidden: false
+  sampled: (205)512-2940, (210)218-8869, (229)984-6454x37667, (233)994-4598x253, (235)502-3561x03780,
+    (239)901-3358x8030, (240)396-0190x35680, (241)608-1765x013, (245)824-0700x8430,
+    (246)766-4251x6599, (257)267-1308, (261)236-8504x9282, (261)970-4567x04171, (263)834-1730,
+    (264)741-8332x4233, (281)682-9803, (285)891-2461x1917, (287)203-2076x6686, (289)272-8507x90636,
+    (292)394-9200 ... (900 distinct)
+  sampled_values:
+  - (205)512-2940
+  - (210)218-8869
+  - (229)984-6454x37667
+  - (233)994-4598x253
+  - (235)502-3561x03780
+  - (239)901-3358x8030
+  - (240)396-0190x35680
+  - (241)608-1765x013
+  - (245)824-0700x8430
+  - (246)766-4251x6599
+  - (257)267-1308
+  - (261)236-8504x9282
+  - (261)970-4567x04171
+  - (263)834-1730
+  - (264)741-8332x4233
+  - (281)682-9803
+  - (285)891-2461x1917
+  - (287)203-2076x6686
+  - (289)272-8507x90636
+  - (292)394-9200
+  - (293)797-0380
+  - (299)455-5761x61438
+  - (300)921-0863
+  - (309)852-4309x50716
+  - (320)541-7849
+  - (322)376-0834x9263
+  - (329)993-3636x6727
+  - (332)934-2311
+  - (339)425-7455x7305
+  - (342)497-4281x04061
+  - (349)458-3552x043
+  - (357)944-8405
+  - (361)228-5179x8645
+  - (361)563-6194
+  - (365)648-7835x92373
+  - (368)957-8018x5408
+  - (372)496-5602x275
+  - (372)661-7151
+  - (374)710-9419
+  - (376)558-1463x631
+  - (385)624-8889x563
+  - (393)818-1193x46875
+  - (405)484-9853
+  - (405)645-3226x13401
+  - (409)932-5405
+  - (417)502-8763x639
+  - (424)591-9966x78840
+  - (433)990-2032
+  - (436)514-1479x370
+  - (437)874-9984x329
+  distinct_count: 900
+- name: contactemerg
+  sql: contactemerg
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) for emergency contact phone/ID details.
+  hidden: false
+  sampled: (202)460-9047x1986, (211)536-6933x337, (213)865-3981, (219)959-7627, (247)248-5228x714,
+    (247)518-8007, (256)800-9115x355, (261)233-9847x65743, (263)781-2546x73883, (265)748-3038x0859,
+    (266)678-1708x18193, (270)586-9689x4975, (274)906-7954, (277)437-6459, (280)652-9872x72066,
+    (286)822-9349x617, (288)727-7028, (299)949-1889x29151, (307)450-5568x003, (311)453-9105
+    ... (900 distinct)
+  sampled_values:
+  - (202)460-9047x1986
+  - (211)536-6933x337
+  - (213)865-3981
+  - (219)959-7627
+  - (247)248-5228x714
+  - (247)518-8007
+  - (256)800-9115x355
+  - (261)233-9847x65743
+  - (263)781-2546x73883
+  - (265)748-3038x0859
+  - (266)678-1708x18193
+  - (270)586-9689x4975
+  - (274)906-7954
+  - (277)437-6459
+  - (280)652-9872x72066
+  - (286)822-9349x617
+  - (288)727-7028
+  - (299)949-1889x29151
+  - (307)450-5568x003
+  - (311)453-9105
+  - (315)523-6441x06571
+  - (320)824-3244
+  - (323)567-2299x9128
+  - (324)562-2614x131
+  - (335)956-6438
+  - (339)605-5835
+  - (340)790-2240x0125
+  - (343)452-3354x580
+  - (343)636-3715x531
+  - (343)783-4282
+  - (348)308-4757
+  - (351)984-5394x4906
+  - (355)781-2390x468
+  - (363)567-3335
+  - (364)203-0260x3510
+  - (364)863-7284x9165
+  - (374)460-4336x39787
+  - (385)883-3600x184
+  - (386)868-3337x793
+  - (394)294-2685
+  - (394)794-5406
+  - (394)834-1156x13623
+  - (407)377-8354x367
+  - (409)648-4004
+  - (410)746-6957
+  - (411)215-3029
+  - (421)809-6672x744
+  - (422)359-2836x83819
+  - (429)497-2928x03209
+  - (431)530-0459x1430
+  distinct_count: 900
+- name: inspectdatelast
+  sql: inspectdatelast
+  type: DATE
+  primary_key: false
+  description: A DATE showing when the last official inspection was completed.
+  hidden: false
+  sampled: 2025-01-20 .. 2025-02-19
+- name: inspectdatenext
+  sql: inspectdatenext
+  type: DATE
+  primary_key: false
+  description: A DATE specifying when the next inspection is scheduled or due.
+  hidden: false
+  sampled: 2025-02-20 .. 2025-03-21
+- name: inspectoutcome
+  sql: inspectoutcome
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) describing the overall outcome or result of the last
+    inspection.
+  hidden: false
+  sampled: Conditional, Fail, Pass
+  sampled_values:
+  - Conditional
+  - Fail
+  - Pass
+  distinct_count: 3
+- name: correctactions
+  sql: correctactions
+  type: TEXT
+  primary_key: false
+  description: A TEXT field detailing corrective actions taken post-inspection or
+    post-incident.
+  hidden: false
+  sampled: Completed, Pending, None Required
+  sampled_values:
+  - Completed
+  - Pending
+  - None Required
+  distinct_count: 3
+- name: preventsteps
+  sql: preventsteps
+  type: TEXT
+  primary_key: false
+  description: A TEXT field describing preventive measures planned or implemented.
+  hidden: false
+  sampled: Implemented, Under Review, Planned
+  sampled_values:
+  - Implemented
+  - Under Review
+  - Planned
+  distinct_count: 3
+- name: validflag
+  sql: validflag
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) indicating the current validity status (e.g., 'In Process',
+    'Validated', 'Failed').
+  hidden: false
+  sampled: Failed, In Process, Validated
+  sampled_values:
+  - Failed
+  - In Process
+  - Validated
+  distinct_count: 3
+- name: verifymethod
+  sql: verifymethod
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) naming the verification method or standard used.
+  hidden: false
+  sampled: Manual, Electronic, Hybrid
+  sampled_values:
+  - Manual
+  - Electronic
+  - Hybrid
+  distinct_count: 3
+- name: shipgov
+  sql: shipgov
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) foreign key referencing Shipments(ShipmentRegistry),
+    linking this record to a shipment.
+  hidden: false
+  sampled: VS101443, VS101896, VS103453, VS107213, VS107478, VS108663, VS109470, VS110349,
+    VS111220, VS113526, VS116114, VS120493, VS121615, VS122057, VS122283, VS124761,
+    VS124785, VS125521, VS126219, VS126297 ... (900 distinct)
+  sampled_values:
+  - VS101443
+  - VS101896
+  - VS103453
+  - VS107213
+  - VS107478
+  - VS108663
+  - VS109470
+  - VS110349
+  - VS111220
+  - VS113526
+  - VS116114
+  - VS120493
+  - VS121615
+  - VS122057
+  - VS122283
+  - VS124761
+  - VS124785
+  - VS125521
+  - VS126219
+  - VS126297
+  - VS127092
+  - VS128180
+  - VS128465
+  - VS129414
+  - VS131248
+  - VS131616
+  - VS133967
+  - VS135208
+  - VS135323
+  - VS136255
+  - VS140768
+  - VS141136
+  - VS141866
+  - VS143336
+  - VS143586
+  - VS144344
+  - VS144593
+  - VS145015
+  - VS147256
+  - VS147622
+  - VS148137
+  - VS149025
+  - VS150281
+  - VS150918
+  - VS151303
+  - VS151690
+  - VS152703
+  - VS153208
+  - VS153333
+  - VS154617
+  distinct_count: 900
+- name: vehgov
+  sql: vehgov
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) foreign key referencing TransportInfo(VehicleReg), linking
+    this record to a vehicle.
+  hidden: false
+  sampled: V1011, V1045, V1051, V1072, V1085, V1092, V1103, V1108, V1109, V1110, V1122,
+    V1127, V1138, V1139, V1177, V1199, V1203, V1207, V1222, V1226 ... (900 distinct)
+  sampled_values:
+  - V1011
+  - V1045
+  - V1051
+  - V1072
+  - V1085
+  - V1092
+  - V1103
+  - V1108
+  - V1109
+  - V1110
+  - V1122
+  - V1127
+  - V1138
+  - V1139
+  - V1177
+  - V1199
+  - V1203
+  - V1207
+  - V1222
+  - V1226
+  - V1227
+  - V1230
+  - V1273
+  - V1299
+  - V1304
+  - V1313
+  - V1314
+  - V1320
+  - V1340
+  - V1352
+  - V1360
+  - V1364
+  - V1375
+  - V1381
+  - V1382
+  - V1390
+  - V1395
+  - V1414
+  - V1439
+  - V1448
+  - V1479
+  - V1491
+  - V1494
+  - V1499
+  - V1503
+  - V1509
+  - V1510
+  - V1518
+  - V1555
+  - V1564
+  distinct_count: 900
+- name: mcs
+  sql: compscore * (1 - (incidents / 10.0))
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=7] MCS = CompScore \\times (1 - \\frac{Incidents}{10}) \u2014\
+    \ Calculates compliance with maintenance schedules. [/kb=7]"
+  label: Maintenance Compliance Score (MCS)
+  hidden: false
+  meta:
+    kb_id: 7
+  sampled: 0.1 .. 100.0
+- name: days_overdue
+  sql: MAX(CAST(julianday('now') - julianday(maintdatenext) AS INTEGER), CAST(julianday('now')
+    - julianday(calibdatenext) AS INTEGER), 0)
+  type: INT
+  primary_key: false
+  description: "[kb=61] DaysOverdue = \\max\\left( (\\text{Current_Date} - \\text{MaintDateNext}),\
+    \ (\\text{Current_Date} - \\text{CalibDateNext}), 0 \\right) \u2014 Calculates\
+    \ the number of days past the scheduled maintenance or calibration date. [/kb=61]"
+  label: Days Overdue
+  hidden: false
+  meta:
+    kb_id: 61
+  sampled: 374 .. 463
+measures: []
+aggregations: []
+joins:
+- target_model: shipments
+  join_pairs:
+  - - shipgov
+    - shipmentregistry
+  join_type: left
+- target_model: transportinfo
+  join_pairs:
+  - - vehgov
+    - vehiclereg
+  join_type: left
+filters: []
+hidden: false

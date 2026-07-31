@@ -1,0 +1,11 @@
+- generic [active] [ref=e1]:
+  - link "JetBrains" [ref=e4] [cursor=pointer]:
+    - /url: https://www.jetbrains.com/
+  - generic [ref=e5]:
+    - generic [ref=e6]: "Error 404: Page Not Found"
+    - paragraph [ref=e7]: Unfortunately the page you are looking for is currently unavailable or does not exist.
+    - paragraph [ref=e8]:
+      - text: Try starting
+      - link "from the index page" [ref=e9] [cursor=pointer]:
+        - /url: https://account.jetbrains.com
+      - text: .

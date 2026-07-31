@@ -1,0 +1,225 @@
+version: 7
+name: credit_accounts_and_history
+sql_table: credit_accounts_and_history
+query_variables: {}
+data_source: credit
+columns:
+- name: histcompref
+  sql: histcompref
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key referencing credit_and_compliance(CompBankRef).
+  hidden: false
+- name: newaccage
+  sql: newaccage
+  type: INT
+  primary_key: false
+  description: A SMALLINT for the newest account age in years (e.g., '1').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 5
+- name: avgaccage
+  sql: avgaccage
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(4,1) for average account age (e.g., '4.5').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.0 .. 20.0
+- name: accmixscore
+  sql: accmixscore
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(4,3) measuring account mix (e.g., '0.765').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.002 .. 1.0
+- name: credlimusage
+  sql: credlimusage
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(4,3) ratio of used to available credit limit (e.g., '0.350').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.0 .. 1.0
+- name: payconsist
+  sql: payconsist
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(4,3) capturing how consistent payments are (e.g., '0.900').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.0 .. 0.999
+- name: recentbeh
+  sql: recentbeh
+  type: TEXT
+  primary_key: false
+  description: An enum (RecentCreditBehavior_enum) describing recent credit behavior
+    (Stable, Improving, Deteriorating).
+  hidden: false
+  sampled: Deteriorating, Improving, Stable
+  sampled_values:
+  - Deteriorating
+  - Improving
+  - Stable
+  distinct_count: 3
+- name: seekbeh
+  sql: seekbeh
+  type: TEXT
+  primary_key: false
+  description: An enum (CreditSeekingBehavior_enum) for seeking new credit (High,
+    Medium, Low).
+  hidden: false
+  sampled: Low, High, Medium
+  sampled_values:
+  - Low
+  - High
+  - Medium
+  distinct_count: 3
+- name: cardcount
+  sql: cardcount
+  type: INT
+  primary_key: false
+  description: A SMALLINT counting how many credit cards the user has (e.g., '2').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 10
+- name: totcredlimit
+  sql: totcredlimit
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(14,2) indicating total credit limit (e.g., '15000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 493.0 .. 199639.0
+- name: credutil
+  sql: credutil
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(5,3) capturing overall credit utilization (e.g., '0.350').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.0 .. 1.0
+- name: cardpayhist
+  sql: cardpayhist
+  type: TEXT
+  primary_key: false
+  description: 'An enum (PaymentHistory_enum) describing credit card payment history.
+    Possible values: Poor, Fair, Good, Excellent, Current, Past.'
+  hidden: false
+  sampled: Good, Fair, Excellent, Poor
+  sampled_values:
+  - Good
+  - Fair
+  - Excellent
+  - Poor
+  distinct_count: 4
+- name: loancount
+  sql: loancount
+  type: INT
+  primary_key: false
+  description: A SMALLINT counting how many loan accounts exist (e.g., '2').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 5
+- name: activeloan
+  sql: activeloan
+  type: INT
+  primary_key: false
+  description: A SMALLINT indicating how many loans are active (e.g., '1').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 3
+- name: totloanamt
+  sql: totloanamt
+  type: INT
+  primary_key: false
+  description: A BIGINT for total loan amount (e.g., '80000').
+  hidden: false
+  format:
+    type: integer
+  sampled: 74 .. 499406
+- name: loanpayhist
+  sql: loanpayhist
+  type: TEXT
+  primary_key: false
+  description: 'An enum (PaymentHistory_enum) storing loan payment history. Possible
+    values: Poor, Fair, Good, Excellent, Current, Past.'
+  hidden: false
+  sampled: Excellent, Fair, Good, Poor
+  sampled_values:
+  - Excellent
+  - Fair
+  - Good
+  - Poor
+  distinct_count: 4
+- name: custservint
+  sql: custservint
+  type: INT
+  primary_key: false
+  description: A SMALLINT for the number of customer service interactions (e.g., '2').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 20
+- name: complainthist
+  sql: complainthist
+  type: TEXT
+  primary_key: false
+  description: An enum (ComplaintHistory_enum) labeling complaint history (Low, Medium,
+    High).
+  hidden: false
+  sampled: Low, High, Medium
+  sampled_values:
+  - Low
+  - High
+  - Medium
+  distinct_count: 3
+- name: produsescore
+  sql: produsescore
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(5,3) measuring how many financial products are used (e.g.,
+    '0.550').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.0 .. 0.999
+- name: chanusescore
+  sql: chanusescore
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(5,3) capturing channel usage diversity (e.g., '0.780').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.001 .. 1.0
+- name: custlifeval
+  sql: custlifeval
+  type: DOUBLE
+  primary_key: false
+  description: "A DECIMAL(14,2) for the customer\u2019s lifetime value (e.g., '12000.00')."
+  hidden: false
+  format:
+    type: float
+  sampled: 112.64 .. 99925.86
+measures: []
+aggregations: []
+joins:
+- target_model: credit_and_compliance
+  join_pairs:
+  - - histcompref
+    - compbankref
+  join_type: left
+filters: []
+hidden: false

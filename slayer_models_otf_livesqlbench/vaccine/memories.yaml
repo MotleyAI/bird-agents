@@ -1,0 +1,1264 @@
+- version: 2
+  id: vaccine_kb_0
+  learning: "KB 0 \u2014 Temperature Stability Score (TSS)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 0\nknowledge: Temperature Stability Score (TSS)\ndescription:\
+    \ Calculates the overall temperature stability of a container based on\n  deviations\
+    \ and critical events.\ndefinition: TSS = (1 - \\frac{TempDevCount}{100}) \\times\
+    \ (1 - \\frac{CritEvents}{10})\n  \\times TempStabIdx\ntype: calculation_knowledge\n\
+    children_knowledge: -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.sensordata.tss\
+    \ (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - vaccine.sensordata.tss
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_1
+  learning: "KB 1 \u2014 Coolant Depletion Rate (CDR)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 1\nknowledge: Coolant Depletion Rate (CDR)\ndescription: Measures how quickly\
+    \ the coolant is being depleted.\ndefinition: CDR = \\frac{100 - CoolRemainPct}{(Current_Date\
+    \ - RefillLatest)}\ntype: calculation_knowledge\nchildren_knowledge: -1\n\n---\
+    \ setup-encode: encoded ---\nentities:\n  - vaccine.container.cdr (kind=column,\
+    \ host=container)"
+  entities:
+  - vaccine
+  - vaccine.container.cdr
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_2
+  learning: "KB 2 \u2014 Container Risk Index (CRI)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 2\nknowledge: Container Risk Index (CRI)\ndescription: Calculates overall\
+    \ risk level for a container based on temperature stability\n  and coolant status.\n\
+    definition: CRI = (1 - TSS) \\times (1 - \\frac{CoolRemainPct}{100})\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 0\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.sensordata.cri\
+    \ (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - vaccine.sensordata.cri
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_3
+  learning: "KB 3 \u2014 Vaccine Viability Period (VVP)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 3\nknowledge: Vaccine Viability Period (VVP)\ndescription:\
+    \ Calculates remaining viable days for vaccines considering temperature\n  deviations.\n\
+    definition: VVP = (ExpireDay - Current_Date) \\times TSS\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 0\n\n--- setup-encode: deferred ---\nambiguous because:\
+    \ VVP formula combines ExpireDay (on vaccinedetails, one row per vaccine batch)\
+    \ with TSS (on sensordata, many rows per container \u2014 likely a time series).\
+    \ No declared join path connects vaccinedetails to sensordata: vaccinedetails\
+    \ joins to container/shipments, sensordata joins to container/transportinfo, and\
+    \ the schema does not expose reverse joins. The two only share containvac=containlink\
+    \ \u2192 containregistry, which is a 1-to-many (batch \u2192 sensor readings)\
+    \ relationship, so the KB does not pin (a) which host model owns VVP, (b) how\
+    \ to aggregate multiple TSS readings per vaccine batch (latest? avg? max?), or\
+    \ (c) whether a new ModelJoin should be declared at all.\nclarify:\n  - What is\
+    \ the host model / grain for VVP \u2014 per vaccine batch (vaccinedetails) or\
+    \ per sensor reading (sensordata)?\n  - How should TSS be reduced when there are\
+    \ multiple sensordata rows per container/batch \u2014 latest reading by alerttime,\
+    \ average, min, or max?\n  - Should a new declared join be added (e.g. vaccinedetails.containvac\
+    \ = sensordata.containlink), and if so, with which aggregation policy to avoid\
+    \ row inflation?\n  - Is 'Current_Date' meant to be the SQL engine's current date\
+    \ at query time (e.g. SQLite DATE('now')), or some other reference timestamp on\
+    \ a row (e.g. sensordata.alerttime, shipments.timemark)?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_4
+  learning: "KB 4 \u2014 Route Completion Percentage (RCP)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 4\nknowledge: Route Completion Percentage (RCP)\ndescription:\
+    \ Calculates the percentage of route completed.\ndefinition: RCP = \\frac{DistDoneKm}{DistDoneKm\
+    \ + DistLeftKm} \\times 100\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.transportinfo.route_completion_percentage\
+    \ (kind=column, host=transportinfo)"
+  entities:
+  - vaccine
+  - vaccine.transportinfo.route_completion_percentage
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_5
+  learning: "KB 5 \u2014 Storage Efficiency Ratio (SER)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 5\nknowledge: Storage Efficiency Ratio (SER)\ndescription:\
+    \ Measures how efficiently container volume is utilized.\ndefinition: SER = \\\
+    frac{VialTally \\times 10}{VolLiters}\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.vaccinedetails.ser\
+    \ (kind=column, host=vaccinedetails)"
+  entities:
+  - vaccine
+  - vaccine.vaccinedetails.ser
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_6
+  learning: "KB 6 \u2014 Logger Health Index (LHI)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 6\nknowledge: Logger Health Index (LHI)\ndescription: Overall health score\
+    \ for data logger.\ndefinition: LHI = \\frac{BatteryPct}{100} \\times (1 - \\\
+    frac{MemUsePct}{100}) \\times\n  \\frac{DataPct}{100}\ntype: calculation_knowledge\n\
+    children_knowledge: -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.datalogger.lhi\
+    \ (kind=column, host=datalogger)"
+  entities:
+  - vaccine
+  - vaccine.datalogger.lhi
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_7
+  learning: "KB 7 \u2014 Maintenance Compliance Score (MCS)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 7\nknowledge: Maintenance Compliance Score (MCS)\ndescription:\
+    \ Calculates compliance with maintenance schedules.\ndefinition: MCS = CompScore\
+    \ \\times (1 - \\frac{Incidents}{10})\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.regulatoryandmaintenance.mcs\
+    \ (kind=column, host=regulatoryandmaintenance)"
+  entities:
+  - vaccine
+  - vaccine.regulatoryandmaintenance.mcs
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_8
+  learning: "KB 8 \u2014 Handling Quality Index (HQI)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 8\nknowledge: Handling Quality Index (HQI)\ndescription: Measures quality\
+    \ of shipment handling.\ndefinition: HQI = (1 - \\frac{HandleEvents}{100}) \\\
+    times (1 - \\frac{CritEvents}{10})\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.sensordata.hqi (kind=column,\
+    \ host=sensordata)"
+  entities:
+  - vaccine
+  - vaccine.sensordata.hqi
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_9
+  learning: "KB 9 \u2014 Temperature Breach Severity (TBS)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 9\nknowledge: Temperature Breach Severity (TBS)\ndescription:\
+    \ Calculates severity of temperature breaches.\ndefinition: TBS = \\frac{|TempNowC\
+    \ - StoreTempC|}{TempTolC} \\times TempDevCount\ntype: calculation_knowledge\n\
+    children_knowledge: -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.sensordata.tbs\
+    \ (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - vaccine.sensordata.tbs
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_10
+  learning: "KB 10 \u2014 Container Health Status\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 10\nknowledge: Container Health Status\ndescription: Classifies containers\
+    \ based on overall risk and temperature stability\n  to prioritize immediate action\
+    \ and monitor operational trends.\ndefinition: 'Four-level classification based\
+    \ on CRI, TSS, and TBS:\n\n  - Critical: CRI > 0.6 OR current TSS < 0.4\n\n  -\
+    \ Unstable: Average TSS < 0.4 OR maximum TBS > 1.5 over the past 1 year, and not\n\
+    \  Critical\n\n  - Moderate: Average TSS >= 0.4 AND maximum TBS <= 1.5 over the\
+    \ past 1 year, and\n  not Critical\n\n  - Stable: Average TSS >= 0.7 AND maximum\
+    \ TBS <= 1.0 over the past 1 year, and not\n  Critical'\ntype: domain_knowledge\n\
+    children_knowledge:\n- 0\n- 2\n- 9\n\n--- setup-encode: deferred ---\nambiguous\
+    \ because: KB 10 classifies containers into Critical/Unstable/Moderate/Stable\
+    \ using both 'current' row values (CRI, TSS) and time-windowed aggregates (avg\
+    \ TSS, max TBS 'over the past 1 year'). Multiple operationalisation choices are\
+    \ unpinned: (a) sensordata has no per-reading timestamp suitable for a 1-year\
+    \ window \u2014 the only TIMESTAMP is `alerttime` (last alert event), and its\
+    \ sampled range spans only ~24h (2025-02-18..2025-02-19), so 'past 1 year' has\
+    \ no meaningful anchor; (b) 'current TSS' / 'CRI > 0.6' need a rule that picks\
+    \ one sensordata row per container ('latest' by which column?), and there is no\
+    \ obvious latest-row indicator (CRI sample max is 0.504, so the CRI>0.6 clause\
+    \ would never fire \u2014 possibly fine, but reinforces that the grain is ambiguous);\
+    \ (c) the Stable conditions (avg TSS>=0.7 AND max TBS<=1.0) are a strict subset\
+    \ of the Moderate conditions (avg TSS>=0.4 AND max TBS<=1.5), so the classifier\
+    \ needs an explicit precedence order (presumably Stable > Moderate, but the KB\
+    \ does not say). Per the NO-GUESS rule, deferring rather than encoding stub thresholds/grain\
+    \ choices.\nclarify:\n  - Which timestamp column anchors the 'past 1 year' window\
+    \ for averaging TSS and taking max TBS? sensordata.alerttime only spans ~24h in\
+    \ the data \u2014 is the window meant to be computed against a different column,\
+    \ or against the full history of sensordata rows for each container regardless\
+    \ of time?\n  - How is 'current TSS' and 'current CRI' defined per container?\
+    \ sensordata has many rows per container \u2014 pick the row with the latest alerttime?\
+    \ The max sensortrack? Aggregate across all rows (avg/last/max)?\n  - What is\
+    \ the precedence order when a container satisfies both Stable and Moderate (Stable's\
+    \ bounds are a strict subset of Moderate's)? Confirm the intended order is: Critical\
+    \ first, then Stable, then Moderate, then Unstable (or the canonical order to\
+    \ apply)?\n  - Should the classification be exposed on the `container` model (one\
+    \ row per container) as a derived TEXT column, requiring a multi-stage query-backed\
+    \ model since the inputs cross an aggregation boundary? Or on `sensordata` per-row\
+    \ with the windowed aggregates computed per containlink?\n  - CRI sample values\
+    \ max at ~0.504 \u2014 confirm the literal threshold 'CRI > 0.6' is correct (vs.\
+    \ e.g. a typo for >0.06 or a different scale)?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_2
+  - memory:vaccine_kb_9
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_11
+  learning: "KB 11 \u2014 Compromised Shipment\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 11\nknowledge: Compromised Shipment\ndescription: Identifies shipments with\
+    \ serious integrity issues.\ndefinition: A shipment with IntegrityMark='Compromised'\
+    \ or SealFlag='Broken' or TamperSign='Confirmed'\ntype: domain_knowledge\nchildren_knowledge:\
+    \ -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.shipments.compromised_shipment\
+    \ (kind=column, host=shipments)"
+  entities:
+  - vaccine
+  - vaccine.shipments.compromised_shipment
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_12
+  learning: "KB 12 \u2014 High-Risk Route\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 12\nknowledge: High-Risk Route\ndescription: Identifies high-risk transportation\
+    \ routes.\ndefinition: A route where RCP < 50% and CRI > 0.4\ntype: domain_knowledge\n\
+    children_knowledge:\n- 2\n- 4\n\n--- setup-encode: encoded ---\nentities:\n  -\
+    \ vaccine.transportinfo.high_risk_route (kind=column, host=transportinfo)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_2
+  - memory:vaccine_kb_4
+  - vaccine.transportinfo.high_risk_route
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_13
+  learning: "KB 13 \u2014 Maintenance Due\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 13\nknowledge: Maintenance Due\ndescription: Identifies equipment requiring\
+    \ maintenance.\ndefinition: Equipment where MCS < 0.7 and (Current_Date > MaintDateNext\
+    \ or Current_Date\n  > CalibDateNext)\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 7\n\n--- setup-encode: deferred ---\nambiguous because: CASE C-ish but defers\
+    \ under NO-GUESS: (1) KB threshold 'MCS < 0.7' assumes a 0..1 scale, but the stored\
+    \ mcs column ranges 0.1 .. 100.0 (matching the CompScore caveat under KB 21) \u2014\
+    \ cannot tell if the KB means literal <0.7 (matches only outliers) or <70 on the\
+    \ stored scale, or <0.7 after normalizing by /100; (2) 'Current_Date' is undefined\
+    \ for this static dataset \u2014 could mean SQL CURRENT_DATE (which is far past\
+    \ all stored MaintDateNext/CalibDateNext values 2025-02-20..2025-08-18, making\
+    \ the predicate trivially true today but data-time-sensitive), or a fixed reference\
+    \ date embedded in the dataset.\nclarify:\n  - What scale does the KB's 'MCS <\
+    \ 0.7' threshold refer to \u2014 literally <0.7 on the stored 0.1..100 scale,\
+    \ <70 on the stored scale (i.e. <0.7 after dividing by 100), or some other normalization?\n\
+    \  - What does 'Current_Date' mean here \u2014 SQL CURRENT_DATE at query time,\
+    \ or a fixed reference date for this dataset (e.g. the max inspectdatelast 2025-02-19)?\n\
+    \  - Should the date-overdue predicate compare against maintdatenext and calibdatenext\
+    \ as written (overdue if next-scheduled date is in the past), or against maintdatelast/calibdatelast\
+    \ (overdue if last-done was too long ago)?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_7
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_14
+  learning: "KB 14 \u2014 Stable Transport\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 14\nknowledge: Stable Transport\ndescription: Identifies stable transport\
+    \ conditions.\ndefinition: Transport where HQI > 0.9 and TSS > 0.8\ntype: domain_knowledge\n\
+    children_knowledge:\n- 0\n- 8\n\n--- setup-encode: encoded ---\nentities:\n  -\
+    \ vaccine.sensordata.stable_transport (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_8
+  - vaccine.sensordata.stable_transport
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_15
+  learning: "KB 15 \u2014 Logger Failure Risk\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 15\nknowledge: Logger Failure Risk\ndescription: Identifies loggers at risk\
+    \ of failure.\ndefinition: A logger where LHI < 0.3 or (BatteryPct < 20 and PwrBackupFlag='Not\
+    \ Available')\ntype: domain_knowledge\nchildren_knowledge:\n- 6\n\n--- setup-encode:\
+    \ encoded ---\nentities:\n  - vaccine.datalogger.logger_failure_risk (kind=column,\
+    \ host=datalogger)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_6
+  - vaccine.datalogger.logger_failure_risk
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_16
+  learning: "KB 16 \u2014 Temperature Alert\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 16\nknowledge: Temperature Alert\ndescription: Identifies critical temperature\
+    \ conditions.\ndefinition: A condition where TBS > 2.0 and TempDevCount > 5\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 9\n\n--- setup-encode: encoded\
+    \ ---\nentities:\n  - vaccine.sensordata.temperature_alert (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_9
+  - vaccine.sensordata.temperature_alert
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_17
+  learning: "KB 17 \u2014 Coolant Critical\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 17\nknowledge: Coolant Critical\ndescription: Identifies critical coolant\
+    \ conditions.\ndefinition: A condition where CDR > 1 and CoolRemainPct < 30\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 1\n\n--- setup-encode: encoded\
+    \ ---\nentities:\n  - vaccine.container.coolant_critical (kind=column, host=container)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_1
+  - vaccine.container.coolant_critical
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_18
+  learning: "KB 18 \u2014 Efficient Container\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 18\nknowledge: Efficient Container\ndescription: Identifies efficiently utilized\
+    \ containers.\ndefinition: A container where SER > 0.8 and TSS > 0.9\ntype: domain_knowledge\n\
+    children_knowledge:\n- 0\n- 5\n\n--- setup-encode: encoded ---\nentities:\n  -\
+    \ vaccine.container.efficient_container (kind=column, host=container)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_5
+  - vaccine.container.efficient_container
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_19
+  learning: "KB 19 \u2014 Quality Compromise\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 19\nknowledge: Quality Compromise\ndescription: Identifies quality-compromised\
+    \ shipments.\ndefinition: A shipment where VVP < 30 or QualCheck='Failed'\ntype:\
+    \ domain_knowledge\nchildren_knowledge:\n- 3\n\n--- setup-encode: deferred ---\n\
+    ambiguous because: depends on unencoded KB 3 (VVP formula combines ExpireDay (on\
+    \ vaccinedetails, one row per vaccine batch) with TSS (on sensordata, many rows\
+    \ per container \u2014 likely a time series). No declared join path connects vaccinedetails\
+    \ to...). KB 19's definition 'VVP < 30 or QualCheck='Failed'' cannot be operationalised\
+    \ without VVP, and 'QualCheck' is not a known column on any host \u2014 its location\
+    \ and valid values are also unpinned.\nclarify:\n  - KB 3 (VVP) is unencoded \u2014\
+    \ what is the canonical formula/grain for VVP and which model should host it so\
+    \ KB 19 can reference it?\n  - Which model/column holds 'QualCheck'? It does not\
+    \ appear among the known KB-tagged entities or as an obvious base column \u2014\
+    \ please identify the host table, the exact column name, and confirm 'Failed'\
+    \ is a verbatim sampled value (or list the valid distinct values).\n  - At what\
+    \ grain is a 'shipment' evaluated for Quality Compromise (per shipment row, per\
+    \ container, per vaccine batch)? This determines the host model for the resulting\
+    \ flag."
+  entities:
+  - vaccine
+  - memory:vaccine_kb_3
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_20
+  learning: "KB 20 \u2014 TempNowC Value\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 20\nknowledge: TempNowC Value\ndescription: Illustrates safe temperature range\n\
+    definition: \"Temperature between 2\\xB0C and 8\\xB0C indicates optimal vaccine\
+    \ storage\\\n  \\ conditions.\"\ntype: value_illustration\nchildren_knowledge:\
+    \ -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.sensordata.tempnowc\
+    \ (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - vaccine.sensordata.tempnowc
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_21
+  learning: "KB 21 \u2014 CompScore Value\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 21\nknowledge: CompScore Value\ndescription: Illustrates excellent compliance\
+    \ level\ndefinition: A score above 0.9 indicates excellent compliance with all\
+    \ regulatory requirements.\ntype: value_illustration\nchildren_knowledge: -1\n\
+    \n--- setup-encode: encoded ---\nentities:\n  - vaccine.regulatoryandmaintenance.compscore\
+    \ (kind=column, host=regulatoryandmaintenance)"
+  entities:
+  - vaccine
+  - vaccine.regulatoryandmaintenance.compscore
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_22
+  learning: "KB 22 \u2014 CommProto: 'RF'\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 22\nknowledge: 'CommProto: ''RF'''\ndescription: Illustrates RF communication\
+    \ protocol\ndefinition: Uses 433MHz ISM band radio frequency transmission with\
+    \ FSK modulation\n  for short-range data exchange below 100m.\ntype: value_illustration\n\
+    children_knowledge: -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.datalogger.commproto\
+    \ (kind=column, host=datalogger)"
+  entities:
+  - vaccine
+  - vaccine.datalogger.commproto
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_23
+  learning: "KB 23 \u2014 TransmitFlag: 'Real-time'\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 23\nknowledge: 'TransmitFlag: ''Real-time'''\ndescription: Illustrates immediate\
+    \ data transmission\ndefinition: Indicates data is being transmitted to the central\
+    \ system without delay\n  as it is collected.\ntype: value_illustration\nchildren_knowledge:\
+    \ -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.datalogger.transmitflag\
+    \ (kind=column, host=datalogger)"
+  entities:
+  - vaccine
+  - vaccine.datalogger.transmitflag
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_24
+  learning: "KB 24 \u2014 CoolKind: 'Phase Change Material'\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 24\nknowledge: 'CoolKind: ''Phase Change Material'''\n\
+    description: Illustrates PCM cooling mechanism\ndefinition: \"Uses paraffin-based\
+    \ material with 2-8\\xB0C phase transition point and\\\n  \\ 200 kJ/kg latent\
+    \ heat capacity for temperature stabilization.\"\ntype: value_illustration\nchildren_knowledge:\
+    \ -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.container.coolkind\
+    \ (kind=column, host=container)"
+  entities:
+  - vaccine
+  - vaccine.container.coolkind
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_25
+  learning: "KB 25 \u2014 VehicleKind: 'Reefer Container'\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 25\nknowledge: 'VehicleKind: ''Reefer Container'''\n\
+    description: Illustrates specialized container type\ndefinition: \"Self-powered\
+    \ refrigeration unit maintaining -20\\xB0C to +30\\xB0C with\\\n  \\ R-134a refrigerant\
+    \ and independent power supply lasting 72 hours.\"\ntype: value_illustration\n\
+    children_knowledge: -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.transportinfo.vehiclekind\
+    \ (kind=column, host=transportinfo)"
+  entities:
+  - vaccine
+  - vaccine.transportinfo.vehiclekind
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_26
+  learning: "KB 26 \u2014 CommProto: 'Satellite'\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 26\nknowledge: 'CommProto: ''Satellite'''\ndescription: Illustrates satellite\
+    \ communication mode\ndefinition: Indicates the system is using satellite networks\
+    \ for global coverage and\n  reliable data transmission.\ntype: value_illustration\n\
+    children_knowledge: -1\n\n--- setup-encode: deferred ---\nambiguous because: CASE\
+    \ C value_illustration of the literal 'Satellite' on datalogger.commproto. The\
+    \ host column is already owned by kb_id=22 (also a value_illustration, for 'RF'),\
+    \ whose description already enumerates 'Satellite' among the sampled values. Per\
+    \ PEER-KB DEDUP this is a duplicate-of-KB-22 column ownership situation \u2014\
+    \ only one kb_id can tag the commproto column and the lower-id KB is canonical.\
+    \ Defer so a per-task agent can choose how to surface the 'Satellite' value (e.g.\
+    \ a derived is_satellite flag column or a filter) if a task requires it.\nclarify:\n\
+    \  - Should KB 26 emit a derived boolean column (e.g. is_satellite_commproto =\
+    \ LOWER(TRIM(commproto)) = 'satellite') on datalogger, or is documenting 'Satellite'\
+    \ as one of commproto's enum values (already done by kb=22) sufficient?\n  - If\
+    \ a per-task query needs to filter for Satellite communication, should it filter\
+    \ commproto directly (LOWER(TRIM(commproto)) = 'satellite') or via a dedicated\
+    \ entity tagged kb_id=26?"
+  entities:
+  - vaccine
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_27
+  learning: "KB 27 \u2014 VacVariant: 'Viral Vector'\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 27\nknowledge: 'VacVariant: ''Viral Vector'''\ndescription: Illustrates vaccine\
+    \ technology type\ndefinition: \"Uses modified adenovirus Ad26 vector expressing\
+    \ SARS-CoV-2 spike protein,\\\n  \\ requiring -20\\xB0C storage with 6-month shelf\
+    \ life.\"\ntype: value_illustration\nchildren_knowledge: -1\n\n--- setup-encode:\
+    \ encoded ---\nentities:\n  - vaccine.vaccinedetails.vacvariant (kind=column,\
+    \ host=vaccinedetails)"
+  entities:
+  - vaccine
+  - vaccine.vaccinedetails.vacvariant
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_28
+  learning: "KB 28 \u2014 GPSFlag: 'Active'\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 28\nknowledge: 'GPSFlag: ''Active'''\ndescription: Illustrates active location\
+    \ tracking\ndefinition: Indicates that GPS tracking is operational and accurately\
+    \ reporting location\n  data.\ntype: value_illustration\nchildren_knowledge: -1\n\
+    \n--- setup-encode: encoded ---\nentities:\n  - vaccine.transportinfo.gpsflag\
+    \ (kind=column, host=transportinfo)"
+  entities:
+  - vaccine
+  - vaccine.transportinfo.gpsflag
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_29
+  learning: "KB 29 \u2014 LightLux Value\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 29\nknowledge: LightLux Value\ndescription: Illustrates light exposure meaning.\n\
+    definition: 'Measured in lux. 0-10: Dark (ideal), 10-50: Low light, >50: Excessive\n\
+    \  exposure risk.'\ntype: value_illustration\nchildren_knowledge: -1\n\n--- setup-encode:\
+    \ encoded ---\nentities:\n  - vaccine.sensordata.lightlux (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - vaccine.sensordata.lightlux
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_30
+  learning: "KB 30 \u2014 Total Risk Score (TRS)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 30\nknowledge: Total Risk Score (TRS)\ndescription: Combines container risk\
+    \ and handling quality for overall risk assessment.\ndefinition: TRS = \\text{CRI}\
+    \ \\times (1 - \\text{HQI}) \\times (1 + \\text{TBS})\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 2\n- 8\n- 9\n\n--- setup-encode: encoded ---\nentities:\n\
+    \  - vaccine.sensordata.trs (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_2
+  - memory:vaccine_kb_8
+  - memory:vaccine_kb_9
+  - vaccine.sensordata.trs
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_31
+  learning: "KB 31 \u2014 Coolant Efficiency Index (CEI)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 31\nknowledge: Coolant Efficiency Index (CEI)\ndescription:\
+    \ Measures how efficiently coolant is maintaining temperature stability.\ndefinition:\
+    \ CEI = \\text{TSS} \\times \\frac{\\text{CoolRemainPct}}{100} \\times (1 - \\\
+    frac{\\text{CDR}}{20})\ntype: calculation_knowledge\nchildren_knowledge:\n- 0\n\
+    - 1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.sensordata.cei (kind=column,\
+    \ host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_1
+  - vaccine.sensordata.cei
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_32
+  learning: "KB 32 \u2014 Combined Maintenance Risk (CMR)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 32\nknowledge: Combined Maintenance Risk (CMR)\ndescription:\
+    \ Evaluates overall maintenance risk considering compliance and incidents.\ndefinition:\
+    \ CMR = (1 - \\text{MCS}) \\times (1 + \\frac{\\text{TBS}}{5}) \\times (1 - \\\
+    text{LHI})\ntype: calculation_knowledge\nchildren_knowledge:\n- 7\n- 9\n- 6\n\n\
+    --- setup-encode: deferred ---\nambiguous because: CMR = (1 - MCS) \xD7 (1 + TBS/5)\
+    \ \xD7 (1 - LHI) combines three component scores that live on three disconnected\
+    \ models: MCS on regulatoryandmaintenance, TBS on sensordata, LHI on datalogger.\
+    \ None of these models are reachable from each other via the declared join graph\
+    \ (e.g. from datalogger only container and shipments are reachable; regulatoryandmaintenance\
+    \ and sensordata are not). The schema therefore does not pin a single host whose\
+    \ row corresponds 1:1 to a CMR observation, and the KB text + parent KBs disagree\
+    \ on grain (KB 42 'equipment', KB 45 'logger', KB 65 'vehicles', KB 34 'logger').\
+    \ Encoding would require inventing joins and a grain \u2014 both are guesses the\
+    \ NO-GUESS rule forbids.\nclarify:\n  - What is the intended grain of CMR \u2014\
+    \ per data logger, per vehicle, per shipment, or per container? Each parent KB\
+    \ (34/42/45/65) implies a different one.\n  - Which join path links datalogger\
+    \ (LHI), regulatoryandmaintenance (MCS), and sensordata (TBS) for a single CMR\
+    \ row? Candidate bridges via shipments (datalogger.shiplog, regulatoryandmaintenance.shipgov)\
+    \ and via container (datalogger.containlog, sensordata.containlink) exist as FK\
+    \ columns but are not declared as joins between these three models \u2014 should\
+    \ new ModelJoins be registered, and if so on which keys?\n  - When multiple regulatoryandmaintenance\
+    \ / sensordata rows exist for the same logger/vehicle/shipment, which row's MCS\
+    \ / TBS should drive CMR (latest by date, max, average)?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_7
+  - memory:vaccine_kb_9
+  - memory:vaccine_kb_6
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_33
+  learning: "KB 33 \u2014 Shipment Quality Index (SQI)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 33\nknowledge: Shipment Quality Index (SQI)\ndescription: Overall quality\
+    \ score for shipment considering multiple factors.\ndefinition: SQI = \\frac{\\\
+    text{VVP}}{365} \\times \\text{HQI} \\times (1 - \\text{CRI})\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 3\n- 8\n- 2\n\n--- setup-encode: deferred ---\nambiguous\
+    \ because: Depends on unencoded KB 3 (VVP): 'VVP formula combines ExpireDay (on\
+    \ vaccinedetails, one row per vaccine batch) with TSS (on sensordata, many rows\
+    \ per container \u2014 likely a time series). No declared join path connects vaccinedetails\
+    \ to...'. Without VVP operationalised (host, grain, join path), SQI = (VVP/365)\
+    \ * HQI * (1 - CRI) cannot be encoded without guessing.\nclarify:\n  - KB 3 (VVP)\
+    \ is unencoded \u2014 how should VVP be operationalised (host table, grain, and\
+    \ the join path between vaccinedetails.expireday and sensordata.tss)?\n  - Once\
+    \ VVP is pinned, on which host should SQI live (sensordata row-level, or aggregated\
+    \ per shipment/container/vaccine batch)?\n  - How should HQI and CRI (both on\
+    \ sensordata, per-row) be combined with VVP (per vaccine batch) \u2014 row-level\
+    \ join, or aggregated (e.g. AVG(HQI), AVG(CRI)) per batch/shipment?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_3
+  - memory:vaccine_kb_8
+  - memory:vaccine_kb_2
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_34
+  learning: "KB 34 \u2014 Logger Reliability Score (LRS)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 34\nknowledge: Logger Reliability Score (LRS)\ndescription:\
+    \ Comprehensive score for logger reliability.\ndefinition: \"LRS = \\text{LHI}\
+    \ \\\\times (1 - \\\\text{CMR}) \\\\times \\\\text{TSS}\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 6\n- 32\n- 0\n\n--- setup-encode: deferred ---\nambiguous\
+    \ because: depends on unencoded KB 32 (deferred: CMR = (1 - MCS) \xD7 (1 + TBS/5)\
+    \ \xD7 (1 - LHI) combines three component scores that live on three disconnected\
+    \ models: MCS on regulatoryandmaintenance, TBS on sensordata, LHI on datalogger.\
+    \ None of these m\u2026). LRS = LHI \xD7 (1 - CMR) \xD7 TSS cannot be operationalised\
+    \ without CMR being resolved first, since LHI (datalogger), CMR's three components\
+    \ (regulatoryandmaintenance/sensordata/datalogger), and TSS (sensordata) live\
+    \ on disconnected models with no single 1:1 host.\nclarify:\n  - KB 32 (CMR) is\
+    \ unencoded \u2014 at what grain/host should CMR be computed given MCS lives on\
+    \ regulatoryandmaintenance, TBS on sensordata, and LHI on datalogger with no direct\
+    \ join graph linking all three?\n  - Once CMR's host is decided, what is the intended\
+    \ grain/host for LRS \u2014 should LHI, CMR, and TSS be aligned at the shipment\
+    \ level, container level, or some other entity, and via which joins?\n  - How\
+    \ should NULLs in any of LHI, CMR, or TSS propagate in the LRS product (treat\
+    \ missing as 0, as 1, or let NULL propagate)?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_6
+  - memory:vaccine_kb_32
+  - memory:vaccine_kb_0
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_35
+  learning: "KB 35 \u2014 Transport Safety Rating (TSR)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 35\nknowledge: Transport Safety Rating (TSR)\ndescription:\
+    \ Safety rating for transport considering multiple factors.\ndefinition: TSR =\
+    \ \\frac{\\text{RCP}}{100} \\times (1 - \\text{TRS}) \\times \\text{HQI}\ntype:\
+    \ calculation_knowledge\nchildren_knowledge:\n- 4\n- 30\n- 8\n\n--- setup-encode:\
+    \ encoded ---\nentities:\n  - vaccine.sensordata.tsr_safety (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_4
+  - memory:vaccine_kb_30
+  - memory:vaccine_kb_8
+  - vaccine.sensordata.tsr_safety
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_36
+  learning: "KB 36 \u2014 Container Efficiency Score (CES)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 36\nknowledge: Container Efficiency Score (CES)\ndescription:\
+    \ Overall container efficiency considering multiple metrics.\ndefinition: CES\
+    \ = \\text{SER} \\times \\text{CEI} \\times (1 - \\text{CRI})\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 5\n- 31\n- 2\n\n--- setup-encode: encoded ---\nentities:\n\
+    \  - vaccine.container.ces (kind=column, host=container)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_5
+  - memory:vaccine_kb_31
+  - memory:vaccine_kb_2
+  - vaccine.container.ces
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_37
+  learning: "KB 37 \u2014 Quality Maintenance Index (QMI)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 37\nknowledge: Quality Maintenance Index (QMI)\ndescription:\
+    \ Combined quality and maintenance metric.\ndefinition: QMI = \\text{MCS} \\times\
+    \ \\text{SQI} \\times (1 - \\frac{\\text{TBS}}{10})\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 7\n- 33\n- 9\n\n--- setup-encode: deferred ---\nambiguous\
+    \ because: depends on unencoded KB 33 (SQI): 'Depends on unencoded KB 3 (VVP):\
+    \ VVP formula combines ExpireDay (on vaccinedetails, one row per vaccine batch)\
+    \ with TSS (on sensordata, many rows per container \u2014 likely a time series).\
+    \ No declared jo\u2026'. QMI = MCS * SQI * (1 - TBS/10) cannot be encoded without\
+    \ a canonical SQI entity to reference.\nclarify:\n  - KB 33 (SQI) is not encoded\
+    \ \u2014 what is the canonical operationalisation of SQI (host table, formula,\
+    \ grain) so that QMI can reference it by name?\n  - Since SQI transitively depends\
+    \ on KB 3 (VVP), which itself spans vaccinedetails (per-batch) and sensordata\
+    \ (time series) with no declared join, how should the VVP\u2192SQI\u2192QMI chain\
+    \ be grounded at a single grain (per container? per batch? per shipment?) and\
+    \ via which join path?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_7
+  - memory:vaccine_kb_33
+  - memory:vaccine_kb_9
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_38
+  learning: "KB 38 \u2014 Route Risk Factor (RRF)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 38\nknowledge: Route Risk Factor (RRF)\ndescription: Comprehensive route risk\
+    \ assessment.\ndefinition: \"RRF = (1 - \\\\frac{\\text{RCP}}{100}) \\\\times\
+    \ \\\\text{TRS} \\\\times (1 -\\\n  \\ \\\\text{CEI})\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 4\n- 30\n- 31\n\n--- setup-encode: encoded ---\nentities:\n\
+    \  - vaccine.sensordata.rrf (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_4
+  - memory:vaccine_kb_30
+  - memory:vaccine_kb_31
+  - vaccine.sensordata.rrf
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_39
+  learning: "KB 39 \u2014 Vaccine Safety Index (VSI)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 39\nknowledge: Vaccine Safety Index (VSI)\ndescription: Overall safety index\
+    \ for vaccine shipment.\ndefinition: \"VSI = \\\\frac{\\text{VVP}}{365} \\\\times\
+    \ \\\\text{CEI} \\\\times (1 - \\\\text{TRS})\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 3\n- 31\n- 30\n\n--- setup-encode: deferred ---\nambiguous\
+    \ because: Depends on unencoded KB 3 (VVP): 'VVP formula combines ExpireDay (on\
+    \ vaccinedetails, one row per vaccine batch) with TSS (on sensordata, many rows\
+    \ per container \u2014 likely a time series). No declared join path connects vaccinedetails\
+    \ to\u2026'. Without VVP operationalised (host grain, join path, aggregation choice),\
+    \ the VSI formula VVP/365 * CEI * (1 - TRS) cannot be encoded without guessing.\n\
+    clarify:\n  - KB 3 (VVP) is unencoded \u2014 what is the canonical host/grain\
+    \ for VVP (per vaccinedetails batch? per sensordata reading? per shipment?) and\
+    \ how should ExpireDay on vaccinedetails be joined to TSS on sensordata given\
+    \ no declared join path?\n  - Once VVP's grain is pinned, at what grain should\
+    \ VSI be computed \u2014 per sensordata row (where CEI and TRS live), per shipment,\
+    \ or per vaccine batch? And how should CEI/TRS be aggregated (avg? last?) if VSI\
+    \ is computed at a coarser grain than sensordata?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_3
+  - memory:vaccine_kb_31
+  - memory:vaccine_kb_30
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_40
+  learning: "KB 40 \u2014 Critical Transport Condition\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 40\nknowledge: Critical Transport Condition\ndescription: Identifies critically\
+    \ unsafe transport conditions.\ndefinition: A transport condition where TSR <\
+    \ 0.4 and TRS > 0.6\ntype: domain_knowledge\nchildren_knowledge:\n- 35\n- 30\n\
+    \n--- setup-encode: encoded ---\nentities:\n  - vaccine.sensordata.critical_transport_condition\
+    \ (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_35
+  - memory:vaccine_kb_30
+  - vaccine.sensordata.critical_transport_condition
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_41
+  learning: "KB 41 \u2014 Severe Container Risk\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 41\nknowledge: Severe Container Risk\ndescription: Identifies containers with\
+    \ severe combined risks.\ndefinition: A container where CES < 0.3 and CEI < 0.5\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 36\n- 31\n\n--- setup-encode: encoded\
+    \ ---\nentities:\n  - vaccine.container.severe_container_risk (kind=column, host=container)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_36
+  - memory:vaccine_kb_31
+  - vaccine.container.severe_container_risk
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_42
+  learning: "KB 42 \u2014 High Maintenance Priority\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 42\nknowledge: High Maintenance Priority\ndescription: Identifies equipment\
+    \ requiring urgent maintenance.\ndefinition: Equipment where CMR > 0.7 and QMI\
+    \ < 0.4\ntype: domain_knowledge\nchildren_knowledge:\n- 32\n- 37\n\n--- setup-encode:\
+    \ deferred ---\nambiguous because: Depends on unencoded KB 32 (CMR: combines MCS/TBS/LHI\
+    \ across disconnected models) and KB 37 (QMI: depends on unencoded KB 33/SQI and\
+    \ KB 3/VVP). Cannot operationalise CMR > 0.7 AND QMI < 0.4 without both component\
+    \ scores being encoded first.\nclarify:\n  - KB 32 (CMR) is unencoded \u2014 how\
+    \ should CMR be operationalised given MCS lives on regulatoryandmaintenance, TBS\
+    \ on sensordata, and LHI on datalogger (disconnected hosts, grain mismatch)?\n\
+    \  - KB 37 (QMI) is unencoded because its dependency KB 33 (SQI) is unencoded,\
+    \ which in turn depends on unencoded KB 3 (VVP) \u2014 how should QMI be operationalised?\n\
+    \  - On which host model should High Maintenance Priority be defined once CMR\
+    \ and QMI exist, and what grain (per container, per shipment, per logger) does\
+    \ 'equipment' refer to?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_32
+  - memory:vaccine_kb_37
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_43
+  learning: "KB 43 \u2014 Critical Route Status\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 43\nknowledge: Critical Route Status\ndescription: Identifies routes with\
+    \ critical risk levels.\ndefinition: A route where RRF > 0.8 and TSR < 0.3\ntype:\
+    \ domain_knowledge\nchildren_knowledge:\n- 38\n- 35\n\n--- setup-encode: encoded\
+    \ ---\nentities:\n  - vaccine.sensordata.critical_route_status (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_38
+  - memory:vaccine_kb_35
+  - vaccine.sensordata.critical_route_status
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_44
+  learning: "KB 44 \u2014 Unsafe Vaccine Condition\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 44\nknowledge: Unsafe Vaccine Condition\ndescription: Identifies potentially\
+    \ compromised vaccines.\ndefinition: A condition where VSI < 0.4 and CES < 0.5\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 39\n- 36\n\n--- setup-encode: deferred\
+    \ ---\nambiguous because: depends on unencoded KB 39 (deferred: Depends on unencoded\
+    \ KB 3 (VVP): 'VVP formula combines ExpireDay (on vaccinedetails, one row per\
+    \ vaccine batch) with TSS (on sensordata, many rows per container \u2014 likely\
+    \ a time series). No declared jo\u2026). The 'Unsafe Vaccine Condition' definition\
+    \ requires VSI < 0.4 AND CES < 0.5; CES is encoded (vaccine.container.ces) but\
+    \ VSI is not, so the predicate cannot be grounded.\nclarify:\n  - KB 39 (VSI)\
+    \ is not encoded \u2014 what is the canonical VSI formula, its host table, and\
+    \ the join/grain that lets VSI be combined with container.ces on a single row?\n\
+    \  - On which entity-grain should 'Unsafe Vaccine Condition' be evaluated (per\
+    \ container, per vaccine batch, per sensor reading)?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_39
+  - memory:vaccine_kb_36
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_45
+  learning: "KB 45 \u2014 Logger Critical State\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 45\nknowledge: Logger Critical State\ndescription: Identifies critically failing\
+    \ loggers.\ndefinition: A logger where LRS < 0.3 and CMR > 0.8\ntype: domain_knowledge\n\
+    children_knowledge:\n- 34\n- 32\n\n--- setup-encode: deferred ---\nambiguous because:\
+    \ depends on unencoded KB 32 (deferred: CMR = (1 - MCS) \xD7 (1 + TBS/5) \xD7\
+    \ (1 - LHI) combines three component scores that live on three disconnected models:\
+    \ MCS on regulatoryandmaintenance, TBS on sensordata, LHI on datalogger. None\
+    \ of these m\u2026) and unencoded KB 34. KB 45 defines Logger Critical State as\
+    \ LRS < 0.3 AND CMR > 0.8, so without canonical CMR (KB 32) and LRS (KB 34) encodings\
+    \ the predicate cannot be grounded.\nclarify:\n  - KB 32 (CMR \u2014 Composite\
+    \ Maintenance Risk) is unencoded: which model should host CMR given the three\
+    \ components live on disconnected models (regulatoryandmaintenance.MCS, sensordata.TBS,\
+    \ datalogger.LHI), and what join path should be used?\n  - KB 34 (LRS \u2014 Logger\
+    \ Risk Score) is unencoded: what is its host model and exact definition?\n  -\
+    \ Once CMR and LRS are encoded, on which host model should Logger Critical State\
+    \ live (presumably datalogger, since the KB is keyed to a logger), and how should\
+    \ CMR/TBS/MCS be reached from there?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_34
+  - memory:vaccine_kb_32
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_46
+  learning: "KB 46 \u2014 Quality Alert Status\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 46\nknowledge: Quality Alert Status\ndescription: Identifies severe quality\
+    \ issues.\ndefinition: A status where QMI < 0.3 and VSI < 0.5\ntype: domain_knowledge\n\
+    children_knowledge:\n- 37\n- 39\n\n--- setup-encode: deferred ---\nambiguous because:\
+    \ Depends on unencoded KB 37 (QMI) and KB 39 (VSI), both deferred due to upstream\
+    \ unencoded KB 33 (SQI) / KB 3 (VVP). Cannot operationalise the QMI < 0.3 AND\
+    \ VSI < 0.5 predicate without the underlying scoring columns.\nclarify:\n  - KB\
+    \ 37 (QMI) is not encoded \u2014 what is the canonical formula for QMI and on\
+    \ which host should it live?\n  - KB 39 (VSI) is not encoded \u2014 what is the\
+    \ canonical formula for VSI and on which host should it live?\n  - Once QMI and\
+    \ VSI exist as columns/measures, confirm the host for Quality Alert Status (likely\
+    \ the same host both are reachable from) and whether the predicate should be encoded\
+    \ as a boolean Column (1/0) or as a Column.filter for downstream counts."
+  entities:
+  - vaccine
+  - memory:vaccine_kb_37
+  - memory:vaccine_kb_39
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_47
+  learning: "KB 47 \u2014 Transport Safety Alert\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 47\nknowledge: Transport Safety Alert\ndescription: Identifies unsafe transport\
+    \ conditions.\ndefinition: A condition where TSR < 0.5 and RRF > 0.7\ntype: domain_knowledge\n\
+    children_knowledge:\n- 35\n- 38\n\n--- setup-encode: encoded ---\nentities:\n\
+    \  - vaccine.sensordata.transport_safety_alert (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_35
+  - memory:vaccine_kb_38
+  - vaccine.sensordata.transport_safety_alert
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_48
+  learning: "KB 48 \u2014 Container Alert Status\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 48\nknowledge: Container Alert Status\ndescription: Identifies containers\
+    \ requiring urgent attention.\ndefinition: A status where CES < 0.4 and TRS >\
+    \ 0.7\ntype: domain_knowledge\nchildren_knowledge:\n- 36\n- 30\n\n--- setup-encode:\
+    \ encoded ---\nentities:\n  - vaccine.sensordata.container_alert_status (kind=column,\
+    \ host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_36
+  - memory:vaccine_kb_30
+  - vaccine.sensordata.container_alert_status
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_49
+  learning: "KB 49 \u2014 Critical Safety Condition\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 49\nknowledge: Critical Safety Condition\ndescription: Identifies critically\
+    \ unsafe overall conditions.\ndefinition: A condition where VSI < 0.3 and TSR\
+    \ < 0.4\ntype: domain_knowledge\nchildren_knowledge:\n- 39\n- 35\n\n--- setup-encode:\
+    \ deferred ---\nambiguous because: Depends on unencoded KB 39 (VSI). Verbatim\
+    \ reason from deps block: \"Depends on unencoded KB 3 (VVP): 'VVP formula combines\
+    \ ExpireDay (on vaccinedetails, one row per vaccine batch) with TSS (on sensordata,\
+    \ many rows per container \u2014 likely a time series). No declared jo\u2026\"\
+    . Cannot encode the VSI < 0.3 AND TSR < 0.4 predicate without a grounded VSI definition.\n\
+    clarify:\n  - KB 39 (VSI) is not encoded \u2014 what is the exact VSI formula\
+    \ and host table/grain?\n  - Which host should the 'critical safety condition'\
+    \ flag live on (sensordata row, container, shipment), and what is the join/grain\
+    \ alignment between VSI and TSR (KB 35, on sensordata)?\n  - Should the flag be\
+    \ an integer 0/1 column, a boolean, or a label, and how should NULLs in VSI or\
+    \ TSR be treated (propagate vs treat as not-critical)?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_39
+  - memory:vaccine_kb_35
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_50
+  learning: "KB 50 \u2014 Thermal Stability Coefficient (TSC)\n\nKB item (verbatim\
+    \ from vaccine_kb.jsonl):\nid: 50\nknowledge: Thermal Stability Coefficient (TSC)\n\
+    description: Advanced temperature stability metric incorporating thermal mass\
+    \ and\n  ambient conditions.\ndefinition: TSC = \\text{TSS} \\cdot e^{-\\frac{|\\\
+    text{TempNowC} - \\text{StoreTempC}|}{5}}\n  \\cdot \\left(1 - \\alpha \\cdot\
+    \ \\frac{\\text{TempNowC} - \\text{TempPrevC}}{\\text{ReadingInterval}}\\right)\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 0\n- 60\n\n--- setup-encode:\
+    \ deferred ---\nambiguous because: depends on unencoded KB 60 (deferred: KB 60\
+    \ defines ReadingInterval as a configurable time parameter (standard 15 min, range\
+    \ 5-60 min) used as the time denominator in the TSC formula (KB 50). No column\
+    \ on `sensordata` (or any reachable mo\u2026). The TSC formula also requires a\
+    \ TempPrevC (previous reading temperature) and an alpha thermal-mass coefficient,\
+    \ neither of which is pinned by an encoded dependency or schema column.\nclarify:\n\
+    \  - What value (or column) should be used for ReadingInterval in the TSC denominator?\
+    \ KB 60 is deferred \u2014 is it a fixed constant (e.g. 15 minutes) or derived\
+    \ from the time delta between consecutive sensordata readings per container/shipment?\n\
+    \  - Where does TempPrevC come from? Should it be computed as lag(tempnowc) over\
+    \ sensordata ordered by reading time and partitioned by container/shipment, or\
+    \ is there another source?\n  - What is the value of the thermal-mass coefficient\
+    \ alpha in the formula (1 - alpha * (TempNowC - TempPrevC)/ReadingInterval)? It\
+    \ is not specified in the KB or any dependency.\n  - What is StoreTempC \u2014\
+    \ the target storage temperature? Is it a constant per vaccine variant, a column\
+    \ on vaccinedetails/container, or a configured parameter?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_60
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_51
+  learning: "KB 51 \u2014 Multi-Parameter Risk Assessment (MPRA)\n\nKB item (verbatim\
+    \ from vaccine_kb.jsonl):\nid: 51\nknowledge: Multi-Parameter Risk Assessment\
+    \ (MPRA)\ndescription: Comprehensive risk evaluation using multiple environmental\
+    \ parameters.\ndefinition: MPRA = \\sqrt{\\text{CRI}^2 + \\text{TBS}^2 + (1-\\\
+    text{HQI})^2} \\times (1\n  + \\frac{\\text{CDR}}{\\text{CDR}_{\\text{max}}})\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 2\n- 9\n- 8\n- 1\n\n--- setup-encode:\
+    \ deferred ---\nambiguous because: MPRA formula references CDR_max but the KB\
+    \ never pins what CDR_max means: it could be a fixed domain constant (theoretical\
+    \ maximum depletion rate), MAX(CDR) across all containers (a multi-stage aggregate),\
+    \ MAX(CDR) within some scope, or a column we don't know about. Without that pinned,\
+    \ the normalization factor (1 + CDR/CDR_max) cannot be encoded without guessing.\
+    \ CASE A would otherwise apply (parents KB 55/57 combine MPRA with sibling components\
+    \ by name).\nclarify:\n  - What is CDR_max in the MPRA formula \u2014 a fixed\
+    \ domain constant (please specify the numeric value and units), or an aggregate\
+    \ MAX(CDR) computed across rows (and if so, across what scope: all containers,\
+    \ per-shipment, per-route)?\n  - If CDR_max is an aggregate, should MPRA be a\
+    \ row-level Column on sensordata that references a precomputed constant, or should\
+    \ it be a query-backed model with a two-stage pipeline (stage 1 computes MAX(CDR),\
+    \ stage 2 computes MPRA per row)?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_2
+  - memory:vaccine_kb_9
+  - memory:vaccine_kb_8
+  - memory:vaccine_kb_1
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_52
+  learning: "KB 52 \u2014 Time-Weighted Quality Decay (TWQD)\n\nKB item (verbatim\
+    \ from vaccine_kb.jsonl):\nid: 52\nknowledge: Time-Weighted Quality Decay (TWQD)\n\
+    description: Calculates quality deterioration rate considering time and environmental\n\
+    \  factors.\ndefinition: TWQD = -\\frac{d}{dt}(\\text{VVP}) \\times (1 + \\beta\\\
+    text{TBS}) \\times (1\n  + \\gamma(\\text{1-TSS}))\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 3\n- 9\n- 0\n\n--- setup-encode: deferred ---\nambiguous\
+    \ because: depends on unencoded KB 3 (deferred: VVP formula combines ExpireDay\
+    \ (on vaccinedetails, one row per vaccine batch) with TSS (on sensordata, many\
+    \ rows per container \u2014 likely a time series). No declared join path connects\
+    \ vaccinedetails to\u2026). TWQD = -d/dt(VVP) * (1 + beta*TBS) * (1 + gamma*(1-TSS))\
+    \ requires VVP and its time derivative, plus the unspecified weights beta and\
+    \ gamma \u2014 none of which are pinned.\nclarify:\n  - How should VVP (KB 3)\
+    \ be defined and on what grain, given that vaccinedetails (per-batch) and sensordata\
+    \ (time series) have no declared join path?\n  - What time grain should d/dt(VVP)\
+    \ be computed over (per-reading delta, per-hour, per-day)?\n  - What are the numeric\
+    \ values of the weights beta and gamma in TWQD = -d/dt(VVP) * (1 + beta*TBS) *\
+    \ (1 + gamma*(1-TSS))?\n  - At what grain should TWQD be materialised \u2014 per\
+    \ sensordata reading, per container, per shipment, per vaccine batch?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_3
+  - memory:vaccine_kb_9
+  - memory:vaccine_kb_0
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_53
+  learning: "KB 53 \u2014 Environmental Stress Factor (ESF)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 53\nknowledge: Environmental Stress Factor (ESF)\ndescription:\
+    \ Quantifies combined environmental stressors on vaccine stability.\ndefinition:\
+    \ ESF = \\text{TSS} \\cdot (1 + \\frac{\\text{TBS}}{5}) \\cdot \\text{CEI} \\\
+    cdot\n  (1 + \\frac{|\\text{TempNowC} - \\text{StoreTempC}|}{\\text{TempTolC}})\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 0\n- 9\n- 31\n\n--- setup-encode:\
+    \ encoded ---\nentities:\n  - vaccine.sensordata.esf (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_9
+  - memory:vaccine_kb_31
+  - vaccine.sensordata.esf
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_54
+  learning: "KB 54 \u2014 Logistics Performance Metric (LPM)\n\nKB item (verbatim\
+    \ from vaccine_kb.jsonl):\nid: 54\nknowledge: Logistics Performance Metric (LPM)\n\
+    description: Evaluates overall logistics efficiency with temporal considerations.\n\
+    definition: LPM = \\text{RCP} \\cdot \\frac{\\text{HQI}}{\\sqrt{1 + \\text{TRS}}}\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 4\n- 8\n- 30\n\n--- setup-encode:\
+    \ encoded ---\nentities:\n  - vaccine.sensordata.lpm (kind=column, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_4
+  - memory:vaccine_kb_8
+  - memory:vaccine_kb_30
+  - vaccine.sensordata.lpm
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_55
+  learning: "KB 55 \u2014 Critical Cascade Condition\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 55\nknowledge: Critical Cascade Condition\ndescription: Identifies systemic\
+    \ failure patterns in the cold chain.\ndefinition: A condition where (MPRA > 0.8\
+    \ AND TSC < 0.4) OR (TWQD > 0.6 AND ESF >\n  0.7)\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 51\n- 50\n- 52\n- 53\n\n--- setup-encode: deferred ---\nambiguous because: Critical\
+    \ Cascade Condition combines MPRA (KB 51), TSC (KB 50), TWQD (KB 52) and ESF (KB\
+    \ 53) via thresholds. Three of the four dependencies are NOT encoded: depends\
+    \ on unencoded KB 51 (MPRA formula references CDR_max but the KB never pins what\
+    \ CDR_max means), unencoded KB 50 (depends on unencoded KB 60 ReadingInterval),\
+    \ and unencoded KB 52 (depends on unencoded KB 3 VVP). Cannot encode the cascade\
+    \ predicate without grounded definitions of these component scores.\nclarify:\n\
+    \  - KB 51 (MPRA): what is CDR_max \u2014 a fixed domain constant, MAX(CDR) over\
+    \ all containers, or another scoping?\n  - KB 50 (TSC): what is the ReadingInterval\
+    \ value/column (KB 60) used as the time denominator?\n  - KB 52 (TWQD): how is\
+    \ VVP (KB 3) operationalised \u2014 how do ExpireDay (vaccinedetails, 1 row/batch)\
+    \ and TSS (sensordata, many rows/container) combine, and at what grain?\n  - Once\
+    \ MPRA, TSC and TWQD exist as named measures/columns, on what host (sensordata?\
+    \ container?) and at what grain should the cascade condition be evaluated?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_51
+  - memory:vaccine_kb_50
+  - memory:vaccine_kb_52
+  - memory:vaccine_kb_53
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_56
+  learning: "KB 56 \u2014 Compound Quality Risk\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 56\nknowledge: Compound Quality Risk\ndescription: Identifies complex quality\
+    \ degradation scenarios.\ndefinition: A status where VSI decreases over three\
+    \ consecutive readings AND LPM <\n  0.5 AND ESF > 0.6\ntype: domain_knowledge\n\
+    children_knowledge:\n- 39\n- 54\n- 53\n\n--- setup-encode: deferred ---\nambiguous\
+    \ because: depends on unencoded KB 39 (deferred: Depends on unencoded KB 3 (VVP):\
+    \ 'VVP formula combines ExpireDay (on vaccinedetails, one row per vaccine batch)\
+    \ with TSS (on sensordata, many rows per container \u2014 likely a time series).\
+    \ No declared jo\u2026). KB 56's composite predicate requires the 'VSI decreases\
+    \ over three consecutive readings' signal (KB 39), which is itself unresolved\
+    \ \u2014 encoding without it would silently short-circuit the AND.\nclarify:\n\
+    \  - KB 39 (VSI decreasing over three consecutive readings) is not encoded \u2014\
+    \ what is the operational definition: which column/measure represents VSI, what\
+    \ is the grain/order of 'readings' (sensordata rows ordered by which timestamp,\
+    \ partitioned by which entity \u2014 container? shipment?), and how should 'three\
+    \ consecutive readings' be evaluated (per-row window flag vs. an aggregate boolean\
+    \ over the latest three)?\n  - Once KB 39 is pinned, confirm the host/grain for\
+    \ KB 56: should the composite flag be a per-sensordata-row Column (combining a\
+    \ row-level VSI-decreasing flag with sensordata.lpm < 0.5 AND sensordata.esf >\
+    \ 0.6), or a per-container/shipment status aggregated upstream?\n  - Are the thresholds\
+    \ LPM < 0.5 and ESF > 0.6 strict inequalities (exclusive), and how should NULLs\
+    \ in LPM/ESF/VSI be treated \u2014 as 'not at risk' (false) or as 'unknown' (NULL-propagating)?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_39
+  - memory:vaccine_kb_54
+  - memory:vaccine_kb_53
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_57
+  learning: "KB 57 \u2014 Dynamic Stability Threshold\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 57\nknowledge: Dynamic Stability Threshold\ndescription: Evaluates stability\
+    \ under varying conditions.\ndefinition: A condition where average TSC over last\
+    \ 5 readings < 0.7 AND MPRA > 0.6\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 50\n- 51\n\n--- setup-encode: deferred ---\nambiguous because: depends on unencoded\
+    \ KB 50 (deferred: depends on unencoded KB 60 \u2014 ReadingInterval time parameter\
+    \ not pinned) and unencoded KB 51 (deferred: CDR_max meaning ambiguous \u2014\
+    \ fixed domain constant vs MAX(CDR) aggregation). Cannot compose 'avg TSC over\
+    \ last 5 readings < 0.7 AND MPRA > 0.6' without both component definitions pinned.\n\
+    clarify:\n  - KB 50 (TSC): what is the ReadingInterval value/unit (KB 60 unencoded),\
+    \ and what is the host grain \u2014 per (container, reading) row, or per container\
+    \ aggregate?\n  - KB 51 (MPRA): what does CDR_max resolve to \u2014 a fixed domain\
+    \ constant, MAX(CDR) over all containers, MAX(CDR) within a partition, or something\
+    \ else?\n  - For KB 57 specifically: what defines a 'reading' and its ordering\
+    \ (which timestamp column on sensordata)? Is 'last 5 readings' scoped per container\
+    \ (partition) or globally? At what grain is the Dynamic Stability Threshold evaluated\
+    \ \u2014 per container, per shipment, or per reading window?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_50
+  - memory:vaccine_kb_51
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_58
+  learning: "KB 58 \u2014 Multi-System Failure Risk\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 58\nknowledge: Multi-System Failure Risk\ndescription: Identifies concurrent\
+    \ failures across multiple subsystems.\ndefinition: A state where (CRI + TBS +\
+    \ (1-HQI))/3 > 0.7 AND all of (TSC, LPM, ESF)\n  < 0.3\ntype: domain_knowledge\n\
+    children_knowledge:\n- 2\n- 8\n- 9\n- 50\n- 54\n- 53\n\n--- setup-encode: deferred\
+    \ ---\nambiguous because: depends on unencoded KB 50 (deferred: KB 60 defines\
+    \ ReadingInterval as a configurable time parameter (standard 15 min, range 5-60\
+    \ min) used as the time denominator in the TSC formula (KB 50). No column...).\
+    \ KB 58's Multi-System Failure Risk condition requires TSC < 0.3 as one of three\
+    \ mandatory subsystem thresholds, so without an encoded TSC the predicate cannot\
+    \ be expressed.\nclarify:\n  - KB 50 (TSC \u2014 Time Stability Criterion) is\
+    \ unencoded because it depends on KB 60 (ReadingInterval), which has no column\
+    \ in the schema. What concrete SQL expression or constant should be used for ReadingInterval\
+    \ so TSC can be computed on sensordata?\n  - Once TSC is defined, should Multi-System\
+    \ Failure Risk be emitted as a boolean Column on sensordata (host of CRI, TBS,\
+    \ HQI, ESF, LPM) returning 1/0, or as a named ModelMeasure that counts rows meeting\
+    \ the condition?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_2
+  - memory:vaccine_kb_8
+  - memory:vaccine_kb_9
+  - memory:vaccine_kb_50
+  - memory:vaccine_kb_54
+  - memory:vaccine_kb_53
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_59
+  learning: "KB 59 \u2014 Predictive Degradation Alert\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 59\nknowledge: Predictive Degradation Alert\ndescription: Forecasts potential\
+    \ quality degradation based on current trends.\ndefinition: Alert when TWQD increases\
+    \ over 3 consecutive readings AND ESF > 0.5 AND\n  TempDevCount > 3\ntype: domain_knowledge\n\
+    children_knowledge:\n- 52\n- 53\n\n--- setup-encode: deferred ---\nambiguous because:\
+    \ depends on unencoded KB 52 (deferred: depends on unencoded KB 3 (deferred: VVP\
+    \ formula combines ExpireDay (on vaccinedetails, one row per vaccine batch) with\
+    \ TSS (on sensordata, many rows per container \u2014 likely a time series). No\
+    \ declared\u2026)). Also depends on a TempDevCount metric that is not defined\
+    \ in the KB graph or schema. Cannot encode the predictive degradation alert without\
+    \ TWQD and without an operational definition of TempDevCount.\nclarify:\n  - KB\
+    \ 52 (TWQD - Time-Weighted Quality Degradation) is not encoded; what is its precise\
+    \ formula and host/grain?\n  - What does 'TempDevCount' refer to \u2014 is it\
+    \ a count of temperature deviation events (e.g. rows where TempNowC is outside\
+    \ an allowed range), and on which model/grain? What threshold defines a 'deviation'?\n\
+    \  - What does '3 consecutive readings' mean operationally \u2014 three consecutive\
+    \ sensordata rows ordered by what timestamp, scoped per container/shipment? Is\
+    \ the alert evaluated per container, per shipment, or per reading?\n  - Should\
+    \ the alert be encoded as a row-level boolean column, a filter, or a query-backed\
+    \ model returning at-risk entities?"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_52
+  - memory:vaccine_kb_53
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_60
+  learning: "KB 60 \u2014 ReadingInterval\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 60\nknowledge: ReadingInterval\ndescription: Time denominator used for calculating\
+    \ rate of temperature change\ndefinition: Time interval in minutes between successive\
+    \ temperature readings, used\n  to normalize temperature differences into rates\
+    \ of change. Standard value is 15\n  minutes with acceptable range 5-60 minutes\
+    \ depending on monitoring requirements\ntype: domain_knowledge\nchildren_knowledge:\
+    \ -1\n\n--- setup-encode: deferred ---\nambiguous because: KB 60 defines ReadingInterval\
+    \ as a configurable time parameter (standard 15 min, range 5-60 min) used as the\
+    \ time denominator in the TSC formula (KB 50). No column on `sensordata` (or any\
+    \ reachable model) represents an interval between successive temperature readings\
+    \ \u2014 the schema carries only single-point readings (`tempnowc`) with no paired\
+    \ previous-reading timestamp or interval column, and no reading_interval/time_gap\
+    \ column exists. Per the NO-GUESS rule, I cannot fabricate a constant 15 (the\
+    \ KB itself says the value varies per monitoring requirements) nor invent a host\
+    \ column. This is also not R-DESCRIBE attachable because there is no existing\
+    \ column representing the interval to annotate.\nclarify:\n  - Which column (and\
+    \ which model) carries the time interval in minutes between successive temperature\
+    \ readings? If none exists in the schema, should ReadingInterval be treated as\
+    \ a hardcoded literal in the TSC computation (e.g. 15) or sourced from a configuration\
+    \ table not yet ingested?\n  - Is there a `tempprevc` / previous-reading timestamp\
+    \ column anywhere in the schema (needed jointly with ReadingInterval by KB 50\
+    \ TSC)? If not, KB 50 itself is uncomputable and KB 60 has no operational role.\n\
+    \  - If ReadingInterval should be inlined as a constant, what value should be\
+    \ used for this datasource \u2014 the documented standard 15, or a deployment-specific\
+    \ value?"
+  entities:
+  - vaccine
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_61
+  learning: "KB 61 \u2014 Days Overdue\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 61\nknowledge: Days Overdue\ndescription: Calculates the number of days past\
+    \ the scheduled maintenance or calibration\n  date.\ndefinition: DaysOverdue =\
+    \ \\max\\left( (\\text{Current_Date} - \\text{MaintDateNext}),\n  (\\text{Current_Date}\
+    \ - \\text{CalibDateNext}), 0 \\right)\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1\n\n--- setup-encode: encoded ---\nentities:\n  - vaccine.regulatoryandmaintenance.days_overdue\
+    \ (kind=column, host=regulatoryandmaintenance)"
+  entities:
+  - vaccine
+  - vaccine.regulatoryandmaintenance.days_overdue
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_62
+  learning: "KB 62 \u2014 Depletion Rank\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 62\nknowledge: Depletion Rank\ndescription: Ranks containers based on the\
+    \ rate of coolant depletion.\ndefinition: Rank assigned to containers based on\
+    \ descending order of CDR\ntype: domain_knowledge\nchildren_knowledge:\n- 1\n\n\
+    --- setup-encode: encoded ---\nentities:\n  - vaccine.container.depletion_rank\
+    \ (kind=measure, host=container)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_1
+  - vaccine.container.depletion_rank
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_63
+  learning: "KB 63 \u2014 Efficiency Rank\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 63\nknowledge: Efficiency Rank\ndescription: Ranks containers based on their\
+    \ storage efficiency.\ndefinition: Rank assigned to containers based on descending\
+    \ order of SER\ntype: domain_knowledge\nchildren_knowledge:\n- 5\n\n--- setup-encode:\
+    \ encoded ---\nentities:\n  - vaccine.vaccinedetails.efficiency_rank (kind=measure,\
+    \ host=vaccinedetails)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_5
+  - vaccine.vaccinedetails.efficiency_rank
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_64
+  learning: "KB 64 \u2014 Risk Rank\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 64\nknowledge: Risk Rank\ndescription: Ranks containers based on their risk\
+    \ level.\ndefinition: Rank assigned to containers based on descending order of\
+    \ CRI\ntype: domain_knowledge\nchildren_knowledge:\n- 2\n\n--- setup-encode: encoded\
+    \ ---\nentities:\n  - vaccine.sensordata.risk_rank (kind=measure, host=sensordata)"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_2
+  - vaccine.sensordata.risk_rank
+  query: null
+  created_at: '1970-01-01T00:00:00Z'
+- version: 2
+  id: vaccine_kb_65
+  learning: "KB 65 \u2014 Urgency Rank\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 65\nknowledge: Urgency Rank\ndescription: Ranks vehicles based on maintenance\
+    \ risk and overdue days.\ndefinition: \\text{Rank assigned to vehicles based on\
+    \ descending order of } \\text{CMR}\n  + \\text{DaysOverdue} / 30\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 32\n- 61\n\n--- setup-encode: deferred ---\nambiguous because:\
+    \ depends on unencoded KB 32 (deferred: CMR = (1 - MCS) \xD7 (1 + TBS/5) \xD7\
+    \ (1 - LHI) combines three component scores that live on three disconnected models:\
+    \ MCS on regulatoryandmaintenance, TBS on sensordata, LHI on datalogger. None\
+    \ of these m\u2026). Urgency Rank = rank by descending (CMR + DaysOverdue/30)\
+    \ cannot be computed without CMR being encoded as a referenceable peer.\nclarify:\n\
+    \  - KB 32 (CMR) is not encoded \u2014 it spans three disconnected models (regulatoryandmaintenance.MCS,\
+    \ sensordata.TBS, datalogger.LHI) with no declared join path between them. How\
+    \ should CMR be operationalised (which host model, which joins) so that Urgency\
+    \ Rank can reference it together with regulatoryandmaintenance.days_overdue?\n\
+    \  - Once CMR's host is decided, should Urgency Rank live on that same host (so\
+    \ days_overdue is reached via a join from regulatoryandmaintenance) or on regulatoryandmaintenance\
+    \ (so CMR is reached from there)?\n  - Confirm the ranking grain: is the rank\
+    \ assigned per vehicle (transportinfo.vehicleid) or per regulatory/maintenance\
+    \ record? The KB says 'vehicles' but days_overdue lives on regulatoryandmaintenance."
+  entities:
+  - vaccine
+  - memory:vaccine_kb_32
+  - memory:vaccine_kb_61
+  query: null
+  created_at: '1970-01-01T00:00:00Z'

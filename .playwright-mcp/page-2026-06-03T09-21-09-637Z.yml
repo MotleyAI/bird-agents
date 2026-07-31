@@ -1,0 +1,203 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - img "Augment Code" [ref=e6]
+    - list [ref=e7]:
+      - button "Overview" [ref=e8] [cursor=pointer]
+      - button "Invoice history" [active] [ref=e9] [cursor=pointer]
+  - generic [ref=e10]:
+    - main [ref=e134]:
+      - table [ref=e135]:
+        - rowgroup [ref=e136]:
+          - row "Invoice date Total amount Invoice Due date Status" [ref=e137]:
+            - columnheader "Invoice date" [ref=e138]:
+              - generic [ref=e140]: Invoice date
+            - columnheader "Total amount" [ref=e141]:
+              - generic [ref=e143]: Total amount
+            - columnheader "Invoice" [ref=e144]:
+              - generic [ref=e146]: Invoice
+            - columnheader "Due date" [ref=e147]:
+              - generic [ref=e149]: Due date
+            - columnheader "Status" [ref=e150]:
+              - generic [ref=e152]: Status
+        - rowgroup [ref=e153]:
+          - row "Jun 28, 2026 $0.00 TDLVRP-DRAFT — Draft" [ref=e154]:
+            - cell "Jun 28, 2026" [ref=e155] [cursor=pointer]
+            - cell "$0.00" [ref=e156] [cursor=pointer]:
+              - generic "$0.00" [ref=e157]
+            - cell "TDLVRP-DRAFT" [ref=e158] [cursor=pointer]
+            - cell "—" [ref=e159] [cursor=pointer]
+            - cell "Draft" [ref=e160] [cursor=pointer]:
+              - generic [ref=e161]: Draft
+          - row "May 28, 2026 $30.00 TDLVRP-00018 May 28, 2026 Paid" [ref=e162]:
+            - cell "May 28, 2026" [ref=e163] [cursor=pointer]
+            - cell "$30.00" [ref=e164] [cursor=pointer]:
+              - generic "$30.00" [ref=e165]
+            - cell "TDLVRP-00018" [ref=e166] [cursor=pointer]
+            - cell "May 28, 2026" [ref=e167] [cursor=pointer]:
+              - generic [ref=e168]: May 28, 2026
+            - cell "Paid" [ref=e169] [cursor=pointer]:
+              - generic [ref=e170]: Paid
+          - row "Apr 28, 2026 $30.00 TDLVRP-00017 Apr 28, 2026 Paid" [ref=e171]:
+            - cell "Apr 28, 2026" [ref=e172] [cursor=pointer]
+            - cell "$30.00" [ref=e173] [cursor=pointer]:
+              - generic "$30.00" [ref=e174]
+            - cell "TDLVRP-00017" [ref=e175] [cursor=pointer]
+            - cell "Apr 28, 2026" [ref=e176] [cursor=pointer]:
+              - generic [ref=e177]: Apr 28, 2026
+            - cell "Paid" [ref=e178] [cursor=pointer]:
+              - generic [ref=e179]: Paid
+          - row "Mar 28, 2026 $30.00 TDLVRP-00016 Mar 28, 2026 Paid" [ref=e180]:
+            - cell "Mar 28, 2026" [ref=e181] [cursor=pointer]
+            - cell "$30.00" [ref=e182] [cursor=pointer]:
+              - generic "$30.00" [ref=e183]
+            - cell "TDLVRP-00016" [ref=e184] [cursor=pointer]
+            - cell "Mar 28, 2026" [ref=e185] [cursor=pointer]:
+              - generic [ref=e186]: Mar 28, 2026
+            - cell "Paid" [ref=e187] [cursor=pointer]:
+              - generic [ref=e188]: Paid
+          - row "Feb 28, 2026 $30.00 TDLVRP-00015 Feb 28, 2026 Paid" [ref=e189]:
+            - cell "Feb 28, 2026" [ref=e190] [cursor=pointer]
+            - cell "$30.00" [ref=e191] [cursor=pointer]:
+              - generic "$30.00" [ref=e192]
+            - cell "TDLVRP-00015" [ref=e193] [cursor=pointer]
+            - cell "Feb 28, 2026" [ref=e194] [cursor=pointer]:
+              - generic [ref=e195]: Feb 28, 2026
+            - cell "Paid" [ref=e196] [cursor=pointer]:
+              - generic [ref=e197]: Paid
+          - row "Jan 28, 2026 $30.00 TDLVRP-00014 Jan 28, 2026 Paid" [ref=e198]:
+            - cell "Jan 28, 2026" [ref=e199] [cursor=pointer]
+            - cell "$30.00" [ref=e200] [cursor=pointer]:
+              - generic "$30.00" [ref=e201]
+            - cell "TDLVRP-00014" [ref=e202] [cursor=pointer]
+            - cell "Jan 28, 2026" [ref=e203] [cursor=pointer]:
+              - generic [ref=e204]: Jan 28, 2026
+            - cell "Paid" [ref=e205] [cursor=pointer]:
+              - generic [ref=e206]: Paid
+          - row "Dec 28, 2025 $30.00 TDLVRP-00013 Dec 28, 2025 Paid" [ref=e207]:
+            - cell "Dec 28, 2025" [ref=e208] [cursor=pointer]
+            - cell "$30.00" [ref=e209] [cursor=pointer]:
+              - generic "$30.00" [ref=e210]
+            - cell "TDLVRP-00013" [ref=e211] [cursor=pointer]
+            - cell "Dec 28, 2025" [ref=e212] [cursor=pointer]:
+              - generic [ref=e213]: Dec 28, 2025
+            - cell "Paid" [ref=e214] [cursor=pointer]:
+              - generic [ref=e215]: Paid
+          - row "Nov 28, 2025 $30.00 TDLVRP-00012 Nov 28, 2025 Paid" [ref=e216]:
+            - cell "Nov 28, 2025" [ref=e217] [cursor=pointer]
+            - cell "$30.00" [ref=e218] [cursor=pointer]:
+              - generic "$30.00" [ref=e219]
+            - cell "TDLVRP-00012" [ref=e220] [cursor=pointer]
+            - cell "Nov 28, 2025" [ref=e221] [cursor=pointer]:
+              - generic [ref=e222]: Nov 28, 2025
+            - cell "Paid" [ref=e223] [cursor=pointer]:
+              - generic [ref=e224]: Paid
+          - row "Oct 30, 2025 $0.00 TDLVRP-00010 Oct 30, 2025 Paid" [ref=e225]:
+            - cell "Oct 30, 2025" [ref=e226] [cursor=pointer]
+            - cell "$0.00" [ref=e227] [cursor=pointer]:
+              - generic "$0.00" [ref=e228]
+            - cell "TDLVRP-00010" [ref=e229] [cursor=pointer]
+            - cell "Oct 30, 2025" [ref=e230] [cursor=pointer]:
+              - generic [ref=e231]: Oct 30, 2025
+            - cell "Paid" [ref=e232] [cursor=pointer]:
+              - generic [ref=e233]: Paid
+          - row "Oct 30, 2025 $0.00 TDLVRP-00011 Oct 30, 2025 Paid" [ref=e234]:
+            - cell "Oct 30, 2025" [ref=e235] [cursor=pointer]
+            - cell "$0.00" [ref=e236] [cursor=pointer]:
+              - generic "$0.00" [ref=e237]
+            - cell "TDLVRP-00011" [ref=e238] [cursor=pointer]
+            - cell "Oct 30, 2025" [ref=e239] [cursor=pointer]:
+              - generic [ref=e240]: Oct 30, 2025
+            - cell "Paid" [ref=e241] [cursor=pointer]:
+              - generic [ref=e242]: Paid
+          - row "Oct 28, 2025 $30.00 TDLVRP-00009 Oct 28, 2025 Paid" [ref=e243]:
+            - cell "Oct 28, 2025" [ref=e244] [cursor=pointer]
+            - cell "$30.00" [ref=e245] [cursor=pointer]:
+              - generic "$30.00" [ref=e246]
+            - cell "TDLVRP-00009" [ref=e247] [cursor=pointer]
+            - cell "Oct 28, 2025" [ref=e248] [cursor=pointer]:
+              - generic [ref=e249]: Oct 28, 2025
+            - cell "Paid" [ref=e250] [cursor=pointer]:
+              - generic [ref=e251]: Paid
+          - row "Sep 28, 2025 $30.00 TDLVRP-00008 Sep 28, 2025 Paid" [ref=e252]:
+            - cell "Sep 28, 2025" [ref=e253] [cursor=pointer]
+            - cell "$30.00" [ref=e254] [cursor=pointer]:
+              - generic "$30.00" [ref=e255]
+            - cell "TDLVRP-00008" [ref=e256] [cursor=pointer]
+            - cell "Sep 28, 2025" [ref=e257] [cursor=pointer]:
+              - generic [ref=e258]: Sep 28, 2025
+            - cell "Paid" [ref=e259] [cursor=pointer]:
+              - generic [ref=e260]: Paid
+          - row "Aug 28, 2025 $30.00 TDLVRP-00007 Aug 28, 2025 Paid" [ref=e261]:
+            - cell "Aug 28, 2025" [ref=e262] [cursor=pointer]
+            - cell "$30.00" [ref=e263] [cursor=pointer]:
+              - generic "$30.00" [ref=e264]
+            - cell "TDLVRP-00007" [ref=e265] [cursor=pointer]
+            - cell "Aug 28, 2025" [ref=e266] [cursor=pointer]:
+              - generic [ref=e267]: Aug 28, 2025
+            - cell "Paid" [ref=e268] [cursor=pointer]:
+              - generic [ref=e269]: Paid
+          - row "Jul 28, 2025 $30.00 TDLVRP-00006 Jul 28, 2025 Paid" [ref=e270]:
+            - cell "Jul 28, 2025" [ref=e271] [cursor=pointer]
+            - cell "$30.00" [ref=e272] [cursor=pointer]:
+              - generic "$30.00" [ref=e273]
+            - cell "TDLVRP-00006" [ref=e274] [cursor=pointer]
+            - cell "Jul 28, 2025" [ref=e275] [cursor=pointer]:
+              - generic [ref=e276]: Jul 28, 2025
+            - cell "Paid" [ref=e277] [cursor=pointer]:
+              - generic [ref=e278]: Paid
+          - row "Jun 28, 2025 $30.00 TDLVRP-00005 Jun 28, 2025 Paid" [ref=e279]:
+            - cell "Jun 28, 2025" [ref=e280] [cursor=pointer]
+            - cell "$30.00" [ref=e281] [cursor=pointer]:
+              - generic "$30.00" [ref=e282]
+            - cell "TDLVRP-00005" [ref=e283] [cursor=pointer]
+            - cell "Jun 28, 2025" [ref=e284] [cursor=pointer]:
+              - generic [ref=e285]: Jun 28, 2025
+            - cell "Paid" [ref=e286] [cursor=pointer]:
+              - generic [ref=e287]: Paid
+          - row "May 28, 2025 $10.00 TDLVRP-00003 Jun 16, 2025 Paid" [ref=e288]:
+            - cell "May 28, 2025" [ref=e289] [cursor=pointer]
+            - cell "$10.00" [ref=e290] [cursor=pointer]:
+              - generic "$10.00" [ref=e291]
+            - cell "TDLVRP-00003" [ref=e292] [cursor=pointer]
+            - cell "Jun 16, 2025" [ref=e293] [cursor=pointer]:
+              - generic [ref=e294]: Jun 16, 2025
+            - cell "Paid" [ref=e295] [cursor=pointer]:
+              - generic [ref=e296]: Paid
+          - row "May 28, 2025 $30.00 TDLVRP-00002 May 28, 2025 Paid" [ref=e297]:
+            - cell "May 28, 2025" [ref=e298] [cursor=pointer]
+            - cell "$30.00" [ref=e299] [cursor=pointer]:
+              - generic "$30.00" [ref=e300]
+            - cell "TDLVRP-00002" [ref=e301] [cursor=pointer]
+            - cell "May 28, 2025" [ref=e302] [cursor=pointer]:
+              - generic [ref=e303]: May 28, 2025
+            - cell "Paid" [ref=e304] [cursor=pointer]:
+              - generic [ref=e305]: Paid
+          - row "May 28, 2025 $25.00 TDLVRP-00004 Jun 20, 2025 Paid" [ref=e306]:
+            - cell "May 28, 2025" [ref=e307] [cursor=pointer]
+            - cell "$25.00" [ref=e308] [cursor=pointer]:
+              - generic "$25.00" [ref=e309]
+            - cell "TDLVRP-00004" [ref=e310] [cursor=pointer]
+            - cell "Jun 20, 2025" [ref=e311] [cursor=pointer]:
+              - generic [ref=e312]: Jun 20, 2025
+            - cell "Paid" [ref=e313] [cursor=pointer]:
+              - generic [ref=e314]: Paid
+          - row "Apr 28, 2025 $0.00 TDLVRP-00001 May 10, 2025 Paid" [ref=e315]:
+            - cell "Apr 28, 2025" [ref=e316] [cursor=pointer]
+            - cell "$0.00" [ref=e317] [cursor=pointer]:
+              - generic "$0.00" [ref=e318]
+            - cell "TDLVRP-00001" [ref=e319] [cursor=pointer]
+            - cell "May 10, 2025" [ref=e320] [cursor=pointer]:
+              - generic [ref=e321]: May 10, 2025
+            - cell "Paid" [ref=e322] [cursor=pointer]:
+              - generic [ref=e323]: Paid
+      - generic [ref=e324]: Invoice amounts with usage-based prices are not finalized and may change before the billing period closes.
+      - generic [ref=e327]: Showing 1 to 19 of 19
+    - generic [ref=e123]:
+      - generic [ref=e124]: POWERED BY
+      - link [ref=e125] [cursor=pointer]:
+        - /url: https://withorb.com?utm_campaign=portal_watermark&utm_medium=inproduct&utm_source=website
+        - img [ref=e126]
+      - link "Terms" [ref=e130] [cursor=pointer]:
+        - /url: https://withorb.com/terms?utm_campaign=portal_watermark&utm_medium=inproduct&utm_source=website
+      - link "Privacy" [ref=e131] [cursor=pointer]:
+        - /url: https://withorb.com/privacy-policy?utm_campaign=portal_watermark&utm_medium=inproduct&utm_source=website

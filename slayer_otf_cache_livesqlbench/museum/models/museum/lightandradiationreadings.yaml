@@ -1,0 +1,72 @@
+version: 7
+name: lightandradiationreadings
+sql_table: lightandradiationreadings
+query_variables: {}
+data_source: museum
+columns:
+- name: lightradregistry
+  sql: lightradregistry
+  type: INT
+  primary_key: true
+  description: BIGSERIAL PRIMARY KEY, uniquely identifying each light/radiation reading.
+  hidden: false
+  format:
+    type: integer
+- name: envreadref
+  sql: envreadref
+  type: INT
+  primary_key: false
+  description: BIGINT FOREIGN KEY referencing EnvironmentalReadingsCore(EnvReadRegistry).
+    Associates light data with an existing environment reading.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 951
+- name: lightlux
+  sql: lightlux
+  type: INT
+  primary_key: false
+  description: INT measuring visible light intensity in lux.
+  hidden: false
+  format:
+    type: integer
+  sampled: 50 .. 200
+- name: uvuwcm2
+  sql: uvuwcm2
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(6,2) capturing UV radiation in microwatts per cm\xB2 (\xB5\
+    W/cm\xB2)."
+  hidden: false
+  format:
+    type: float
+  sampled: 0.06 .. 74.91
+- name: irwm2
+  sql: irwm2
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(6,2) measuring infrared radiation in W/m\xB2."
+  hidden: false
+  format:
+    type: float
+  sampled: 0.02 .. 9.99
+- name: visibleexplxh
+  sql: visibleexplxh
+  type: INT
+  primary_key: false
+  description: "INT indicating total visible light exposure over time in lux-hours\
+    \ (Lx\xB7h)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 12041 .. 83996
+measures: []
+aggregations: []
+joins:
+- target_model: environmentalreadingscore
+  join_pairs:
+  - - envreadref
+    - envreadregistry
+  join_type: left
+filters: []
+hidden: false

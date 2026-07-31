@@ -1,0 +1,569 @@
+version: 7
+name: shipments
+sql_table: shipments
+query_variables: {}
+data_source: vaccine
+columns:
+- name: shipmentregistry
+  sql: shipmentregistry
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key uniquely identifying each shipment record
+    in the database.
+  hidden: false
+- name: timemark
+  sql: timemark
+  type: TIMESTAMP
+  primary_key: false
+  description: A TIMESTAMP field indicating the exact date and time this shipment
+    record was logged.
+  hidden: false
+  sampled: 2024-02-19 14:45:28.230256, 2024-02-19 18:11:05.421031, 2024-02-19 19:42:54.139426,
+    2024-02-20 10:31:27.097511, 2024-02-20 19:30:57.299301, 2024-02-21 00:13:49.372461,
+    2024-02-21 00:39:23.121463, 2024-02-21 04:59:00.331661, 2024-02-21 16:51:48.113437,
+    2024-02-22 02:50:35.451378, 2024-02-22 03:15:06.378516, 2024-02-22 09:38:57.111638,
+    2024-02-22 09:50:16.22384, 2024-02-22 21:32:35.287043, 2024-02-23 03:53:12.257729,
+    2024-02-23 13:35:41.3846, 2024-02-23 21:53:41.481747, 2024-02-24 03:01:52.439248,
+    2024-02-24 03:19:33.117017, 2024-02-24 03:52:32.343489 ... (900 distinct)
+  sampled_values:
+  - '2024-02-19 14:45:28.230256'
+  - '2024-02-19 18:11:05.421031'
+  - '2024-02-19 19:42:54.139426'
+  - '2024-02-20 10:31:27.097511'
+  - '2024-02-20 19:30:57.299301'
+  - '2024-02-21 00:13:49.372461'
+  - '2024-02-21 00:39:23.121463'
+  - '2024-02-21 04:59:00.331661'
+  - '2024-02-21 16:51:48.113437'
+  - '2024-02-22 02:50:35.451378'
+  - '2024-02-22 03:15:06.378516'
+  - '2024-02-22 09:38:57.111638'
+  - '2024-02-22 09:50:16.22384'
+  - '2024-02-22 21:32:35.287043'
+  - '2024-02-23 03:53:12.257729'
+  - '2024-02-23 13:35:41.3846'
+  - '2024-02-23 21:53:41.481747'
+  - '2024-02-24 03:01:52.439248'
+  - '2024-02-24 03:19:33.117017'
+  - '2024-02-24 03:52:32.343489'
+  - '2024-02-24 21:23:33.186686'
+  - '2024-02-24 22:14:29.451378'
+  - '2024-02-25 17:02:33.174418'
+  - '2024-02-26 13:55:04.349512'
+  - '2024-02-27 08:45:21.445351'
+  - '2024-02-27 14:30:07.216139'
+  - '2024-02-27 19:58:30.263036'
+  - '2024-02-27 22:01:00.331661'
+  - '2024-02-28 07:38:21.396768'
+  - '2024-02-28 16:06:18.263036'
+  - '2024-02-28 20:53:54.192309'
+  - '2024-02-29 04:42:44.427102'
+  - '2024-02-29 07:31:59.136548'
+  - '2024-02-29 20:14:30.182101'
+  - '2024-03-01 01:24:09.271856'
+  - '2024-03-02 11:27:30.356077'
+  - '2024-03-02 12:54:10.186686'
+  - '2024-03-02 14:41:51.131515'
+  - '2024-03-02 17:46:17.299633'
+  - '2024-03-03 07:52:29.221318'
+  - '2024-03-04 03:26:34.131515'
+  - '2024-03-04 06:42:34.290354'
+  - '2024-03-04 08:02:41.11247'
+  - '2024-03-04 17:26:56.378516'
+  - '2024-03-05 12:54:36.463584'
+  - '2024-03-05 17:39:29.403017'
+  - '2024-03-06 02:25:33.414944'
+  - '2024-03-06 02:45:26.160502'
+  - '2024-03-06 08:31:11.109439'
+  - '2024-03-07 01:50:43.132458'
+  distinct_count: 900
+- name: routealign
+  sql: routealign
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(30) descriptor for the routing alignment or path code used
+    by the shipment.
+  hidden: false
+  sampled: Under Review, Compliant, Deviation
+  sampled_values:
+  - Under Review
+  - Compliant
+  - Deviation
+  distinct_count: 3
+- name: customsflag
+  sql: customsflag
+  type: TEXT
+  primary_key: false
+  description: An enum (CustomsFlag_enum) representing the customs clearance status
+    (e.g., 'Cleared', 'In Process', 'Pending').
+  hidden: false
+  sampled: In Process, Cleared, Pending
+  sampled_values:
+  - In Process
+  - Cleared
+  - Pending
+  distinct_count: 3
+- name: imppermitref
+  sql: imppermitref
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) referencing the import permit number or identifier for
+    the shipment.
+  hidden: false
+  sampled: IP69841, IP10224, IP10318, IP10487, IP10612, IP10647, IP10938, IP10967,
+    IP11019, IP11052, IP11061, IP11068, IP11106, IP11249, IP11266, IP11293, IP11470,
+    IP11518, IP11757, IP11767 ... (899 distinct)
+  sampled_values:
+  - IP69841
+  - IP10224
+  - IP10318
+  - IP10487
+  - IP10612
+  - IP10647
+  - IP10938
+  - IP10967
+  - IP11019
+  - IP11052
+  - IP11061
+  - IP11068
+  - IP11106
+  - IP11249
+  - IP11266
+  - IP11293
+  - IP11470
+  - IP11518
+  - IP11757
+  - IP11767
+  - IP11792
+  - IP11859
+  - IP12099
+  - IP12175
+  - IP12246
+  - IP12265
+  - IP12381
+  - IP12477
+  - IP12593
+  - IP12599
+  - IP12619
+  - IP12661
+  - IP12807
+  - IP12840
+  - IP12841
+  - IP12906
+  - IP12911
+  - IP13006
+  - IP13023
+  - IP13109
+  - IP13423
+  - IP13738
+  - IP13751
+  - IP13848
+  - IP13883
+  - IP14024
+  - IP14087
+  - IP14137
+  - IP14314
+  - IP14402
+  distinct_count: 899
+- name: exppermitref
+  sql: exppermitref
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) referencing the export permit number or identifier for
+    the shipment.
+  hidden: false
+  sampled: EP22441, EP38862, EP47719, EP79100, EP10007, EP10064, EP10071, EP10150,
+    EP10151, EP10175, EP10177, EP10244, EP10311, EP10550, EP10616, EP10657, EP10708,
+    EP10751, EP10772, EP10929 ... (896 distinct)
+  sampled_values:
+  - EP22441
+  - EP38862
+  - EP47719
+  - EP79100
+  - EP10007
+  - EP10064
+  - EP10071
+  - EP10150
+  - EP10151
+  - EP10175
+  - EP10177
+  - EP10244
+  - EP10311
+  - EP10550
+  - EP10616
+  - EP10657
+  - EP10708
+  - EP10751
+  - EP10772
+  - EP10929
+  - EP11238
+  - EP11260
+  - EP11338
+  - EP11433
+  - EP11447
+  - EP11595
+  - EP11659
+  - EP11694
+  - EP11730
+  - EP12088
+  - EP12104
+  - EP12299
+  - EP12538
+  - EP12572
+  - EP12798
+  - EP12891
+  - EP12919
+  - EP13225
+  - EP13228
+  - EP13241
+  - EP13821
+  - EP13831
+  - EP13845
+  - EP13909
+  - EP14261
+  - EP14360
+  - EP14405
+  - EP14599
+  - EP14645
+  - EP14738
+  distinct_count: 896
+- name: regprofile
+  sql: regprofile
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) signifying the regulatory or profile reference for this
+    shipment.
+  hidden: false
+  sampled: Non-Compliant, Compliant, Under Review
+  sampled_values:
+  - Non-Compliant
+  - Compliant
+  - Under Review
+  distinct_count: 3
+- name: insureflag
+  sql: insureflag
+  type: TEXT
+  primary_key: false
+  description: An enum (InsuranceFlag_enum) capturing the insurance status (e.g.,
+    'Active', 'Expired', 'Pending').
+  hidden: false
+  sampled: Expired, Active, Pending
+  sampled_values:
+  - Expired
+  - Active
+  - Pending
+  distinct_count: 3
+- name: insureref
+  sql: insureref
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) referencing the insurance policy or coverage document
+    number.
+  hidden: false
+  sampled: INS46711, INS95849, INS10184, INS10301, INS10309, INS10385, INS10424, INS10464,
+    INS10542, INS10606, INS10634, INS10655, INS10757, INS10811, INS10915, INS10931,
+    INS11069, INS11183, INS11464, INS11657 ... (898 distinct)
+  sampled_values:
+  - INS46711
+  - INS95849
+  - INS10184
+  - INS10301
+  - INS10309
+  - INS10385
+  - INS10424
+  - INS10464
+  - INS10542
+  - INS10606
+  - INS10634
+  - INS10655
+  - INS10757
+  - INS10811
+  - INS10915
+  - INS10931
+  - INS11069
+  - INS11183
+  - INS11464
+  - INS11657
+  - INS11701
+  - INS11762
+  - INS11841
+  - INS11988
+  - INS12061
+  - INS12128
+  - INS12168
+  - INS12228
+  - INS12238
+  - INS12279
+  - INS12400
+  - INS12575
+  - INS12777
+  - INS12813
+  - INS12853
+  - INS13040
+  - INS13062
+  - INS13161
+  - INS13208
+  - INS13511
+  - INS13645
+  - INS13677
+  - INS13700
+  - INS13736
+  - INS13738
+  - INS13759
+  - INS13868
+  - INS13919
+  - INS14030
+  - INS14215
+  distinct_count: 898
+- name: qualcheck
+  sql: qualcheck
+  type: TEXT
+  primary_key: false
+  description: An enum (QualityCheck_enum) indicating the quality check result (e.g.,
+    'Failed', 'Passed', 'Pending').
+  hidden: false
+  sampled: Passed, Failed, Pending
+  sampled_values:
+  - Passed
+  - Failed
+  - Pending
+  distinct_count: 3
+- name: integritymark
+  sql: integritymark
+  type: TEXT
+  primary_key: false
+  description: "An enum (IntegrityStatus_enum) showing the shipment\u2019s integrity\
+    \ status (e.g., 'Intact', 'Under Investigation', 'Compromised')."
+  hidden: false
+  sampled: Compromised, Under Investigation, Intact
+  sampled_values:
+  - Compromised
+  - Under Investigation
+  - Intact
+  distinct_count: 3
+- name: contamlevel
+  sql: contamlevel
+  type: TEXT
+  primary_key: false
+  description: An enum (ContaminationRisk_enum) denoting potential contamination risk
+    level (e.g., 'High', 'Low', 'Medium').
+  hidden: false
+  sampled: Low, High, Medium
+  sampled_values:
+  - Low
+  - High
+  - Medium
+  distinct_count: 3
+- name: sterilemark
+  sql: sterilemark
+  type: TEXT
+  primary_key: false
+  description: An enum (SterilityStatus_enum) indicating sterility status (e.g., 'Unknown',
+    'Compromised', 'Maintained').
+  hidden: false
+  sampled: Compromised, Unknown, Maintained
+  sampled_values:
+  - Compromised
+  - Unknown
+  - Maintained
+  distinct_count: 3
+- name: packagestate
+  sql: packagestate
+  type: TEXT
+  primary_key: false
+  description: An enum (PackageCondition_enum) describing the package condition (e.g.,
+    'Excellent', 'Fair', 'Poor', 'Good').
+  hidden: false
+  sampled: Good, Poor, Excellent, Fair
+  sampled_values:
+  - Good
+  - Poor
+  - Excellent
+  - Fair
+  distinct_count: 4
+- name: sealflag
+  sql: sealflag
+  type: TEXT
+  primary_key: false
+  description: An enum (SecuritySealStatus_enum) for the security seal status (e.g.,
+    'Broken', 'Intact', 'Missing').
+  hidden: false
+  sampled: Intact, Broken, Missing
+  sampled_values:
+  - Intact
+  - Broken
+  - Missing
+  distinct_count: 3
+- name: sealref
+  sql: sealref
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) referencing a security seal ID or documentation.
+  hidden: false
+  sampled: SEAL37112, SEAL10389, SEAL10639, SEAL10667, SEAL10738, SEAL10803, SEAL10980,
+    SEAL11009, SEAL11078, SEAL11101, SEAL11111, SEAL11159, SEAL11247, SEAL11585, SEAL11604,
+    SEAL11725, SEAL11816, SEAL11872, SEAL11927, SEAL11954 ... (899 distinct)
+  sampled_values:
+  - SEAL37112
+  - SEAL10389
+  - SEAL10639
+  - SEAL10667
+  - SEAL10738
+  - SEAL10803
+  - SEAL10980
+  - SEAL11009
+  - SEAL11078
+  - SEAL11101
+  - SEAL11111
+  - SEAL11159
+  - SEAL11247
+  - SEAL11585
+  - SEAL11604
+  - SEAL11725
+  - SEAL11816
+  - SEAL11872
+  - SEAL11927
+  - SEAL11954
+  - SEAL11956
+  - SEAL12013
+  - SEAL12058
+  - SEAL12111
+  - SEAL12473
+  - SEAL12551
+  - SEAL12640
+  - SEAL12650
+  - SEAL12652
+  - SEAL12706
+  - SEAL12952
+  - SEAL12986
+  - SEAL13239
+  - SEAL13241
+  - SEAL13328
+  - SEAL13481
+  - SEAL13513
+  - SEAL13588
+  - SEAL13888
+  - SEAL14168
+  - SEAL14171
+  - SEAL14365
+  - SEAL14444
+  - SEAL14464
+  - SEAL14498
+  - SEAL14753
+  - SEAL14764
+  - SEAL14783
+  - SEAL14830
+  - SEAL14908
+  distinct_count: 899
+- name: tampersign
+  sql: tampersign
+  type: TEXT
+  primary_key: false
+  description: An enum (TamperEvidence_enum) noting tampering evidence (e.g., 'None
+    Detected', 'Suspected', 'Confirmed').
+  hidden: false
+  sampled: None Detected, Confirmed, Suspected
+  sampled_values:
+  - None Detected
+  - Confirmed
+  - Suspected
+  distinct_count: 3
+- name: handlingguide
+  sql: handlingguide
+  type: TEXT
+  primary_key: false
+  description: A TEXT field for special handling instructions or guidelines for the
+    shipment.
+  hidden: false
+  sampled: Urgent, Standard, Special Care
+  sampled_values:
+  - Urgent
+  - Standard
+  - Special Care
+  distinct_count: 3
+- name: storagepose
+  sql: storagepose
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(40) specifying how the shipment must be positioned or oriented
+    during storage/transport.
+  hidden: false
+  sampled: Not Specified, Upright, Horizontal
+  sampled_values:
+  - Not Specified
+  - Upright
+  - Horizontal
+  distinct_count: 3
+- name: generalnote
+  sql: generalnote
+  type: TEXT
+  primary_key: false
+  description: A TEXT field for any additional free-form notes regarding the shipment.
+  hidden: false
+  sampled: ', A most week quite really decade defense suddenly., Able before local
+    clear future., Able mention water movement face your., Across beautiful leader.,
+    Address practice nice., Administration direction page budget itself interesting
+    from rich., Adult ok thank along seek., Again and matter animal ready meet foot
+    tough., Agree never carry single leave consider less institution., Ahead statement
+    light game condition., Almost international draw president., Along Democrat American
+    land woman accept., Although easy leg both town office., Always prevent ok., American
+    sign particular professional., Amount appear really blood., Analysis agent morning
+    campaign bed black., And shake side six responsibility character floor particular.,
+    Any minute hair use threat foreign. ... (472 distinct)'
+  sampled_values:
+  - ''
+  - A most week quite really decade defense suddenly.
+  - Able before local clear future.
+  - Able mention water movement face your.
+  - Across beautiful leader.
+  - Address practice nice.
+  - Administration direction page budget itself interesting from rich.
+  - Adult ok thank along seek.
+  - Again and matter animal ready meet foot tough.
+  - Agree never carry single leave consider less institution.
+  - Ahead statement light game condition.
+  - Almost international draw president.
+  - Along Democrat American land woman accept.
+  - Although easy leg both town office.
+  - Always prevent ok.
+  - American sign particular professional.
+  - Amount appear really blood.
+  - Analysis agent morning campaign bed black.
+  - And shake side six responsibility character floor particular.
+  - Any minute hair use threat foreign.
+  - Anyone study price capital participant medical.
+  - Appear professor anything site do.
+  - Around onto student common.
+  - Attorney social answer oil.
+  - Audience recently receive where where item poor.
+  - Away floor and open.
+  - Bag life allow the art mean stop.
+  - Bag summer plan.
+  - Ball describe church attorney structure star.
+  - Bar report executive around.
+  - Base front up include.
+  - Be affect board specific crime amount discover.
+  - Be worry leg new focus.
+  - Beat above whether general.
+  - Beautiful along population director reflect media fall.
+  - Behavior deal organization live.
+  - Benefit nor city real politics face chair.
+  - Better house couple forget speech.
+  - Between decide soldier include husband without.
+  - Between finish though south arm.
+  - Big station already Mrs cup around people.
+  - Blue easy radio blood find.
+  - Book away seek board start.
+  - Book too good modern positive including.
+  - Brother dark child trial serious.
+  - Business option field training perform add.
+  - But certainly condition get talk.
+  - But experience relationship pay people.
+  - By simply mouth success ago determine quite.
+  - Camera parent physical anything talk onto garden.
+  distinct_count: 472
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

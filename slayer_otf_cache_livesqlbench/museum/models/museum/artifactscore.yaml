@@ -1,0 +1,141 @@
+version: 7
+name: artifactscore
+sql_table: artifactscore
+query_variables: {}
+data_source: museum
+columns:
+- name: artregistry
+  sql: artregistry
+  type: TEXT
+  primary_key: true
+  description: CHAR(10) PRIMARY KEY uniquely identifying each artifact record (e.g.,
+    'ART000012').
+  hidden: false
+- name: artname
+  sql: artname
+  type: TEXT
+  primary_key: false
+  description: "VARCHAR(100) providing the artifact\u2019s name or label (free text,\
+    \ no strict list)."
+  hidden: false
+  sampled: Friend Textile, Key Manuscript, Of Sculpture, Personal Painting, Wind Painting,
+    Able Vase, Act Painting, Actually Painting, Available Sculpture, Beautiful Sculpture,
+    Believe Textile, Blood Manuscript, Chair Manuscript, Change Vase, Claim Painting,
+    Cold Vase, College Textile, Common Textile, Cover Sculpture, Culture Sculpture
+    ... (860 distinct)
+  sampled_values:
+  - Friend Textile
+  - Key Manuscript
+  - Of Sculpture
+  - Personal Painting
+  - Wind Painting
+  - Able Vase
+  - Act Painting
+  - Actually Painting
+  - Available Sculpture
+  - Beautiful Sculpture
+  - Believe Textile
+  - Blood Manuscript
+  - Chair Manuscript
+  - Change Vase
+  - Claim Painting
+  - Cold Vase
+  - College Textile
+  - Common Textile
+  - Cover Sculpture
+  - Culture Sculpture
+  - Defense Sculpture
+  - Development Vase
+  - Drop Sculpture
+  - End Painting
+  - Exist Painting
+  - Federal Textile
+  - Fight Manuscript
+  - Food Manuscript
+  - Force Manuscript
+  - Force Painting
+  - Fund Manuscript
+  - Fund Vase
+  - Generation Vase
+  - Heavy Vase
+  - Hotel Vase
+  - I Painting
+  - Identify Manuscript
+  - Increase Vase
+  - Investment Sculpture
+  - Know Vase
+  - Lose Vase
+  - Make Manuscript
+  - Manage Textile
+  - Manager Textile
+  - Market Textile
+  - Me Manuscript
+  - Measure Vase
+  - Method Vase
+  - Military Textile
+  - Movement Manuscript
+  distinct_count: 860
+- name: artdynasty
+  sql: artdynasty
+  type: TEXT
+  primary_key: false
+  description: VARCHAR(50) indicating the historical period/era/dynasty (e.g., 'Ming',
+    'Song', 'Qing', 'Han', 'Tang', 'Yuan'). No strict enumeration.
+  hidden: false
+  sampled: Tang, Yuan, Ming, Qing, Song, Han
+  sampled_values:
+  - Tang
+  - Yuan
+  - Ming
+  - Qing
+  - Song
+  - Han
+  distinct_count: 6
+- name: artageyears
+  sql: artageyears
+  type: INT
+  primary_key: false
+  description: "INT denoting the artifact\u2019s approximate age in years (any integer\
+    \ value)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 100 .. 2999
+- name: mattype
+  sql: mattype
+  type: TEXT
+  primary_key: false
+  description: "CHAR(30) showing the artifact\u2019s primary material (e.g., 'Stone',\
+    \ 'Textile', 'Bronze', 'Jade', 'Wood', 'Ceramic', 'Paper'). Could be enumerated\
+    \ by your policy but often open-ended."
+  hidden: false
+  sampled: Paper, Wood, Jade, Bronze, Ceramic, Stone, Textile
+  sampled_values:
+  - Paper
+  - Wood
+  - Jade
+  - Bronze
+  - Ceramic
+  - Stone
+  - Textile
+  distinct_count: 7
+- name: conservestatus
+  sql: conservestatus
+  type: TEXT
+  primary_key: false
+  description: "VARCHAR(150) describing the artifact\u2019s current conservation condition.\
+    \ Possible values might include 'Excellent', 'Good', 'Fair', 'Poor', 'Critical'."
+  hidden: false
+  sampled: Excellent, Fair, Poor, Good, Critical
+  sampled_values:
+  - Excellent
+  - Fair
+  - Poor
+  - Good
+  - Critical
+  distinct_count: 5
+measures: []
+aggregations: []
+joins: []
+filters: []
+hidden: false

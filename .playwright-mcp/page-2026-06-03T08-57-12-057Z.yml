@@ -1,0 +1,476 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - link "Skip to content" [ref=e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner "Global Navigation Menu" [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - button "Open menu" [ref=e12] [cursor=pointer]:
+            - img [ref=e13]
+          - link "Homepage (g then d)" [ref=e15] [cursor=pointer]:
+            - /url: /
+            - img [ref=e16]
+        - generic [ref=e18]:
+          - navigation "Breadcrumbs" [ref=e19]:
+            - list [ref=e20]:
+              - listitem [ref=e21]:
+                - link "ZmeiGorynych" [ref=e22] [cursor=pointer]:
+                  - /url: /ZmeiGorynych
+                  - generic [ref=e23]: ZmeiGorynych
+          - button "Search or jump to…" [ref=e26] [cursor=pointer]:
+            - generic [ref=e27]:
+              - generic:
+                - img
+              - generic [ref=e28]:
+                - generic:
+                  - text: Type
+                  - generic: /
+                  - text: to search
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - generic [ref=e33]:
+              - link "Chat with Copilot" [ref=e35] [cursor=pointer]:
+                - /url: /copilot
+                - img [ref=e36]
+              - button "Open Copilot…" [ref=e40] [cursor=pointer]:
+                - generic:
+                  - img
+            - button "Create new..." [ref=e42] [cursor=pointer]:
+              - generic [ref=e43]:
+                - generic:
+                  - img
+              - generic:
+                - img
+            - generic [ref=e44]:
+              - link "All issues (g then i)" [ref=e45] [cursor=pointer]:
+                - /url: /issues
+                - img [ref=e46]
+              - link "All pull requests (g then p)" [ref=e49] [cursor=pointer]:
+                - /url: /pulls
+                - img [ref=e50]
+              - link "All repositories" [ref=e52] [cursor=pointer]:
+                - /url: /repos
+                - img [ref=e53]
+          - button "Open user navigation menu" [ref=e56] [cursor=pointer]:
+            - img "Egor Kraev" [ref=e57]
+      - heading "User navigation" [level=2] [ref=e58]
+      - navigation "User" [ref=e59]:
+        - list [ref=e60]:
+          - listitem [ref=e61]:
+            - link "Overview" [ref=e62] [cursor=pointer]:
+              - /url: /ZmeiGorynych
+              - img [ref=e64]
+              - generic [ref=e66]: Overview
+          - listitem [ref=e67]:
+            - link "Repositories (50)" [ref=e68] [cursor=pointer]:
+              - /url: /ZmeiGorynych?tab=repositories
+              - img [ref=e70]
+              - generic [ref=e72]: Repositories
+              - generic [ref=e73]:
+                - generic [ref=e74]: "50"
+                - generic [ref=e75]: (50)
+          - listitem [ref=e76]:
+            - link "Projects" [ref=e77] [cursor=pointer]:
+              - /url: /ZmeiGorynych?tab=projects
+              - img [ref=e79]
+              - generic [ref=e81]: Projects
+          - listitem [ref=e82]:
+            - link "Packages" [ref=e83] [cursor=pointer]:
+              - /url: /ZmeiGorynych?tab=packages
+              - img [ref=e85]
+              - generic [ref=e87]: Packages
+          - listitem [ref=e88]:
+            - link "Stars (86)" [ref=e89] [cursor=pointer]:
+              - /url: /ZmeiGorynych?tab=stars
+              - img [ref=e91]
+              - generic [ref=e93]: Stars
+              - generic [ref=e94]:
+                - generic [ref=e95]: "86"
+                - generic [ref=e96]: (86)
+  - main [ref=e99]:
+    - generic [ref=e100]:
+      - generic "Egor Kraev (ZmeiGorynych) settings" [ref=e101]:
+        - generic [ref=e102]:
+          - img "@ZmeiGorynych" [ref=e103]
+          - generic [ref=e104]:
+            - heading "Egor Kraev (ZmeiGorynych) settings" [level=1] [ref=e105]:
+              - link "Egor Kraev (ZmeiGorynych)" [ref=e106] [cursor=pointer]:
+                - /url: /ZmeiGorynych
+              - generic [ref=e107]: settings
+            - paragraph [ref=e109]: Your personal account
+        - generic [ref=e110]:
+          - button "Go to settings page" [ref=e113] [cursor=pointer]:
+            - generic [ref=e114]:
+              - generic:
+                - img
+              - generic [ref=e115]: Go to settings page
+              - generic:
+                - img
+          - link "Go to your personal profile" [ref=e116] [cursor=pointer]:
+            - /url: /ZmeiGorynych
+      - generic [ref=e117]:
+        - navigation "User settings" [ref=e121]:
+          - list [ref=e123]:
+            - listitem [ref=e124]:
+              - link "Public profile" [ref=e125] [cursor=pointer]:
+                - /url: /settings/profile
+                - generic:
+                  - img
+                - generic [ref=e126]: Public profile
+            - listitem [ref=e127]:
+              - link "Account" [ref=e128] [cursor=pointer]:
+                - /url: /settings/admin
+                - generic:
+                  - img
+                - generic [ref=e129]: Account
+            - listitem [ref=e130]:
+              - link "Appearance" [ref=e131] [cursor=pointer]:
+                - /url: /settings/appearance
+                - generic:
+                  - img
+                - generic [ref=e132]: Appearance
+            - listitem [ref=e133]:
+              - link "Accessibility" [ref=e134] [cursor=pointer]:
+                - /url: /settings/accessibility
+                - generic:
+                  - img
+                - generic [ref=e135]: Accessibility
+            - listitem [ref=e136]:
+              - link "Notifications" [ref=e137] [cursor=pointer]:
+                - /url: /settings/notifications
+                - generic:
+                  - img
+                - generic [ref=e138]: Notifications
+            - listitem [ref=e139]
+            - listitem [ref=e140]:
+              - generic [ref=e143]:
+                - heading "Access" [level=2] [ref=e145]
+                - list "Access" [ref=e146]:
+                  - listitem [ref=e147]:
+                    - button "Billing and licensing" [expanded] [active] [ref=e148] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e149]: Billing and licensing
+                      - generic:
+                        - img
+                    - list "Billing and licensing" [ref=e150]:
+                      - listitem [ref=e151]:
+                        - link "Overview" [ref=e152] [cursor=pointer]:
+                          - /url: https://github.com/settings/billing
+                          - generic [ref=e153]: Overview
+                      - listitem [ref=e154]:
+                        - link "Usage" [ref=e155] [cursor=pointer]:
+                          - /url: https://github.com/settings/billing/usage
+                          - generic [ref=e156]: Usage
+                      - listitem [ref=e157]:
+                        - link "AI usage" [ref=e158] [cursor=pointer]:
+                          - /url: /settings/billing/ai_usage
+                          - generic [ref=e159]: AI usage
+                      - listitem [ref=e160]:
+                        - link "Budgets and alerts" [ref=e161] [cursor=pointer]:
+                          - /url: https://github.com/settings/billing/budgets
+                          - generic [ref=e162]: Budgets and alerts
+                      - listitem [ref=e163]:
+                        - link "Licensing" [ref=e164] [cursor=pointer]:
+                          - /url: /settings/billing/licensing
+                          - generic [ref=e165]: Licensing
+                      - listitem [ref=e166]:
+                        - link "Payment information" [ref=e167] [cursor=pointer]:
+                          - /url: /settings/billing/payment_information
+                          - generic [ref=e168]: Payment information
+                      - listitem [ref=e169]:
+                        - link "Payment history" [ref=e170] [cursor=pointer]:
+                          - /url: https://github.com/account/billing/history
+                          - generic [ref=e171]: Payment history
+                      - listitem [ref=e172]:
+                        - link "Additional billing details" [ref=e173] [cursor=pointer]:
+                          - /url: /settings/billing/subscriptions
+                          - generic [ref=e174]: Additional billing details
+                      - listitem [ref=e175]:
+                        - link "Education benefits" [ref=e176] [cursor=pointer]:
+                          - /url: /settings/education/benefits
+                          - generic [ref=e177]: Education benefits
+                  - listitem [ref=e178]:
+                    - link "Emails" [ref=e179] [cursor=pointer]:
+                      - /url: /settings/emails
+                      - generic:
+                        - img
+                      - generic [ref=e180]: Emails
+                  - listitem [ref=e181]:
+                    - link "Password and authentication" [ref=e182] [cursor=pointer]:
+                      - /url: /settings/security
+                      - generic:
+                        - img
+                      - generic [ref=e183]: Password and authentication
+                  - listitem [ref=e184]:
+                    - link "Sessions" [ref=e185] [cursor=pointer]:
+                      - /url: /settings/sessions
+                      - generic:
+                        - img
+                      - generic [ref=e186]: Sessions
+                  - listitem [ref=e187]:
+                    - link "SSH and GPG keys" [ref=e188] [cursor=pointer]:
+                      - /url: /settings/keys
+                      - generic:
+                        - img
+                      - generic [ref=e189]: SSH and GPG keys
+                  - listitem [ref=e190]:
+                    - link "Organizations" [ref=e191] [cursor=pointer]:
+                      - /url: /settings/organizations
+                      - generic:
+                        - img
+                      - generic [ref=e192]: Organizations
+                  - listitem [ref=e193]:
+                    - link "Enterprises" [ref=e194] [cursor=pointer]:
+                      - /url: /settings/enterprises
+                      - generic:
+                        - generic:
+                          - img
+                      - generic [ref=e195]: Enterprises
+                  - listitem [ref=e196]:
+                    - button "Moderation" [ref=e197] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e198]: Moderation
+                      - generic:
+                        - img
+            - listitem [ref=e199]
+            - listitem [ref=e200]:
+              - generic [ref=e203]:
+                - heading "Code, planning, and automation" [level=2] [ref=e205]
+                - list "Code, planning, and automation" [ref=e206]:
+                  - listitem [ref=e207]:
+                    - link "Repositories" [ref=e208] [cursor=pointer]:
+                      - /url: /settings/repositories
+                      - generic:
+                        - img
+                      - generic [ref=e209]: Repositories
+                  - listitem [ref=e210]:
+                    - link "Codespaces" [ref=e211] [cursor=pointer]:
+                      - /url: /settings/codespaces
+                      - generic:
+                        - img
+                      - generic [ref=e212]: Codespaces
+                  - listitem [ref=e213]:
+                    - link "Models Preview feature" [ref=e214] [cursor=pointer]:
+                      - /url: /settings/models
+                      - generic:
+                        - img
+                      - generic [ref=e215]: Models
+                      - generic:
+                        - generic "Preview feature": Preview
+                  - listitem [ref=e216]:
+                    - link "Packages" [ref=e217] [cursor=pointer]:
+                      - /url: /settings/packages
+                      - generic:
+                        - img
+                      - generic [ref=e218]: Packages
+                  - listitem [ref=e219]:
+                    - button "Copilot" [ref=e220] [cursor=pointer]:
+                      - generic:
+                        - img
+                      - generic [ref=e221]: Copilot
+                      - generic:
+                        - img
+                  - listitem [ref=e222]:
+                    - link "Pages" [ref=e223] [cursor=pointer]:
+                      - /url: /settings/pages
+                      - generic:
+                        - img
+                      - generic [ref=e224]: Pages
+                  - listitem [ref=e225]:
+                    - link "Saved replies" [ref=e226] [cursor=pointer]:
+                      - /url: /settings/replies
+                      - generic:
+                        - img
+                      - generic [ref=e227]: Saved replies
+            - listitem [ref=e228]
+            - listitem [ref=e229]:
+              - generic [ref=e232]:
+                - heading "Security" [level=2] [ref=e234]
+                - list "Security" [ref=e235]:
+                  - listitem [ref=e236]:
+                    - link "Code security" [ref=e237] [cursor=pointer]:
+                      - /url: /settings/security_analysis
+                      - generic:
+                        - img
+                      - generic [ref=e238]: Code security
+            - listitem [ref=e239]
+            - listitem [ref=e240]:
+              - generic [ref=e243]:
+                - heading "Integrations" [level=3] [ref=e245]
+                - list "Integrations" [ref=e246]:
+                  - listitem [ref=e247]:
+                    - link "Applications" [ref=e248] [cursor=pointer]:
+                      - /url: /settings/installations
+                      - generic:
+                        - img
+                      - generic [ref=e249]: Applications
+                  - listitem [ref=e250]:
+                    - link "Scheduled reminders" [ref=e251] [cursor=pointer]:
+                      - /url: /settings/reminders
+                      - generic:
+                        - img
+                      - generic [ref=e252]: Scheduled reminders
+            - listitem [ref=e253]
+            - listitem [ref=e254]:
+              - generic [ref=e257]:
+                - heading "Archives" [level=2] [ref=e259]
+                - list "Archives" [ref=e260]:
+                  - listitem [ref=e261]:
+                    - link "Security log" [ref=e262] [cursor=pointer]:
+                      - /url: /settings/security-log
+                      - generic:
+                        - img
+                      - generic [ref=e263]: Security log
+                  - listitem [ref=e264]:
+                    - link "Sponsorship log" [ref=e265] [cursor=pointer]:
+                      - /url: /settings/sponsors-log
+                      - generic:
+                        - img
+                      - generic [ref=e266]: Sponsorship log
+            - listitem [ref=e267]
+            - listitem [ref=e268]:
+              - link "Developer settings" [ref=e269] [cursor=pointer]:
+                - /url: /settings/apps
+                - generic:
+                  - img
+                - generic [ref=e270]: Developer settings
+        - generic [ref=e278]:
+          - heading "Overview" [level=1] [ref=e281]
+          - generic [ref=e282]:
+            - generic [ref=e283]:
+              - paragraph [ref=e285]: Current metered usage
+              - generic [ref=e287]: $0
+              - paragraph [ref=e288]: Gross metered usage for June 1 - June 29, 2026.
+            - generic [ref=e289]:
+              - generic [ref=e290]:
+                - paragraph [ref=e291]: Current included usage
+                - button "More details" [ref=e293] [cursor=pointer]:
+                  - generic [ref=e295]: More details
+              - generic [ref=e297]: $0
+              - paragraph [ref=e298]: Included usage discounts for June 1 - June 29, 2026.
+            - generic [ref=e299]:
+              - generic [ref=e300]:
+                - paragraph [ref=e301]: Next payment due
+                - link "Payment history" [ref=e302] [cursor=pointer]:
+                  - /url: ../account/billing/history
+              - paragraph [ref=e305]: "-"
+          - generic [ref=e307]:
+            - generic [ref=e308]:
+              - heading "Subscriptions" [level=2] [ref=e309]
+              - link "Manage subscriptions" [ref=e311] [cursor=pointer]:
+                - /url: /settings/billing/licensing
+            - generic [ref=e312]:
+              - generic [ref=e315]:
+                - paragraph [ref=e317]: GitHub Free
+                - generic [ref=e319]:
+                  - text: $0.00
+                  - generic [ref=e320]: per month
+              - generic [ref=e323]:
+                - heading "Copilot Free" [level=3] [ref=e325]
+                - generic [ref=e327]:
+                  - text: $0.00
+                  - generic [ref=e328]: per month
+          - generic [ref=e329]:
+            - heading "Metered usage" [level=2] [ref=e330]
+            - 'button "Timeframe: Current month" [ref=e333] [cursor=pointer]':
+              - generic [ref=e335]: "Timeframe: Current month"
+              - generic:
+                - img
+          - generic [ref=e336]:
+            - generic [ref=e337]:
+              - heading "Usage by products" [level=3] [ref=e338]
+              - heading "Products selector navigation" [level=2] [ref=e339]
+              - navigation "Products selector" [ref=e340]:
+                - list [ref=e341]:
+                  - listitem [ref=e342]:
+                    - button "Copilot" [ref=e343] [cursor=pointer]:
+                      - img [ref=e345]
+                      - generic [ref=e348]: Copilot
+                  - listitem [ref=e349]:
+                    - button "Actions" [ref=e350] [cursor=pointer]:
+                      - img [ref=e352]
+                      - generic [ref=e354]: Actions
+                  - listitem [ref=e355]:
+                    - button "Codespaces" [ref=e356] [cursor=pointer]:
+                      - img [ref=e358]
+                      - generic [ref=e361]: Codespaces
+                  - listitem [ref=e362]:
+                    - button "Git LFS" [ref=e363] [cursor=pointer]:
+                      - img [ref=e365]
+                      - generic [ref=e367]: Git LFS
+                  - listitem [ref=e368]:
+                    - button "Models" [ref=e369] [cursor=pointer]:
+                      - img [ref=e371]
+                      - generic [ref=e373]: Models
+                  - listitem [ref=e374]:
+                    - button "Packages" [ref=e375] [cursor=pointer]:
+                      - img [ref=e377]
+                      - generic [ref=e379]: Packages
+                  - listitem [ref=e380]:
+                    - button "Sandbox" [ref=e381] [cursor=pointer]:
+                      - img [ref=e383]
+                      - generic [ref=e385]: Sandbox
+                  - listitem [ref=e386]:
+                    - button "Spark" [ref=e387] [cursor=pointer]:
+                      - img [ref=e389]
+                      - generic [ref=e391]: Spark
+              - tabpanel "Copilot" [ref=e393]:
+                - generic [ref=e394]:
+                  - generic [ref=e395]:
+                    - generic [ref=e396]:
+                      - paragraph [ref=e397]: Copilot usage
+                      - link "View details" [ref=e398] [cursor=pointer]:
+                        - /url: /settings/billing/usage?group=2&period=3&query=product%3Acopilot
+                    - paragraph [ref=e399]: $0
+                    - paragraph [ref=e400]: Total gross spend on Copilot for the selected timeframe including licenses and AI Credits.
+                  - generic [ref=e401]:
+                    - generic [ref=e402]:
+                      - paragraph [ref=e403]: Additional usage
+                      - button "About Copilot AI credits" [ref=e404] [cursor=pointer]:
+                        - img [ref=e405]
+                      - link "View details" [ref=e407] [cursor=pointer]:
+                        - /url: /settings/billing/ai_usage
+                    - paragraph [ref=e408]: $0
+                    - paragraph [ref=e409]: Based on 0 additional AI credits beyond your included usage.
+            - generic [ref=e412]:
+              - heading "Usage by repository" [level=3] [ref=e415]
+              - button "Open repository usage options" [ref=e416] [cursor=pointer]:
+                - img [ref=e417]
+  - contentinfo [ref=e427]:
+    - heading "Footer" [level=2] [ref=e428]
+    - generic [ref=e429]:
+      - generic [ref=e430]:
+        - link "GitHub Homepage" [ref=e431] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e432]
+        - generic [ref=e434]: © 2026 GitHub, Inc.
+      - navigation "Footer" [ref=e435]:
+        - heading "Footer navigation" [level=3] [ref=e436]
+        - list "Footer navigation" [ref=e437]:
+          - listitem [ref=e438]:
+            - link "Terms" [ref=e439] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/github-terms/github-terms-of-service
+          - listitem [ref=e440]:
+            - link "Privacy" [ref=e441] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/privacy-policies/github-privacy-statement
+          - listitem [ref=e442]:
+            - link "Security" [ref=e443] [cursor=pointer]:
+              - /url: https://github.com/security
+          - listitem [ref=e444]:
+            - link "Status" [ref=e445] [cursor=pointer]:
+              - /url: https://www.githubstatus.com/
+          - listitem [ref=e446]:
+            - link "Community" [ref=e447] [cursor=pointer]:
+              - /url: https://github.community/
+          - listitem [ref=e448]:
+            - link "Docs" [ref=e449] [cursor=pointer]:
+              - /url: https://docs.github.com/
+          - listitem [ref=e450]:
+            - link "Contact" [ref=e451] [cursor=pointer]:
+              - /url: https://support.github.com?tags=dotcom-footer
+          - listitem [ref=e452]:
+            - button "Manage cookies" [ref=e454] [cursor=pointer]
+          - listitem [ref=e455]:
+            - button "Do not share my personal information" [ref=e457] [cursor=pointer]

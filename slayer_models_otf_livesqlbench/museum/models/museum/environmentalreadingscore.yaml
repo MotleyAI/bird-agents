@@ -1,0 +1,282 @@
+version: 7
+name: environmentalreadingscore
+sql_table: environmentalreadingscore
+query_variables: {}
+data_source: museum
+columns:
+- name: envreadregistry
+  sql: envreadregistry
+  type: INT
+  primary_key: true
+  description: BIGSERIAL PRIMARY KEY, uniquely identifying each environmental reading
+    record.
+  hidden: false
+  format:
+    type: integer
+- name: monitorcode
+  sql: monitorcode
+  type: TEXT
+  primary_key: false
+  description: CHAR(10) identifier for the monitoring device or sensor (e.g., 'MON000001').
+  hidden: false
+  sampled: MM381334  , MM100628  , MM104695  , MM106214  , MM106594  , MM107436  ,
+    MM108075  , MM108852  , MM109105  , MM110820  , MM111688  , MM112073  , MM112832  ,
+    MM113114  , MM113395  , MM115238  , MM115779  , MM116316  , MM116539  , MM116568   ...
+    (950 distinct)
+  sampled_values:
+  - 'MM381334  '
+  - 'MM100628  '
+  - 'MM104695  '
+  - 'MM106214  '
+  - 'MM106594  '
+  - 'MM107436  '
+  - 'MM108075  '
+  - 'MM108852  '
+  - 'MM109105  '
+  - 'MM110820  '
+  - 'MM111688  '
+  - 'MM112073  '
+  - 'MM112832  '
+  - 'MM113114  '
+  - 'MM113395  '
+  - 'MM115238  '
+  - 'MM115779  '
+  - 'MM116316  '
+  - 'MM116539  '
+  - 'MM116568  '
+  - 'MM119692  '
+  - 'MM119827  '
+  - 'MM121257  '
+  - 'MM121295  '
+  - 'MM122462  '
+  - 'MM123036  '
+  - 'MM124682  '
+  - 'MM129424  '
+  - 'MM131098  '
+  - 'MM132447  '
+  - 'MM133506  '
+  - 'MM134592  '
+  - 'MM134999  '
+  - 'MM136859  '
+  - 'MM137237  '
+  - 'MM137387  '
+  - 'MM137672  '
+  - 'MM137882  '
+  - 'MM139639  '
+  - 'MM141043  '
+  - 'MM141782  '
+  - 'MM142282  '
+  - 'MM143855  '
+  - 'MM144026  '
+  - 'MM144091  '
+  - 'MM145695  '
+  - 'MM146138  '
+  - 'MM149895  '
+  - 'MM151909  '
+  - 'MM152115  '
+  distinct_count: 950
+- name: readtimestamp
+  sql: readtimestamp
+  type: TIMESTAMP
+  primary_key: false
+  description: "[kb=54] Conservation Environment Chronology (CEC) \u2014 CEC involves\
+    \ grouping readings (e.g., temperature, humidity, air pressure) by fixed time\
+    \ intervals (such as by year) to discern patterns and inform conservation strategies.\
+    \ A methodological approach used in museum conservation to segment environmental\
+    \ monitoring data into chronological intervals. This approach enables curators\
+    \ to identify seasonal trends, long-term shifts, and anomalies in environmental\
+    \ conditions that can affect artifact stability and preservation. [/kb=54] TIMESTAMP\
+    \ NOT NULL indicating the date and time the reading was recorded."
+  label: Conservation Environment Chronology (CEC)
+  hidden: false
+  meta:
+    kb_id: 54
+  sampled: 2024-02-20 23:27:32.053293 .. 2025-02-19 02:42:13.073372
+- name: showcaseref
+  sql: showcaseref
+  type: TEXT
+  primary_key: false
+  description: CHAR(12) FOREIGN KEY referencing Showcases(ShowcaseReg), linking the
+    reading to a specific showcase being monitored.
+  hidden: false
+  sampled: SC1006      , SC1007      , SC1015      , SC1038      , SC1043      , SC1060      ,
+    SC1062      , SC1077      , SC1112      , SC1125      , SC1127      , SC1135      ,
+    SC1141      , SC1158      , SC1164      , SC1183      , SC1193      , SC1201      ,
+    SC1211      , SC1214       ... (951 distinct)
+  sampled_values:
+  - 'SC1006      '
+  - 'SC1007      '
+  - 'SC1015      '
+  - 'SC1038      '
+  - 'SC1043      '
+  - 'SC1060      '
+  - 'SC1062      '
+  - 'SC1077      '
+  - 'SC1112      '
+  - 'SC1125      '
+  - 'SC1127      '
+  - 'SC1135      '
+  - 'SC1141      '
+  - 'SC1158      '
+  - 'SC1164      '
+  - 'SC1183      '
+  - 'SC1193      '
+  - 'SC1201      '
+  - 'SC1211      '
+  - 'SC1214      '
+  - 'SC1224      '
+  - 'SC1226      '
+  - 'SC1232      '
+  - 'SC1242      '
+  - 'SC1251      '
+  - 'SC1253      '
+  - 'SC1260      '
+  - 'SC1269      '
+  - 'SC1271      '
+  - 'SC1285      '
+  - 'SC1286      '
+  - 'SC1292      '
+  - 'SC1296      '
+  - 'SC1305      '
+  - 'SC1319      '
+  - 'SC1326      '
+  - 'SC1350      '
+  - 'SC1351      '
+  - 'SC1353      '
+  - 'SC1376      '
+  - 'SC1402      '
+  - 'SC1443      '
+  - 'SC1445      '
+  - 'SC1447      '
+  - 'SC1487      '
+  - 'SC1490      '
+  - 'SC1491      '
+  - 'SC1498      '
+  - 'SC1511      '
+  - 'SC1525      '
+  distinct_count: 951
+- name: tempc
+  sql: tempc
+  type: INT
+  primary_key: false
+  description: "Sample values are integers in the narrow range 18..21\xB0C \u2014\
+    \ all observed readings sit inside the KB's 'ideal' band, so any threshold logic\
+    \ that needs to detect failures (>30 or <10) or non-ideal readings (<18 or >22)\
+    \ will see no positives in the current data. [kb=27] Values typically range from\
+    \ 15-25\xB0C, with 18-22\xB0C being ideal for most collections. Fluctuations greater\
+    \ than 2\xB0C within 24 hours can stress materials. Values outside 10-30\xB0C\
+    \ indicate environmental control failure requiring immediate attention. \u2014\
+    \ Illustrates temperature readings and their conservation implications. [/kb=27]"
+  label: "Temperature (\xB0C)"
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 27
+  sampled: 18 .. 21
+- name: tempvar24h
+  sql: tempvar24h
+  type: DOUBLE
+  primary_key: false
+  description: "REAL showing the 24-hour variation in temperature (in \xB0C)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 0.01 .. 2
+- name: relhumidity
+  sql: relhumidity
+  type: INT
+  primary_key: false
+  description: "Sample values fall in 45..54 (entirely within the KB's ideal 45-55%\
+    \ band); the broader 30-65% and out-of-bound ranges described by the KB are not\
+    \ observed in current data. [kb=28] Values typically range from 30-65%, with 45-55%\
+    \ being ideal for mixed collections. Fluctuations greater than 5% within 24 hours\
+    \ can cause dimensional changes in organic materials. Values below 30% risk embrittlement,\
+    \ while above 65% risk mold growth. \u2014 Illustrates relative humidity readings\
+    \ and their conservation implications. [/kb=28]"
+  label: Relative Humidity (%)
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 28
+  sampled: 45 .. 54
+- name: humvar24h
+  sql: humvar24h
+  type: INT
+  primary_key: false
+  description: SMALLINT indicating the 24-hour variation in humidity (percentage points).
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 5
+- name: airpresshpa
+  sql: airpresshpa
+  type: DOUBLE
+  primary_key: false
+  description: REAL specifying the measured air pressure in hectopascals (hPa).
+  hidden: false
+  format:
+    type: integer
+  sampled: 980 .. 1020
+- name: sesr
+  sql: 10 - (tempvar24h + humvar24h / 5.0 + showcases.leakrate) / 3.0
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=5] SESR = 10 - (TempVar24h + HumVar24h/5 + LeakRate) / 3, where\
+    \ higher scores indicate more stable showcases \u2014 Measures how well a showcase\
+    \ maintains stable environmental conditions. [/kb=5]"
+  label: Showcase Environmental Stability Rating (SESR)
+  hidden: false
+  meta:
+    kb_id: 5
+  sampled: 8.92 .. 9.973333333333333
+- name: environmental_instability_event
+  sql: (tempvar24h > 1 OR humvar24h > 3)
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=13] Occurs when TempVar24h > 1\xB0C OR HumVar24h > 3 within a\
+    \ 24-hour period. \u2014 Identifies periods when showcase environmental conditions\
+    \ fluctuate beyond acceptable parameters. [/kb=13]"
+  label: Environmental Instability Event
+  hidden: false
+  meta:
+    kb_id: 13
+  sampled: 1, 0
+  sampled_values:
+  - '1'
+  - '0'
+  distinct_count: 2
+- name: showcase_failure_risk
+  sql: CASE WHEN sesr < 4 OR ((CASE WHEN LOWER(TRIM(showcases.sealcondition)) = 'poor'
+    THEN 1 ELSE 0 END) + (CASE WHEN LOWER(TRIM(showcases.maintstatus)) = 'overdue'
+    THEN 1 ELSE 0 END) + (CASE WHEN LOWER(TRIM(showcases.filterstatus)) = 'replace
+    now' THEN 1 ELSE 0 END) + (CASE WHEN LOWER(TRIM(showcases.silicagelstatus)) =
+    'replace now' THEN 1 ELSE 0 END)) >= 3 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=16] Occurs when SESR < 4 OR at least three of the following are\
+    \ true: SealCondition='Poor', MaintStatus='Overdue', FilterStatus='Replace Now',\
+    \ SilicaGelStatus='Replace Now'. \u2014 Identifies showcases at risk of failing\
+    \ to maintain proper environmental conditions. [/kb=16] Row-level flag on environmentalreadingscore:\
+    \ per-reading evaluation since SESR is per-reading (kb=5); references showcase\
+    \ status columns via the showcaseref->showcasereg join."
+  label: Showcase Failure Risk
+  hidden: false
+  meta:
+    kb_id: 16
+  sampled: 0, 1
+  sampled_values:
+  - '0'
+  - '1'
+  distinct_count: 2
+measures: []
+aggregations: []
+joins:
+- target_model: showcases
+  join_pairs:
+  - - showcaseref
+    - showcasereg
+  join_type: left
+filters: []
+hidden: false

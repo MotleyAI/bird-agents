@@ -1,0 +1,432 @@
+version: 7
+name: expenses_and_assets
+sql_table: expenses_and_assets
+query_variables: {}
+data_source: credit
+columns:
+- name: expemplref
+  sql: expemplref
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key referencing employment_and_income(EmplCoreRef).
+  hidden: false
+- name: mthexp
+  sql: mthexp
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(14,2) storing monthly expenses (e.g., '2000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 1032.0 .. 9998.0
+- name: fixexpratio
+  sql: fixexpratio
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(5,4) ratio for fixed expenses (e.g., '0.3000').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.2 .. 0.8
+- name: discexpratio
+  sql: discexpratio
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(5,4) ratio for discretionary expenses (e.g., '0.1500').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.101 .. 0.499
+- name: savamount
+  sql: savamount
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(14,2) capturing total savings (e.g., '15000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 781.0 .. 499775.0
+- name: investamt
+  sql: investamt
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(14,2) for total investments (e.g., '8000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 2802.0 .. 998728.0
+- name: liqassets
+  sql: liqassets
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(15,2) denoting liquid assets (e.g., '20000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 609.0 .. 499937.0
+- name: totassets
+  sql: totassets
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(15,2) for overall assets (e.g., '120000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 2660.0 .. 1999400.0
+- name: totliabs
+  sql: totliabs
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(15,2) total liabilities (e.g., '40000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 81.0 .. 999971.0
+- name: networth
+  sql: networth
+  type: DOUBLE
+  primary_key: false
+  description: "A DECIMAL(15,2) net worth (assets \u2212 liabilities) (e.g., '80000.00')."
+  hidden: false
+  format:
+    type: float
+  sampled: -496262.0 .. 1499805.0
+- name: vehown
+  sql: vehown
+  type: TEXT
+  primary_key: false
+  description: An enum (VehicleOwnership_enum) for vehicle ownership (Lease, Own).
+  hidden: false
+  sampled: Lease, Own
+  sampled_values:
+  - Lease
+  - Own
+  distinct_count: 2
+- name: vehvalue
+  sql: vehvalue
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(15,2) capturing vehicle value (e.g., '20000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 134.0 .. 99697.0
+- name: bankacccount
+  sql: bankacccount
+  type: INT
+  primary_key: false
+  description: A SMALLINT storing how many bank accounts are held (e.g., '2').
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 5
+- name: bankaccage
+  sql: bankaccage
+  type: INT
+  primary_key: false
+  description: A SMALLINT showing age in years of the oldest bank account (e.g., '5').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 20
+- name: bankaccbal
+  sql: bankaccbal
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(14,2) representing total bank account balances (e.g., '5000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: -869.0 .. 99844.0
+- name: propfinancialdata
+  sql: propfinancialdata
+  type: TEXT
+  primary_key: false
+  description: "JSONB column. Bundles all housing\u2011related facts (ownership, value,\
+    \ and pay history) so risk or marketing rules need only one JSONB lookup."
+  hidden: false
+  meta:
+    jsonb: true
+  sampled: '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue":
+    1000482.00, "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 631010.00,
+    "mortpayhist": "Good"}}, {"propown": "Living with Parents", "proptype": "Apartment",
+    "propvalue": 1001427.00, "rentpayhist": "Poor", "mortgagebits": {"mortbalance":
+    701931.00, "mortpayhist": "Excellent"}}, {"propown": "Living with Parents", "proptype":
+    "Apartment", "propvalue": 1006372.00, "rentpayhist": "Fair", "mortgagebits": {"mortbalance":
+    362006.00, "mortpayhist": "Excellent"}}, {"propown": "Living with Parents", "proptype":
+    "Apartment", "propvalue": 1038511.00, "rentpayhist": "Poor", "mortgagebits": {"mortbalance":
+    933401.00, "mortpayhist": "Good"}}, {"propown": "Living with Parents", "proptype":
+    "Apartment", "propvalue": 108235.00, "rentpayhist": "Excellent", "mortgagebits":
+    {"mortbalance": 802970.00, "mortpayhist": "Poor"}}, {"propown": "Living with Parents",
+    "proptype": "Apartment", "propvalue": 110347.00, "rentpayhist": "Fair", "mortgagebits":
+    {"mortbalance": 21698.00, "mortpayhist": "Fair"}}, {"propown": "Living with Parents",
+    "proptype": "Apartment", "propvalue": 1105334.00, "rentpayhist": "Good", "mortgagebits":
+    {"mortbalance": 463613.00, "mortpayhist": "Good"}}, {"propown": "Living with Parents",
+    "proptype": "Apartment", "propvalue": 1136736.00, "rentpayhist": "Poor", "mortgagebits":
+    {"mortbalance": 689753.00, "mortpayhist": "Poor"}}, {"propown": "Living with Parents",
+    "proptype": "Apartment", "propvalue": 1177946.00, "rentpayhist": "Poor", "mortgagebits":
+    {"mortbalance": 1373003.00, "mortpayhist": "Poor"}}, {"propown": "Living with
+    Parents", "proptype": "Apartment", "propvalue": 1193184.00, "rentpayhist": "Fair",
+    "mortgagebits": {"mortbalance": 808279.00, "mortpayhist": "Excellent"}}, {"propown":
+    "Living with Parents", "proptype": "Apartment", "propvalue": 1201841.00, "rentpayhist":
+    "Fair", "mortgagebits": {"mortbalance": 450289.00, "mortpayhist": "Poor"}}, {"propown":
+    "Living with Parents", "proptype": "Apartment", "propvalue": 1202579.00, "rentpayhist":
+    "Poor", "mortgagebits": {"mortbalance": 748932.00, "mortpayhist": "Excellent"}},
+    {"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1219222.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 132535.00, "mortpayhist":
+    "Good"}}, {"propown": "Living with Parents", "proptype": "Apartment", "propvalue":
+    123017.00, "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 604595.00, "mortpayhist":
+    "Excellent"}}, {"propown": "Living with Parents", "proptype": "Apartment", "propvalue":
+    126700.00, "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 659169.00,
+    "mortpayhist": "Good"}}, {"propown": "Living with Parents", "proptype": "Apartment",
+    "propvalue": 137821.00, "rentpayhist": "Good", "mortgagebits": {"mortbalance":
+    1164761.00, "mortpayhist": "Excellent"}}, {"propown": "Living with Parents", "proptype":
+    "Apartment", "propvalue": 144526.00, "rentpayhist": "Excellent", "mortgagebits":
+    {"mortbalance": 1034036.00, "mortpayhist": "Excellent"}}, {"propown": "Living
+    with Parents", "proptype": "Apartment", "propvalue": 1462218.00, "rentpayhist":
+    "Poor", "mortgagebits": {"mortbalance": 117229.00, "mortpayhist": "Excellent"}},
+    {"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1469040.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 1320380.00, "mortpayhist":
+    "Good"}}, {"propown": "Living with Parents", "proptype": "Apartment", "propvalue":
+    1477409.00, "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 647513.00,
+    "mortpayhist": "Fair"}} ... (1000 distinct)'
+  sampled_values:
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1000482.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 631010.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1001427.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 701931.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1006372.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 362006.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1038511.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 933401.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 108235.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 802970.00, "mortpayhist":
+    "Poor"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 110347.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 21698.00, "mortpayhist":
+    "Fair"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1105334.00,
+    "rentpayhist": "Good", "mortgagebits": {"mortbalance": 463613.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1136736.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 689753.00, "mortpayhist":
+    "Poor"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1177946.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 1373003.00, "mortpayhist":
+    "Poor"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1193184.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 808279.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1201841.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 450289.00, "mortpayhist":
+    "Poor"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1202579.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 748932.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1219222.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 132535.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 123017.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 604595.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 126700.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 659169.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 137821.00,
+    "rentpayhist": "Good", "mortgagebits": {"mortbalance": 1164761.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 144526.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 1034036.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1462218.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 117229.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1469040.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 1320380.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1477409.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 647513.00, "mortpayhist":
+    "Fair"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 149706.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 694497.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1531875.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 1439900.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1535107.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 53267.00, "mortpayhist":
+    "Fair"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1566043.00,
+    "rentpayhist": "Good", "mortgagebits": {"mortbalance": 12480.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1566800.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 1107221.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1595534.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 1095013.00, "mortpayhist":
+    "Fair"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1596852.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 1495393.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1627237.00,
+    "rentpayhist": "Good", "mortgagebits": {"mortbalance": 1259032.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1716555.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 441797.00, "mortpayhist":
+    "Fair"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 172769.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 62695.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 173779.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 386108.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1745506.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 1000410.00, "mortpayhist":
+    "Poor"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1758822.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 1148237.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1781855.00,
+    "rentpayhist": "Good", "mortgagebits": {"mortbalance": 28993.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1799995.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 682803.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1809647.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 1387796.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1830421.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 1423532.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1853876.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 267732.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1895752.00,
+    "rentpayhist": "Good", "mortgagebits": {"mortbalance": 670401.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1897621.00,
+    "rentpayhist": "Good", "mortgagebits": {"mortbalance": 87944.00, "mortpayhist":
+    "Poor"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1915208.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 1208137.00, "mortpayhist":
+    "Poor"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1935729.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 1455893.00, "mortpayhist":
+    "Poor"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 197084.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 1237468.00, "mortpayhist":
+    "Fair"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 1996283.00,
+    "rentpayhist": "Poor", "mortgagebits": {"mortbalance": 818316.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 210228.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 276232.00, "mortpayhist":
+    "Poor"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 222358.00,
+    "rentpayhist": "Excellent", "mortgagebits": {"mortbalance": 1497868.00, "mortpayhist":
+    "Poor"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 227797.00,
+    "rentpayhist": "Good", "mortgagebits": {"mortbalance": 1090645.00, "mortpayhist":
+    "Good"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 244365.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 700025.00, "mortpayhist":
+    "Poor"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 255952.00,
+    "rentpayhist": "Good", "mortgagebits": {"mortbalance": 311100.00, "mortpayhist":
+    "Excellent"}}'
+  - '{"propown": "Living with Parents", "proptype": "Apartment", "propvalue": 274604.00,
+    "rentpayhist": "Fair", "mortgagebits": {"mortbalance": 1139353.00, "mortpayhist":
+    "Excellent"}}'
+  distinct_count: 1000
+- name: propfinancialdata__propown
+  sql: JSON_EXTRACT(propfinancialdata, '$.propown')
+  type: TEXT
+  primary_key: false
+  description: An enum (PropertyOwnership_enum) describing property ownership (Rent,
+    Living with Parents, Own).
+  label: Propown
+  hidden: false
+  meta:
+    derived_from:
+      json_col: propfinancialdata
+      path:
+      - propown
+- name: propfinancialdata__proptype
+  sql: JSON_EXTRACT(propfinancialdata, '$.proptype')
+  type: TEXT
+  primary_key: false
+  description: An enum (PropertyType_enum) for property classification (Apartment,
+    House, Condo).
+  label: Proptype
+  hidden: false
+  meta:
+    derived_from:
+      json_col: propfinancialdata
+      path:
+      - proptype
+- name: propfinancialdata__propvalue
+  sql: JSON_EXTRACT(propfinancialdata, '$.propvalue')
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(15,2) property value (e.g., '250000.00').
+  label: Propvalue
+  hidden: false
+  meta:
+    derived_from:
+      json_col: propfinancialdata
+      path:
+      - propvalue
+- name: propfinancialdata__mortgagebits__mortbalance
+  sql: JSON_EXTRACT(propfinancialdata, '$.mortgagebits.mortbalance')
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(15,2) storing current mortgage balance (e.g., '150000.00').
+  label: Mortbalance
+  hidden: false
+  meta:
+    derived_from:
+      json_col: propfinancialdata
+      path:
+      - mortgagebits
+      - mortbalance
+- name: propfinancialdata__mortgagebits__mortpayhist
+  sql: JSON_EXTRACT(propfinancialdata, '$.mortgagebits.mortpayhist')
+  type: TEXT
+  primary_key: false
+  description: 'An enum (PaymentHistory_enum) for mortgage payment history. Possible
+    values: Poor, Fair, Good, Excellent, Current, Past.'
+  label: Mortpayhist
+  hidden: false
+  meta:
+    derived_from:
+      json_col: propfinancialdata
+      path:
+      - mortgagebits
+      - mortpayhist
+- name: propfinancialdata__rentpayhist
+  sql: JSON_EXTRACT(propfinancialdata, '$.rentpayhist')
+  type: TEXT
+  primary_key: false
+  description: 'An enum (PaymentHistory_enum) for rent payment history. Possible values:
+    Poor, Fair, Good, Excellent, Current, Past.'
+  label: Rentpayhist
+  hidden: false
+  meta:
+    derived_from:
+      json_col: propfinancialdata
+      path:
+      - rentpayhist
+measures: []
+aggregations: []
+joins:
+- target_model: employment_and_income
+  join_pairs:
+  - - expemplref
+    - emplcoreref
+  join_type: left
+filters: []
+hidden: false

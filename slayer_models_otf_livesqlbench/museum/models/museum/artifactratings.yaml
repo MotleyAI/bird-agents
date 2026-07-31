@@ -1,0 +1,280 @@
+version: 7
+name: artifactratings
+sql_table: artifactratings
+query_variables: {}
+data_source: museum
+columns:
+- name: ratingrecordregistry
+  sql: ratingrecordregistry
+  type: INT
+  primary_key: true
+  description: BIGSERIAL PRIMARY KEY, unique ID for each rating record.
+  hidden: false
+  format:
+    type: integer
+- name: artref
+  sql: artref
+  type: TEXT
+  primary_key: false
+  description: CHAR(10) FOREIGN KEY referencing ArtifactsCore(ArtRegistry). Links
+    the record to a specific artifact.
+  hidden: false
+  sampled: ART10016  , ART10101  , ART10304  , ART10454  , ART10602  , ART10796  ,
+    ART10868  , ART10877  , ART11061  , ART11166  , ART11238  , ART11605  , ART11692  ,
+    ART11696  , ART11818  , ART11915  , ART11997  , ART12066  , ART12071  , ART12569   ...
+    (951 distinct)
+  sampled_values:
+  - 'ART10016  '
+  - 'ART10101  '
+  - 'ART10304  '
+  - 'ART10454  '
+  - 'ART10602  '
+  - 'ART10796  '
+  - 'ART10868  '
+  - 'ART10877  '
+  - 'ART11061  '
+  - 'ART11166  '
+  - 'ART11238  '
+  - 'ART11605  '
+  - 'ART11692  '
+  - 'ART11696  '
+  - 'ART11818  '
+  - 'ART11915  '
+  - 'ART11997  '
+  - 'ART12066  '
+  - 'ART12071  '
+  - 'ART12569  '
+  - 'ART12707  '
+  - 'ART12752  '
+  - 'ART12761  '
+  - 'ART12836  '
+  - 'ART12913  '
+  - 'ART12943  '
+  - 'ART12970  '
+  - 'ART13225  '
+  - 'ART13427  '
+  - 'ART13446  '
+  - 'ART13491  '
+  - 'ART13670  '
+  - 'ART13864  '
+  - 'ART13944  '
+  - 'ART13974  '
+  - 'ART14031  '
+  - 'ART14074  '
+  - 'ART14093  '
+  - 'ART14403  '
+  - 'ART14428  '
+  - 'ART14493  '
+  - 'ART14524  '
+  - 'ART14535  '
+  - 'ART14626  '
+  - 'ART14981  '
+  - 'ART14989  '
+  - 'ART15309  '
+  - 'ART15493  '
+  - 'ART15630  '
+  - 'ART15822  '
+  distinct_count: 951
+- name: histsignrating
+  sql: histsignrating
+  type: INT
+  primary_key: false
+  description: "Sample values are integers 1..10, consistent with the KB-described\
+    \ scale. [kb=22] A SMALLINT typically ranging from 1-10, where 1-3 indicates minor\
+    \ historical significance, 4-7 indicates moderate significance, and 8-10 indicates\
+    \ exceptional historical importance that fundamentally contributes to our understanding\
+    \ of past cultures or events. \u2014 Illustrates the historical significance rating\
+    \ scale. [/kb=22]"
+  label: ArtifactRatings.HistSignRating
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 22
+  sampled: 1 .. 10
+- name: researchvalrating
+  sql: researchvalrating
+  type: INT
+  primary_key: false
+  description: INT rating for research value (range is flexible).
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: exhibitvalrating
+  sql: exhibitvalrating
+  type: INT
+  primary_key: false
+  description: "INT rating evaluating the artifact\u2019s exhibition value (scale\
+    \ is flexible)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: cultscore
+  sql: cultscore
+  type: INT
+  primary_key: false
+  description: "SMALLINT measuring the artifact\u2019s cultural importance (common\
+    \ range or flexible scale)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 100
+- name: publicaccessrating
+  sql: publicaccessrating
+  type: INT
+  primary_key: false
+  description: "SMALLINT rating the artifact\u2019s public accessibility or appeal\
+    \ (scale is flexible)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: eduvaluerating
+  sql: eduvaluerating
+  type: INT
+  primary_key: false
+  description: BIGINT rating for how much educational value the artifact provides
+    (scale is flexible).
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: conservediff
+  sql: conservediff
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(100) describing difficulty in conserving the artifact (possible
+    values: ''Medium'', ''High'', ''Low'').'
+  hidden: false
+  sampled: Medium, Low, High
+  sampled_values:
+  - Medium
+  - Low
+  - High
+  distinct_count: 3
+- name: treatcomplexity
+  sql: treatcomplexity
+  type: TEXT
+  primary_key: false
+  description: 'CHAR(10) indicating treatment complexity (possible values: ''Complex'',
+    ''Moderate'', ''Simple'').'
+  hidden: false
+  sampled: 'Moderate  , Complex   , Simple    '
+  sampled_values:
+  - 'Moderate  '
+  - 'Complex   '
+  - 'Simple    '
+  distinct_count: 3
+- name: matstability
+  sql: matstability
+  type: TEXT
+  primary_key: false
+  description: 'VARCHAR(30) for material stability classification (possible values:
+    ''Unstable'', ''Stable'', ''Moderate'').'
+  hidden: false
+  sampled: Unstable, Moderate, Stable
+  sampled_values:
+  - Unstable
+  - Moderate
+  - Stable
+  distinct_count: 3
+- name: deteriorrate
+  sql: deteriorrate
+  type: TEXT
+  primary_key: false
+  description: TEXT field detailing the specific deterioration rate or pattern (e.g.,
+    'Moderate', 'Rapid', 'Slow').
+  hidden: false
+  sampled: Moderate, Slow, Rapid
+  sampled_values:
+  - Moderate
+  - Slow
+  - Rapid
+  distinct_count: 3
+- name: cpi
+  sql: ((histsignrating + researchvalrating + cultscore) * (10 - CASE LOWER(TRIM(artifactscore.conservestatus))
+    WHEN 'excellent' THEN 1 WHEN 'good' THEN 3 WHEN 'fair' THEN 5 WHEN 'poor' THEN
+    7 WHEN 'critical' THEN 10 END)) / 30.0
+  type: DOUBLE
+  primary_key: false
+  description: "Note: cultscore actually ranges 1..100 in the data while histsignrating\
+    \ and researchvalrating range 1..10; the KB formula sums them as-is without normalization,\
+    \ so cultscore dominates the additive term. [kb=0] CPI = \\frac{(HistSignRating\
+    \ + ResearchValRating + CultScore) \\times (10 - ConserveStatus)}{30}, where ConserveStatus\
+    \ is numerically mapped: Excellent=1, Good=3, Fair=5, Poor=7, Critical=10 \u2014\
+    \ Calculates the overall conservation priority for an artifact based on multiple\
+    \ factors. [/kb=0]"
+  label: Conservation Priority Index (CPI)
+  hidden: false
+  meta:
+    kb_id: 0
+  sampled: 0.0 .. 34.2
+- name: dynasty_value_artifact
+  sql: CASE WHEN LOWER(TRIM(artifactscore.artdynasty)) IN ('ming','han','tang') AND
+    researchvalrating > 8 THEN 1 ELSE 0 END
+  type: BOOLEAN
+  primary_key: false
+  description: "[kb=18] Artifacts from 'Ming', 'Han', or 'Tang' dynasties that also\
+    \ have ResearchValRating > 8. \u2014 Identifies artifacts from historically significant\
+    \ dynasties with higher research and cultural value. [/kb=18]"
+  label: Dynasty Value Artifact
+  hidden: false
+  meta:
+    kb_id: 18
+  sampled: 0, 1
+  sampled_values:
+  - '0'
+  - '1'
+  distinct_count: 2
+- name: conservation_priority_level
+  sql: CASE WHEN cpi > 7 THEN 'High Priority' WHEN cpi > 4 THEN 'Medium Priority'
+    WHEN cpi <= 4 THEN 'Low Priority' END
+  type: TEXT
+  primary_key: false
+  description: "Sample CPI values range 0.0 .. 34.2, so most artifacts fall in 'High\
+    \ Priority' (CPI > 7); the KB's bands are applied as-stated without rescaling.\
+    \ [kb=56] 'High Priority': CPI > 7 (Artifacts requiring immediate conservation\
+    \ attention); 'Medium Priority': 4 < CPI <= 7 (Artifacts needing monitoring and\
+    \ planned conservation); 'Low Priority': CPI <= 4 (Artifacts in stable condition).\
+    \ \u2014 Classifies artifacts into priority levels based on their CPI scores [/kb=56]"
+  label: Conservation Priority Level
+  hidden: false
+  meta:
+    kb_id: 56
+  sampled: High Priority, Low Priority, Medium Priority
+  sampled_values:
+  - High Priority
+  - Low Priority
+  - Medium Priority
+  distinct_count: 3
+- name: avs
+  sql: cpi * sensitivitydata.erf
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=3] AVS = CPI \\times ERF, \\text{where higher scores indicate\
+    \ artifacts requiring more urgent attention} \u2014 Comprehensive score indicating\
+    \ how vulnerable an artifact is based on its conservation priority and environmental\
+    \ sensitivities. [/kb=3] Row-level product of cpi (this row) and sensitivitydata.erf\
+    \ (joined 1:1 via artref); NULL propagates if either input is NULL."
+  label: Artifact Vulnerability Score (AVS)
+  hidden: false
+  meta:
+    kb_id: 3
+  sampled: 0.0 .. 253.425
+measures: []
+aggregations: []
+joins:
+- target_model: artifactscore
+  join_pairs:
+  - - artref
+    - artregistry
+  join_type: left
+- target_model: sensitivitydata
+  join_pairs:
+  - - artref
+    - artref
+  join_type: left
+filters: []
+hidden: false

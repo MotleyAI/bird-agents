@@ -1,0 +1,260 @@
+version: 7
+name: environmentalreadingscore
+sql_table: environmentalreadingscore
+query_variables: {}
+data_source: museum
+columns:
+- name: envreadregistry
+  sql: envreadregistry
+  type: INT
+  primary_key: true
+  description: BIGSERIAL PRIMARY KEY, uniquely identifying each environmental reading
+    record.
+  hidden: false
+  format:
+    type: integer
+- name: monitorcode
+  sql: monitorcode
+  type: TEXT
+  primary_key: false
+  description: CHAR(10) identifier for the monitoring device or sensor (e.g., 'MON000001').
+  hidden: false
+  sampled: MM381334  , MM100628  , MM104695  , MM106214  , MM106594  , MM107436  ,
+    MM108075  , MM108852  , MM109105  , MM110820  , MM111688  , MM112073  , MM112832  ,
+    MM113114  , MM113395  , MM115238  , MM115779  , MM116316  , MM116539  , MM116568   ...
+    (950 distinct)
+  sampled_values:
+  - 'MM381334  '
+  - 'MM100628  '
+  - 'MM104695  '
+  - 'MM106214  '
+  - 'MM106594  '
+  - 'MM107436  '
+  - 'MM108075  '
+  - 'MM108852  '
+  - 'MM109105  '
+  - 'MM110820  '
+  - 'MM111688  '
+  - 'MM112073  '
+  - 'MM112832  '
+  - 'MM113114  '
+  - 'MM113395  '
+  - 'MM115238  '
+  - 'MM115779  '
+  - 'MM116316  '
+  - 'MM116539  '
+  - 'MM116568  '
+  - 'MM119692  '
+  - 'MM119827  '
+  - 'MM121257  '
+  - 'MM121295  '
+  - 'MM122462  '
+  - 'MM123036  '
+  - 'MM124682  '
+  - 'MM129424  '
+  - 'MM131098  '
+  - 'MM132447  '
+  - 'MM133506  '
+  - 'MM134592  '
+  - 'MM134999  '
+  - 'MM136859  '
+  - 'MM137237  '
+  - 'MM137387  '
+  - 'MM137672  '
+  - 'MM137882  '
+  - 'MM139639  '
+  - 'MM141043  '
+  - 'MM141782  '
+  - 'MM142282  '
+  - 'MM143855  '
+  - 'MM144026  '
+  - 'MM144091  '
+  - 'MM145695  '
+  - 'MM146138  '
+  - 'MM149895  '
+  - 'MM151909  '
+  - 'MM152115  '
+  distinct_count: 950
+- name: readtimestamp
+  sql: readtimestamp
+  type: TIMESTAMP
+  primary_key: false
+  description: TIMESTAMP NOT NULL indicating the date and time the reading was recorded.
+  hidden: false
+  sampled: 2024-02-20 23:27:32.053293, 2024-02-21 02:45:07.095242, 2024-02-22 07:45:25.073372,
+    2024-02-22 07:49:05.073372, 2024-02-22 09:05:50.098242, 2024-02-22 22:26:01.057862,
+    2024-02-23 20:53:06.088204, 2024-02-25 07:24:39.057862, 2024-02-26 06:04:48.115936,
+    2024-02-26 13:33:38.100303, 2024-02-26 22:40:12.055292, 2024-02-27 04:03:32.090209,
+    2024-02-27 04:27:20.115936, 2024-02-27 07:46:23.100303, 2024-02-27 12:03:50.115936,
+    2024-02-27 12:22:16.097243, 2024-02-28 02:15:15.073372, 2024-02-29 07:17:45.100303,
+    2024-02-29 07:49:14.057862, 2024-03-01 00:27:24.115936 ... (951 distinct)
+  sampled_values:
+  - '2024-02-20 23:27:32.053293'
+  - '2024-02-21 02:45:07.095242'
+  - '2024-02-22 07:45:25.073372'
+  - '2024-02-22 07:49:05.073372'
+  - '2024-02-22 09:05:50.098242'
+  - '2024-02-22 22:26:01.057862'
+  - '2024-02-23 20:53:06.088204'
+  - '2024-02-25 07:24:39.057862'
+  - '2024-02-26 06:04:48.115936'
+  - '2024-02-26 13:33:38.100303'
+  - '2024-02-26 22:40:12.055292'
+  - '2024-02-27 04:03:32.090209'
+  - '2024-02-27 04:27:20.115936'
+  - '2024-02-27 07:46:23.100303'
+  - '2024-02-27 12:03:50.115936'
+  - '2024-02-27 12:22:16.097243'
+  - '2024-02-28 02:15:15.073372'
+  - '2024-02-29 07:17:45.100303'
+  - '2024-02-29 07:49:14.057862'
+  - '2024-03-01 00:27:24.115936'
+  - '2024-03-01 11:15:49.09924'
+  - '2024-03-01 22:40:26.084058'
+  - '2024-03-03 04:42:37.115936'
+  - '2024-03-03 22:01:30.093498'
+  - '2024-03-04 15:58:25.073372'
+  - '2024-03-05 12:01:34.100303'
+  - '2024-03-05 20:01:40.094235'
+  - '2024-03-05 22:06:51.057862'
+  - '2024-03-06 16:53:40.091208'
+  - '2024-03-07 00:59:13.115936'
+  - '2024-03-07 14:13:15.097243'
+  - '2024-03-07 16:45:35.100303'
+  - '2024-03-07 22:50:19.100303'
+  - '2024-03-08 02:16:10.115936'
+  - '2024-03-08 04:53:02.100303'
+  - '2024-03-08 07:13:59.056292'
+  - '2024-03-08 11:31:58.087571'
+  - '2024-03-08 17:18:06.073372'
+  - '2024-03-08 19:16:17.095242'
+  - '2024-03-08 21:08:51.100303'
+  - '2024-03-09 12:53:19.100303'
+  - '2024-03-09 14:53:48.100303'
+  - '2024-03-09 22:35:01.115936'
+  - '2024-03-10 03:59:37.057862'
+  - '2024-03-10 23:44:21.057862'
+  - '2024-03-11 07:57:10.073372'
+  - '2024-03-12 12:28:33.100303'
+  - '2024-03-12 14:37:39.100303'
+  - '2024-03-12 15:20:50.100303'
+  - '2024-03-12 17:10:36.054292'
+  distinct_count: 951
+- name: showcaseref
+  sql: showcaseref
+  type: TEXT
+  primary_key: false
+  description: CHAR(12) FOREIGN KEY referencing Showcases(ShowcaseReg), linking the
+    reading to a specific showcase being monitored.
+  hidden: false
+  sampled: SC1006      , SC1007      , SC1015      , SC1038      , SC1043      , SC1060      ,
+    SC1062      , SC1077      , SC1112      , SC1125      , SC1127      , SC1135      ,
+    SC1141      , SC1158      , SC1164      , SC1183      , SC1193      , SC1201      ,
+    SC1211      , SC1214       ... (951 distinct)
+  sampled_values:
+  - 'SC1006      '
+  - 'SC1007      '
+  - 'SC1015      '
+  - 'SC1038      '
+  - 'SC1043      '
+  - 'SC1060      '
+  - 'SC1062      '
+  - 'SC1077      '
+  - 'SC1112      '
+  - 'SC1125      '
+  - 'SC1127      '
+  - 'SC1135      '
+  - 'SC1141      '
+  - 'SC1158      '
+  - 'SC1164      '
+  - 'SC1183      '
+  - 'SC1193      '
+  - 'SC1201      '
+  - 'SC1211      '
+  - 'SC1214      '
+  - 'SC1224      '
+  - 'SC1226      '
+  - 'SC1232      '
+  - 'SC1242      '
+  - 'SC1251      '
+  - 'SC1253      '
+  - 'SC1260      '
+  - 'SC1269      '
+  - 'SC1271      '
+  - 'SC1285      '
+  - 'SC1286      '
+  - 'SC1292      '
+  - 'SC1296      '
+  - 'SC1305      '
+  - 'SC1319      '
+  - 'SC1326      '
+  - 'SC1350      '
+  - 'SC1351      '
+  - 'SC1353      '
+  - 'SC1376      '
+  - 'SC1402      '
+  - 'SC1443      '
+  - 'SC1445      '
+  - 'SC1447      '
+  - 'SC1487      '
+  - 'SC1490      '
+  - 'SC1491      '
+  - 'SC1498      '
+  - 'SC1511      '
+  - 'SC1525      '
+  distinct_count: 951
+- name: tempc
+  sql: tempc
+  type: INT
+  primary_key: false
+  description: SMALLINT representing the measured temperature in Celsius.
+  hidden: false
+  format:
+    type: integer
+  sampled: 18 .. 21
+- name: tempvar24h
+  sql: tempvar24h
+  type: DOUBLE
+  primary_key: false
+  description: "REAL showing the 24-hour variation in temperature (in \xB0C)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 0.01 .. 2
+- name: relhumidity
+  sql: relhumidity
+  type: INT
+  primary_key: false
+  description: "INT capturing the relative humidity percentage (0\u2013100)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 45 .. 54
+- name: humvar24h
+  sql: humvar24h
+  type: INT
+  primary_key: false
+  description: SMALLINT indicating the 24-hour variation in humidity (percentage points).
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 5
+- name: airpresshpa
+  sql: airpresshpa
+  type: DOUBLE
+  primary_key: false
+  description: REAL specifying the measured air pressure in hectopascals (hPa).
+  hidden: false
+  format:
+    type: integer
+  sampled: 980 .. 1020
+measures: []
+aggregations: []
+joins:
+- target_model: showcases
+  join_pairs:
+  - - showcaseref
+    - showcasereg
+  join_type: left
+filters: []
+hidden: false

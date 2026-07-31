@@ -1,0 +1,414 @@
+version: 7
+name: datalogger
+sql_table: datalogger
+query_variables: {}
+data_source: vaccine
+columns:
+- name: loggerreg
+  sql: loggerreg
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key uniquely identifying each data logger record.
+  hidden: false
+- name: logflag
+  sql: logflag
+  type: TEXT
+  primary_key: false
+  description: "An enum (DataLoggerStatus_enum) indicating the logger\u2019s status\
+    \ (e.g., 'Malfunction', 'Battery Low', 'Active')."
+  hidden: false
+  sampled: Battery Low, Active, Malfunction
+  sampled_values:
+  - Battery Low
+  - Active
+  - Malfunction
+  distinct_count: 3
+- name: loginterval
+  sql: loginterval
+  type: INT
+  primary_key: false
+  description: A SMALLINT specifying the frequency (in minutes) at which the logger
+    records or transmits data.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 30
+- name: transmitflag
+  sql: transmitflag
+  type: TEXT
+  primary_key: false
+  description: "An enum (TransmissionStatus_enum) indicating the data transmission\
+    \ status. Sampled values: 'Delayed', 'Failed', 'Real-time' (all three present\
+    \ verbatim, mixed case as shown). [kb=23] Indicates data is being transmitted\
+    \ to the central system without delay as it is collected. \u2014 Illustrates immediate\
+    \ data transmission [/kb=23]"
+  label: 'TransmitFlag: ''Real-time'''
+  hidden: false
+  meta:
+    kb_id: 23
+  sampled: Delayed, Failed, Real-time
+  sampled_values:
+  - Delayed
+  - Failed
+  - Real-time
+  distinct_count: 3
+- name: datauptime
+  sql: datauptime
+  type: TIMESTAMP
+  primary_key: false
+  description: "A TIMESTAMP showing the logger\u2019s current or last recorded operational\
+    \ uptime reading."
+  hidden: false
+  sampled: 2025-02-19 07:32:08 .. 2025-02-19 08:32:08
+- name: datapct
+  sql: datapct
+  type: DOUBLE
+  primary_key: false
+  description: "A REAL value reflecting the logger\u2019s used data capacity or data\
+    \ completeness in percentage."
+  hidden: false
+  format:
+    type: integer
+  sampled: 80.1 .. 100
+- name: batteryswap
+  sql: batteryswap
+  type: DATE
+  primary_key: false
+  description: A DATE noting when the data logger battery was last replaced or swapped.
+  hidden: false
+  sampled: 2025-02-20 .. 2026-02-19
+- name: firmvers
+  sql: firmvers
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) naming the firmware version installed on the data logger.
+  hidden: false
+  sampled: 1.4.3, 3.5.4, 3.6.6, 4.3.0, 1.2.0, 1.5.8, 2.2.8, 2.6.1, 2.7.9, 3.3.8, 4.1.6,
+    4.7.5, 4.7.6, 5.0.5, 5.8.6, 1.0.8, 1.1.0, 1.2.8, 1.2.9, 1.8.5 ... (431 distinct)
+  sampled_values:
+  - 1.4.3
+  - 3.5.4
+  - 3.6.6
+  - 4.3.0
+  - 1.2.0
+  - 1.5.8
+  - 2.2.8
+  - 2.6.1
+  - 2.7.9
+  - 3.3.8
+  - 4.1.6
+  - 4.7.5
+  - 4.7.6
+  - 5.0.5
+  - 5.8.6
+  - 1.0.8
+  - 1.1.0
+  - 1.2.8
+  - 1.2.9
+  - 1.8.5
+  - 1.8.7
+  - 2.2.0
+  - 2.2.9
+  - 2.4.9
+  - 2.5.2
+  - 2.5.4
+  - 2.7.7
+  - 2.8.2
+  - 2.8.7
+  - 3.0.2
+  - 3.0.4
+  - 3.0.5
+  - 3.0.8
+  - 3.3.1
+  - 3.3.2
+  - 3.4.1
+  - 3.6.9
+  - 3.8.6
+  - 4.5.3
+  - 4.5.4
+  - 4.6.2
+  - 4.7.2
+  - 4.7.7
+  - 4.9.4
+  - 5.0.7
+  - 5.1.5
+  - 5.2.1
+  - 5.2.7
+  - 5.5.3
+  - 5.8.3
+  distinct_count: 431
+- name: softupdate
+  sql: softupdate
+  type: TEXT
+  primary_key: false
+  description: A TEXT field for recording any software update notes or logs.
+  hidden: false
+  sampled: Pending, Current, Failed
+  sampled_values:
+  - Pending
+  - Current
+  - Failed
+  distinct_count: 3
+- name: syshealth
+  sql: syshealth
+  type: TEXT
+  primary_key: false
+  description: "An enum (SystemHealth_enum) describing the logger\u2019s system health\
+    \ (e.g., 'Poor', 'Fair', 'Good')."
+  hidden: false
+  sampled: Fair, Poor, Good
+  sampled_values:
+  - Fair
+  - Poor
+  - Good
+  distinct_count: 3
+- name: memusepct
+  sql: memusepct
+  type: INT
+  primary_key: false
+  description: "A SMALLINT for the percentage of the logger\u2019s internal memory\
+    \ currently in use."
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 100
+- name: storecapmb
+  sql: storecapmb
+  type: INT
+  primary_key: false
+  description: "An INTEGER representing the logger\u2019s total storage capacity in\
+    \ megabytes."
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 1000
+- name: storeremainmb
+  sql: storeremainmb
+  type: INT
+  primary_key: false
+  description: An INTEGER indicating remaining/free storage in megabytes.
+  hidden: false
+  format:
+    type: integer
+  sampled: 3 .. 1000
+- name: netsignal
+  sql: netsignal
+  type: TEXT
+  primary_key: false
+  description: An enum (NetworkSignal_enum) representing network signal strength (e.g.,
+    'Poor', 'Good', 'Excellent').
+  hidden: false
+  sampled: Excellent, Good, Poor, None
+  sampled_values:
+  - Excellent
+  - Good
+  - Poor
+  - None
+  distinct_count: 4
+- name: commproto
+  sql: commproto
+  type: TEXT
+  primary_key: false
+  description: "A VARCHAR(20) naming the communication protocol (e.g., RF, Bluetooth,\
+    \ Satellite, GSM). Sample values are clean exact-case labels ('RF', 'Bluetooth',\
+    \ 'GSM', 'Satellite'); use LOWER+TRIM if matching against user-supplied literals.\
+    \ [kb=22] Uses 433MHz ISM band radio frequency transmission with FSK modulation\
+    \ for short-range data exchange below 100m. \u2014 Illustrates RF communication\
+    \ protocol [/kb=22]"
+  label: 'CommProto: ''RF'''
+  hidden: false
+  meta:
+    kb_id: 22
+  sampled: Bluetooth, GSM, Satellite, RF
+  sampled_values:
+  - Bluetooth
+  - GSM
+  - Satellite
+  - RF
+  distinct_count: 4
+- name: syncflag
+  sql: syncflag
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) describing synchronization status (e.g., 'Pending', 'Success',
+    'Failed').
+  hidden: false
+  sampled: Success, Failed, Pending
+  sampled_values:
+  - Success
+  - Failed
+  - Pending
+  distinct_count: 3
+- name: syncfreqhr
+  sql: syncfreqhr
+  type: INT
+  primary_key: false
+  description: A SMALLINT indicating how often (in hours) synchronization is attempted
+    or performed.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 24
+- name: containlog
+  sql: containlog
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) foreign key referencing Container(ContainRegistry). Connects
+    the data logger to a container.
+  hidden: false
+  sampled: C10354, C10487, C10510, C10514, C10643, C10909, C11016, C11046, C11266,
+    C11279, C11412, C11511, C11519, C11543, C11718, C11805, C11949, C11970, C12122,
+    C12271 ... (900 distinct)
+  sampled_values:
+  - C10354
+  - C10487
+  - C10510
+  - C10514
+  - C10643
+  - C10909
+  - C11016
+  - C11046
+  - C11266
+  - C11279
+  - C11412
+  - C11511
+  - C11519
+  - C11543
+  - C11718
+  - C11805
+  - C11949
+  - C11970
+  - C12122
+  - C12271
+  - C12283
+  - C12384
+  - C12393
+  - C12534
+  - C12680
+  - C12710
+  - C12718
+  - C12750
+  - C12789
+  - C12921
+  - C12953
+  - C13057
+  - C13064
+  - C13212
+  - C13246
+  - C13337
+  - C13598
+  - C13623
+  - C13653
+  - C13824
+  - C13869
+  - C13929
+  - C13958
+  - C14028
+  - C14038
+  - C14075
+  - C14208
+  - C14365
+  - C14400
+  - C14425
+  distinct_count: 900
+- name: shiplog
+  sql: shiplog
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) foreign key referencing Shipments(ShipmentRegistry).
+    Optionally links the data logger to a shipment.
+  hidden: false
+  sampled: VS101443, VS101896, VS103453, VS107213, VS107478, VS108663, VS109470, VS110349,
+    VS111220, VS113526, VS116114, VS120493, VS121615, VS122057, VS122283, VS124761,
+    VS124785, VS125521, VS126219, VS126297 ... (900 distinct)
+  sampled_values:
+  - VS101443
+  - VS101896
+  - VS103453
+  - VS107213
+  - VS107478
+  - VS108663
+  - VS109470
+  - VS110349
+  - VS111220
+  - VS113526
+  - VS116114
+  - VS120493
+  - VS121615
+  - VS122057
+  - VS122283
+  - VS124761
+  - VS124785
+  - VS125521
+  - VS126219
+  - VS126297
+  - VS127092
+  - VS128180
+  - VS128465
+  - VS129414
+  - VS131248
+  - VS131616
+  - VS133967
+  - VS135208
+  - VS135323
+  - VS136255
+  - VS140768
+  - VS141136
+  - VS141866
+  - VS143336
+  - VS143586
+  - VS144344
+  - VS144593
+  - VS145015
+  - VS147256
+  - VS147622
+  - VS148137
+  - VS149025
+  - VS150281
+  - VS150918
+  - VS151303
+  - VS151690
+  - VS152703
+  - VS153208
+  - VS153333
+  - VS154617
+  distinct_count: 900
+- name: lhi
+  sql: (container.batterypct / 100.0) * (1 - (datalogger.memusepct / 100.0)) * (datalogger.datapct
+    / 100.0)
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=6] LHI = \\frac{BatteryPct}{100} \\times (1 - \\frac{MemUsePct}{100})\
+    \ \\times \\frac{DataPct}{100} \u2014 Overall health score for data logger. [/kb=6]"
+  label: Logger Health Index (LHI)
+  hidden: false
+  meta:
+    kb_id: 6
+  sampled: 0.0 .. 0.8705663999999999
+- name: logger_failure_risk
+  sql: CASE WHEN lhi < 0.3 OR (container.batterypct < 20 AND LOWER(TRIM(container.pwrbackupflag))
+    = 'not available') THEN 1 ELSE 0 END
+  type: INT
+  primary_key: false
+  description: "[kb=15] A logger where LHI < 0.3 or (BatteryPct < 20 and PwrBackupFlag='Not\
+    \ Available') \u2014 Identifies loggers at risk of failure. [/kb=15]"
+  label: Logger Failure Risk
+  hidden: false
+  meta:
+    kb_id: 15
+  sampled: 0 .. 1
+measures: []
+aggregations: []
+joins:
+- target_model: container
+  join_pairs:
+  - - containlog
+    - containregistry
+  join_type: left
+- target_model: shipments
+  join_pairs:
+  - - shiplog
+    - shipmentregistry
+  join_type: left
+filters: []
+hidden: false

@@ -1,0 +1,137 @@
+version: 7
+name: airqualityreadings
+sql_table: airqualityreadings
+query_variables: {}
+data_source: museum
+columns:
+- name: aqrecordregistry
+  sql: aqrecordregistry
+  type: INT
+  primary_key: true
+  description: BIGSERIAL PRIMARY KEY, uniquely identifying each air-quality reading
+    record.
+  hidden: false
+  format:
+    type: integer
+- name: envreadref
+  sql: envreadref
+  type: INT
+  primary_key: false
+  description: BIGINT FOREIGN KEY referencing EnvironmentalReadingsCore(EnvReadRegistry).
+    Links this record to its main environmental reading.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 951
+- name: co2ppm
+  sql: co2ppm
+  type: INT
+  primary_key: false
+  description: "SMALLINT measuring CO2 concentration in parts per million (ppm). Typical\
+    \ range: 300\u20132000."
+  hidden: false
+  format:
+    type: integer
+  sampled: 350 .. 999
+- name: tvocppb
+  sql: tvocppb
+  type: INT
+  primary_key: false
+  description: INT capturing total volatile organic compounds in parts per billion
+    (ppb).
+  hidden: false
+  format:
+    type: integer
+  sampled: 50 .. 499
+- name: ozoneppb
+  sql: ozoneppb
+  type: INT
+  primary_key: false
+  description: INT indicating ozone concentration in ppb.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 50
+- name: so2ppb
+  sql: so2ppb
+  type: INT
+  primary_key: false
+  description: SMALLINT for sulfur dioxide concentration in ppb.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 20
+- name: no2ppb
+  sql: no2ppb
+  type: INT
+  primary_key: false
+  description: BIGINT for nitrogen dioxide concentration in ppb.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 30
+- name: pm25conc
+  sql: pm25conc
+  type: DOUBLE
+  primary_key: false
+  description: "[kb=30] Values represent PM2.5 concentration in \xB5g/m\xB3. Clean\
+    \ museum air should measure below 5 \xB5g/m\xB3. Values of 5-15 indicate acceptable\
+    \ conditions, 15-30 indicate potential risk to sensitive materials, and above\
+    \ 30 represent hazardous conditions requiring immediate air filtration review.\
+    \ \u2014 Illustrates fine particulate matter measurements and their conservation\
+    \ implications. [/kb=30]"
+  label: AirQualityReadings.PM25Conc
+  hidden: false
+  format:
+    type: integer
+  meta:
+    kb_id: 30
+  sampled: 0.1 .. 35
+- name: pm10conc
+  sql: pm10conc
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(5,2) measuring PM10 concentration, possibly \xB5g/m\xB3 as\
+    \ well."
+  hidden: false
+  format:
+    type: float
+  sampled: 0.1 .. 49.9
+- name: hchoconc
+  sql: hchoconc
+  type: DOUBLE
+  primary_key: false
+  description: "NUMERIC(7,4) for formaldehyde (HCHO) concentration (e.g., mg/m\xB3\
+    \ or another scale)."
+  hidden: false
+  format:
+    type: float
+  sampled: 0.001 .. 0.1
+- name: airexrate
+  sql: airexrate
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(4,1) indicating air exchange rate (e.g., air changes per hour).
+  hidden: false
+  format:
+    type: float
+  sampled: 4.0 .. 8.0
+- name: airvelms
+  sql: airvelms
+  type: DOUBLE
+  primary_key: false
+  description: NUMERIC(5,2) capturing air velocity in meters per second (m/s).
+  hidden: false
+  format:
+    type: float
+  sampled: 0.1 .. 0.3
+measures: []
+aggregations: []
+joins:
+- target_model: environmentalreadingscore
+  join_pairs:
+  - - envreadref
+    - envreadregistry
+  join_type: left
+filters: []
+hidden: false

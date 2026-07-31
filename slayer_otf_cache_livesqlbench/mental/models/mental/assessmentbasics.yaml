@@ -1,0 +1,175 @@
+version: 7
+name: assessmentbasics
+sql_table: assessmentbasics
+query_variables: {}
+data_source: mental
+columns:
+- name: abkey
+  sql: abkey
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(30) primary key for each assessment (e.g., 'AB001').
+  hidden: false
+- name: atype
+  sql: atype
+  type: TEXT
+  primary_key: false
+  description: An enum (assessmenttype_enum) capturing the assessment type (Initial,
+    Emergency, Routine, Follow-up).
+  hidden: false
+  sampled: Routine, Follow-up, Emergency, Initial
+  sampled_values:
+  - Routine
+  - Follow-up
+  - Emergency
+  - Initial
+  distinct_count: 4
+- name: amethod
+  sql: amethod
+  type: TEXT
+  primary_key: false
+  description: An enum (assessmentmethod_enum) for how the assessment was done (Phone,
+    Self-report, In-person, Telehealth).
+  hidden: false
+  sampled: Telehealth, Self-report, Phone, In-person
+  sampled_values:
+  - Telehealth
+  - Self-report
+  - Phone
+  - In-person
+  distinct_count: 4
+- name: adurmin
+  sql: adurmin
+  type: INT
+  primary_key: false
+  description: A SMALLINT indicating assessment duration in minutes (e.g., 45).
+  hidden: false
+  format:
+    type: integer
+  sampled: 15 .. 120
+- name: alang
+  sql: alang
+  type: TEXT
+  primary_key: false
+  description: An enum (assessmentlanguage_enum) describing which language was used
+    (Chinese, French, Spanish, English, Other).
+  hidden: false
+  sampled: Other, French, English, Spanish, Chinese
+  sampled_values:
+  - Other
+  - French
+  - English
+  - Spanish
+  - Chinese
+  distinct_count: 5
+- name: avalid
+  sql: avalid
+  type: TEXT
+  primary_key: false
+  description: An enum (assessmentvalidity_enum) capturing validity (Questionable,
+    Invalid, Valid).
+  hidden: false
+  sampled: Questionable, Valid, Invalid
+  sampled_values:
+  - Questionable
+  - Valid
+  - Invalid
+  distinct_count: 3
+- name: respconsist
+  sql: respconsist
+  type: TEXT
+  primary_key: false
+  description: An enum (responseconsistency_enum) describing response consistency
+    (Medium, High, Low).
+  hidden: false
+  sampled: High, Low, Medium
+  sampled_values:
+  - High
+  - Low
+  - Medium
+  distinct_count: 3
+- name: symptvalid
+  sql: symptvalid
+  type: TEXT
+  primary_key: false
+  description: An enum (symptomvalidity_enum) describing symptom validity (Questionable,
+    Valid, Invalid).
+  hidden: false
+  sampled: Invalid, Questionable, Valid
+  sampled_values:
+  - Invalid
+  - Questionable
+  - Valid
+  distinct_count: 3
+- name: patownerref
+  sql: patownerref
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) FK referencing Patients(PatKey), linking the assessment
+    to its patient.
+  hidden: false
+  sampled: P100972, P102016, P102311, P103814, P105181, P106395, P106566, P106954,
+    P107640, P109422, P109570, P109788, P112003, P112837, P113873, P116193, P116328,
+    P117495, P118896, P119215 ... (999 distinct)
+  sampled_values:
+  - P100972
+  - P102016
+  - P102311
+  - P103814
+  - P105181
+  - P106395
+  - P106566
+  - P106954
+  - P107640
+  - P109422
+  - P109570
+  - P109788
+  - P112003
+  - P112837
+  - P113873
+  - P116193
+  - P116328
+  - P117495
+  - P118896
+  - P119215
+  - P119326
+  - P119424
+  - P120563
+  - P121441
+  - P124147
+  - P125420
+  - P126925
+  - P126974
+  - P129140
+  - P129648
+  - P131053
+  - P131286
+  - P133132
+  - P133416
+  - P134797
+  - P135591
+  - P136362
+  - P136511
+  - P137086
+  - P137749
+  - P137794
+  - P138725
+  - P139840
+  - P139865
+  - P141379
+  - P141582
+  - P141917
+  - P142012
+  - P143741
+  - P144305
+  distinct_count: 999
+measures: []
+aggregations: []
+joins:
+- target_model: patients
+  join_pairs:
+  - - patownerref
+    - patkey
+  join_type: left
+filters: []
+hidden: false

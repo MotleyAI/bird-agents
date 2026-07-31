@@ -1,0 +1,61 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - link "JetBrains Logo" [ref=e6] [cursor=pointer]:
+      - /url: /
+      - img "JetBrains Logo" [ref=e7]
+    - link "Help" [ref=e9] [cursor=pointer]:
+      - /url: https://sales.jetbrains.com/hc/en-gb
+      - img "Help" [ref=e10]
+  - main [ref=e13]:
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - heading "Log in to JetBrains" [level=1] [ref=e17]
+        - generic [ref=e18]: Log in to access your JetBrains products and services.
+      - generic [ref=e20]:
+        - button "Continue with Google" [ref=e21] [cursor=pointer]:
+          - img [ref=e22]
+          - generic [ref=e28]: Continue with Google
+        - button "Continue with GitHub" [ref=e29] [cursor=pointer]:
+          - img [ref=e30]:
+            - img [ref=e31]
+          - generic [ref=e34]: Continue with GitHub
+        - button "Continue with Apple" [ref=e35] [cursor=pointer]:
+          - img [ref=e36]:
+            - img [ref=e37]
+          - generic [ref=e40]: Continue with Apple
+        - generic [ref=e41]:
+          - button "Continue with Gitlab" [ref=e42] [cursor=pointer]:
+            - img [ref=e43]
+            - generic [ref=e52]: Continue with Gitlab
+          - button "Continue with WeChat" [ref=e53] [cursor=pointer]:
+            - img [ref=e54]
+            - generic [ref=e60]: Continue with WeChat
+          - button "Continue with Bitbucket" [ref=e61] [cursor=pointer]:
+            - img [ref=e62]
+            - generic [ref=e66]: Continue with Bitbucket
+        - generic [ref=e67]: or
+        - button "Continue with email" [ref=e68] [cursor=pointer]:
+          - img [ref=e69]:
+            - img [ref=e70]
+          - generic [ref=e72]: Continue with email
+        - generic [ref=e73]:
+          - text: New here?
+          - link "Create an account" [ref=e74] [cursor=pointer]:
+            - /url: /signup?authSessionId=f76def24-9f44-45b0-990c-d1f2bd7d5ba7
+      - generic [ref=e75]:
+        - text: By continuing, you accept the
+        - link "JetBrains Account Agreement" [ref=e76] [cursor=pointer]:
+          - /url: https://www.jetbrains.com/legal/docs/agreements/jetbrains_account.html
+  - generic [ref=e78]:
+    - generic [ref=e79]:
+      - generic [ref=e80]: Copyright © 2000–2026 JetBrains s.r.o.
+      - generic [ref=e81]:
+        - link "Help" [ref=e82] [cursor=pointer]:
+          - /url: https://sales.jetbrains.com/hc/en-gb
+        - link "Support" [ref=e83] [cursor=pointer]:
+          - /url: mailto:support@jetbrains.com?subject=JetBrains Account Support
+        - link "JetBrains Privacy Policy" [ref=e84] [cursor=pointer]:
+          - /url: https://www.jetbrains.com/legal/docs/privacy/privacy
+        - link "JetBrains Account Agreement" [ref=e85] [cursor=pointer]:
+          - /url: https://www.jetbrains.com/legal/docs/agreements/jetbrains_account
+    - generic [ref=e86]: "Build #2026.06-4295"

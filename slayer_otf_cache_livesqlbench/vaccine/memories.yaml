@@ -1,0 +1,821 @@
+- version: 1
+  id: vaccine_kb_0
+  learning: "KB 0 \u2014 Temperature Stability Score (TSS)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 0\nknowledge: Temperature Stability Score (TSS)\ndescription:\
+    \ Calculates the overall temperature stability of a container based on\n  deviations\
+    \ and critical events.\ndefinition: TSS = (1 - \\frac{TempDevCount}{100}) \\times\
+    \ (1 - \\frac{CritEvents}{10})\n  \\times TempStabIdx\ntype: calculation_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: &id001 1970-01-01 00:00:00+00:00
+- version: 1
+  id: vaccine_kb_1
+  learning: "KB 1 \u2014 Coolant Depletion Rate (CDR)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 1\nknowledge: Coolant Depletion Rate (CDR)\ndescription: Measures how quickly\
+    \ the coolant is being depleted.\ndefinition: CDR = \\frac{100 - CoolRemainPct}{(Current_Date\
+    \ - RefillLatest)}\ntype: calculation_knowledge\nchildren_knowledge: -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_2
+  learning: "KB 2 \u2014 Container Risk Index (CRI)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 2\nknowledge: Container Risk Index (CRI)\ndescription: Calculates overall\
+    \ risk level for a container based on temperature stability\n  and coolant status.\n\
+    definition: CRI = (1 - TSS) \\times (1 - \\frac{CoolRemainPct}{100})\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 0"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_3
+  learning: "KB 3 \u2014 Vaccine Viability Period (VVP)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 3\nknowledge: Vaccine Viability Period (VVP)\ndescription:\
+    \ Calculates remaining viable days for vaccines considering temperature\n  deviations.\n\
+    definition: VVP = (ExpireDay - Current_Date) \\times TSS\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 0"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_4
+  learning: "KB 4 \u2014 Route Completion Percentage (RCP)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 4\nknowledge: Route Completion Percentage (RCP)\ndescription:\
+    \ Calculates the percentage of route completed.\ndefinition: RCP = \\frac{DistDoneKm}{DistDoneKm\
+    \ + DistLeftKm} \\times 100\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_5
+  learning: "KB 5 \u2014 Storage Efficiency Ratio (SER)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 5\nknowledge: Storage Efficiency Ratio (SER)\ndescription:\
+    \ Measures how efficiently container volume is utilized.\ndefinition: SER = \\\
+    frac{VialTally \\times 10}{VolLiters}\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_6
+  learning: "KB 6 \u2014 Logger Health Index (LHI)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 6\nknowledge: Logger Health Index (LHI)\ndescription: Overall health score\
+    \ for data logger.\ndefinition: LHI = \\frac{BatteryPct}{100} \\times (1 - \\\
+    frac{MemUsePct}{100}) \\times\n  \\frac{DataPct}{100}\ntype: calculation_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_7
+  learning: "KB 7 \u2014 Maintenance Compliance Score (MCS)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 7\nknowledge: Maintenance Compliance Score (MCS)\ndescription:\
+    \ Calculates compliance with maintenance schedules.\ndefinition: MCS = CompScore\
+    \ \\times (1 - \\frac{Incidents}{10})\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_8
+  learning: "KB 8 \u2014 Handling Quality Index (HQI)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 8\nknowledge: Handling Quality Index (HQI)\ndescription: Measures quality\
+    \ of shipment handling.\ndefinition: HQI = (1 - \\frac{HandleEvents}{100}) \\\
+    times (1 - \\frac{CritEvents}{10})\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_9
+  learning: "KB 9 \u2014 Temperature Breach Severity (TBS)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 9\nknowledge: Temperature Breach Severity (TBS)\ndescription:\
+    \ Calculates severity of temperature breaches.\ndefinition: TBS = \\frac{|TempNowC\
+    \ - StoreTempC|}{TempTolC} \\times TempDevCount\ntype: calculation_knowledge\n\
+    children_knowledge: -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_10
+  learning: "KB 10 \u2014 Container Health Status\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 10\nknowledge: Container Health Status\ndescription: Classifies containers\
+    \ based on overall risk and temperature stability\n  to prioritize immediate action\
+    \ and monitor operational trends.\ndefinition: 'Four-level classification based\
+    \ on CRI, TSS, and TBS:\n\n  - Critical: CRI > 0.6 OR current TSS < 0.4\n\n  -\
+    \ Unstable: Average TSS < 0.4 OR maximum TBS > 1.5 over the past 1 year, and not\n\
+    \  Critical\n\n  - Moderate: Average TSS >= 0.4 AND maximum TBS <= 1.5 over the\
+    \ past 1 year, and\n  not Critical\n\n  - Stable: Average TSS >= 0.7 AND maximum\
+    \ TBS <= 1.0 over the past 1 year, and not\n  Critical'\ntype: domain_knowledge\n\
+    children_knowledge:\n- 0\n- 2\n- 9"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_2
+  - memory:vaccine_kb_9
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_11
+  learning: "KB 11 \u2014 Compromised Shipment\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 11\nknowledge: Compromised Shipment\ndescription: Identifies shipments with\
+    \ serious integrity issues.\ndefinition: A shipment with IntegrityMark='Compromised'\
+    \ or SealFlag='Broken' or TamperSign='Confirmed'\ntype: domain_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_12
+  learning: "KB 12 \u2014 High-Risk Route\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 12\nknowledge: High-Risk Route\ndescription: Identifies high-risk transportation\
+    \ routes.\ndefinition: A route where RCP < 50% and CRI > 0.4\ntype: domain_knowledge\n\
+    children_knowledge:\n- 2\n- 4"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_2
+  - memory:vaccine_kb_4
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_13
+  learning: "KB 13 \u2014 Maintenance Due\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 13\nknowledge: Maintenance Due\ndescription: Identifies equipment requiring\
+    \ maintenance.\ndefinition: Equipment where MCS < 0.7 and (Current_Date > MaintDateNext\
+    \ or Current_Date\n  > CalibDateNext)\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 7"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_7
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_14
+  learning: "KB 14 \u2014 Stable Transport\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 14\nknowledge: Stable Transport\ndescription: Identifies stable transport\
+    \ conditions.\ndefinition: Transport where HQI > 0.9 and TSS > 0.8\ntype: domain_knowledge\n\
+    children_knowledge:\n- 0\n- 8"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_8
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_15
+  learning: "KB 15 \u2014 Logger Failure Risk\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 15\nknowledge: Logger Failure Risk\ndescription: Identifies loggers at risk\
+    \ of failure.\ndefinition: A logger where LHI < 0.3 or (BatteryPct < 20 and PwrBackupFlag='Not\
+    \ Available')\ntype: domain_knowledge\nchildren_knowledge:\n- 6"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_6
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_16
+  learning: "KB 16 \u2014 Temperature Alert\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 16\nknowledge: Temperature Alert\ndescription: Identifies critical temperature\
+    \ conditions.\ndefinition: A condition where TBS > 2.0 and TempDevCount > 5\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 9"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_9
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_17
+  learning: "KB 17 \u2014 Coolant Critical\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 17\nknowledge: Coolant Critical\ndescription: Identifies critical coolant\
+    \ conditions.\ndefinition: A condition where CDR > 1 and CoolRemainPct < 30\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 1"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_18
+  learning: "KB 18 \u2014 Efficient Container\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 18\nknowledge: Efficient Container\ndescription: Identifies efficiently utilized\
+    \ containers.\ndefinition: A container where SER > 0.8 and TSS > 0.9\ntype: domain_knowledge\n\
+    children_knowledge:\n- 0\n- 5"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_5
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_19
+  learning: "KB 19 \u2014 Quality Compromise\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 19\nknowledge: Quality Compromise\ndescription: Identifies quality-compromised\
+    \ shipments.\ndefinition: A shipment where VVP < 30 or QualCheck='Failed'\ntype:\
+    \ domain_knowledge\nchildren_knowledge:\n- 3"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_3
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_20
+  learning: "KB 20 \u2014 TempNowC Value\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 20\nknowledge: TempNowC Value\ndescription: Illustrates safe temperature range\n\
+    definition: \"Temperature between 2\\xB0C and 8\\xB0C indicates optimal vaccine\
+    \ storage\\\n  \\ conditions.\"\ntype: value_illustration\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_21
+  learning: "KB 21 \u2014 CompScore Value\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 21\nknowledge: CompScore Value\ndescription: Illustrates excellent compliance\
+    \ level\ndefinition: A score above 0.9 indicates excellent compliance with all\
+    \ regulatory requirements.\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_22
+  learning: "KB 22 \u2014 CommProto: 'RF'\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 22\nknowledge: 'CommProto: ''RF'''\ndescription: Illustrates RF communication\
+    \ protocol\ndefinition: Uses 433MHz ISM band radio frequency transmission with\
+    \ FSK modulation\n  for short-range data exchange below 100m.\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_23
+  learning: "KB 23 \u2014 TransmitFlag: 'Real-time'\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 23\nknowledge: 'TransmitFlag: ''Real-time'''\ndescription: Illustrates immediate\
+    \ data transmission\ndefinition: Indicates data is being transmitted to the central\
+    \ system without delay\n  as it is collected.\ntype: value_illustration\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_24
+  learning: "KB 24 \u2014 CoolKind: 'Phase Change Material'\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 24\nknowledge: 'CoolKind: ''Phase Change Material'''\n\
+    description: Illustrates PCM cooling mechanism\ndefinition: \"Uses paraffin-based\
+    \ material with 2-8\\xB0C phase transition point and\\\n  \\ 200 kJ/kg latent\
+    \ heat capacity for temperature stabilization.\"\ntype: value_illustration\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_25
+  learning: "KB 25 \u2014 VehicleKind: 'Reefer Container'\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 25\nknowledge: 'VehicleKind: ''Reefer Container'''\n\
+    description: Illustrates specialized container type\ndefinition: \"Self-powered\
+    \ refrigeration unit maintaining -20\\xB0C to +30\\xB0C with\\\n  \\ R-134a refrigerant\
+    \ and independent power supply lasting 72 hours.\"\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_26
+  learning: "KB 26 \u2014 CommProto: 'Satellite'\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 26\nknowledge: 'CommProto: ''Satellite'''\ndescription: Illustrates satellite\
+    \ communication mode\ndefinition: Indicates the system is using satellite networks\
+    \ for global coverage and\n  reliable data transmission.\ntype: value_illustration\n\
+    children_knowledge: -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_27
+  learning: "KB 27 \u2014 VacVariant: 'Viral Vector'\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 27\nknowledge: 'VacVariant: ''Viral Vector'''\ndescription: Illustrates vaccine\
+    \ technology type\ndefinition: \"Uses modified adenovirus Ad26 vector expressing\
+    \ SARS-CoV-2 spike protein,\\\n  \\ requiring -20\\xB0C storage with 6-month shelf\
+    \ life.\"\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_28
+  learning: "KB 28 \u2014 GPSFlag: 'Active'\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 28\nknowledge: 'GPSFlag: ''Active'''\ndescription: Illustrates active location\
+    \ tracking\ndefinition: Indicates that GPS tracking is operational and accurately\
+    \ reporting location\n  data.\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_29
+  learning: "KB 29 \u2014 LightLux Value\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 29\nknowledge: LightLux Value\ndescription: Illustrates light exposure meaning.\n\
+    definition: 'Measured in lux. 0-10: Dark (ideal), 10-50: Low light, >50: Excessive\n\
+    \  exposure risk.'\ntype: value_illustration\nchildren_knowledge: -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_30
+  learning: "KB 30 \u2014 Total Risk Score (TRS)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 30\nknowledge: Total Risk Score (TRS)\ndescription: Combines container risk\
+    \ and handling quality for overall risk assessment.\ndefinition: TRS = \\text{CRI}\
+    \ \\times (1 - \\text{HQI}) \\times (1 + \\text{TBS})\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 2\n- 8\n- 9"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_2
+  - memory:vaccine_kb_8
+  - memory:vaccine_kb_9
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_31
+  learning: "KB 31 \u2014 Coolant Efficiency Index (CEI)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 31\nknowledge: Coolant Efficiency Index (CEI)\ndescription:\
+    \ Measures how efficiently coolant is maintaining temperature stability.\ndefinition:\
+    \ CEI = \\text{TSS} \\times \\frac{\\text{CoolRemainPct}}{100} \\times (1 - \\\
+    frac{\\text{CDR}}{20})\ntype: calculation_knowledge\nchildren_knowledge:\n- 0\n\
+    - 1"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_32
+  learning: "KB 32 \u2014 Combined Maintenance Risk (CMR)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 32\nknowledge: Combined Maintenance Risk (CMR)\ndescription:\
+    \ Evaluates overall maintenance risk considering compliance and incidents.\ndefinition:\
+    \ CMR = (1 - \\text{MCS}) \\times (1 + \\frac{\\text{TBS}}{5}) \\times (1 - \\\
+    text{LHI})\ntype: calculation_knowledge\nchildren_knowledge:\n- 7\n- 9\n- 6"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_7
+  - memory:vaccine_kb_9
+  - memory:vaccine_kb_6
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_33
+  learning: "KB 33 \u2014 Shipment Quality Index (SQI)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 33\nknowledge: Shipment Quality Index (SQI)\ndescription: Overall quality\
+    \ score for shipment considering multiple factors.\ndefinition: SQI = \\frac{\\\
+    text{VVP}}{365} \\times \\text{HQI} \\times (1 - \\text{CRI})\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 3\n- 8\n- 2"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_3
+  - memory:vaccine_kb_8
+  - memory:vaccine_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_34
+  learning: "KB 34 \u2014 Logger Reliability Score (LRS)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 34\nknowledge: Logger Reliability Score (LRS)\ndescription:\
+    \ Comprehensive score for logger reliability.\ndefinition: \"LRS = \\text{LHI}\
+    \ \\\\times (1 - \\\\text{CMR}) \\\\times \\\\text{TSS}\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 6\n- 32\n- 0"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_6
+  - memory:vaccine_kb_32
+  - memory:vaccine_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_35
+  learning: "KB 35 \u2014 Transport Safety Rating (TSR)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 35\nknowledge: Transport Safety Rating (TSR)\ndescription:\
+    \ Safety rating for transport considering multiple factors.\ndefinition: TSR =\
+    \ \\frac{\\text{RCP}}{100} \\times (1 - \\text{TRS}) \\times \\text{HQI}\ntype:\
+    \ calculation_knowledge\nchildren_knowledge:\n- 4\n- 30\n- 8"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_4
+  - memory:vaccine_kb_30
+  - memory:vaccine_kb_8
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_36
+  learning: "KB 36 \u2014 Container Efficiency Score (CES)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 36\nknowledge: Container Efficiency Score (CES)\ndescription:\
+    \ Overall container efficiency considering multiple metrics.\ndefinition: CES\
+    \ = \\text{SER} \\times \\text{CEI} \\times (1 - \\text{CRI})\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 5\n- 31\n- 2"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_5
+  - memory:vaccine_kb_31
+  - memory:vaccine_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_37
+  learning: "KB 37 \u2014 Quality Maintenance Index (QMI)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 37\nknowledge: Quality Maintenance Index (QMI)\ndescription:\
+    \ Combined quality and maintenance metric.\ndefinition: QMI = \\text{MCS} \\times\
+    \ \\text{SQI} \\times (1 - \\frac{\\text{TBS}}{10})\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 7\n- 33\n- 9"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_7
+  - memory:vaccine_kb_33
+  - memory:vaccine_kb_9
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_38
+  learning: "KB 38 \u2014 Route Risk Factor (RRF)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 38\nknowledge: Route Risk Factor (RRF)\ndescription: Comprehensive route risk\
+    \ assessment.\ndefinition: \"RRF = (1 - \\\\frac{\\text{RCP}}{100}) \\\\times\
+    \ \\\\text{TRS} \\\\times (1 -\\\n  \\ \\\\text{CEI})\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 4\n- 30\n- 31"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_4
+  - memory:vaccine_kb_30
+  - memory:vaccine_kb_31
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_39
+  learning: "KB 39 \u2014 Vaccine Safety Index (VSI)\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 39\nknowledge: Vaccine Safety Index (VSI)\ndescription: Overall safety index\
+    \ for vaccine shipment.\ndefinition: \"VSI = \\\\frac{\\text{VVP}}{365} \\\\times\
+    \ \\\\text{CEI} \\\\times (1 - \\\\text{TRS})\"\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 3\n- 31\n- 30"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_3
+  - memory:vaccine_kb_31
+  - memory:vaccine_kb_30
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_40
+  learning: "KB 40 \u2014 Critical Transport Condition\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 40\nknowledge: Critical Transport Condition\ndescription: Identifies critically\
+    \ unsafe transport conditions.\ndefinition: A transport condition where TSR <\
+    \ 0.4 and TRS > 0.6\ntype: domain_knowledge\nchildren_knowledge:\n- 35\n- 30"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_35
+  - memory:vaccine_kb_30
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_41
+  learning: "KB 41 \u2014 Severe Container Risk\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 41\nknowledge: Severe Container Risk\ndescription: Identifies containers with\
+    \ severe combined risks.\ndefinition: A container where CES < 0.3 and CEI < 0.5\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 36\n- 31"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_36
+  - memory:vaccine_kb_31
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_42
+  learning: "KB 42 \u2014 High Maintenance Priority\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 42\nknowledge: High Maintenance Priority\ndescription: Identifies equipment\
+    \ requiring urgent maintenance.\ndefinition: Equipment where CMR > 0.7 and QMI\
+    \ < 0.4\ntype: domain_knowledge\nchildren_knowledge:\n- 32\n- 37"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_32
+  - memory:vaccine_kb_37
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_43
+  learning: "KB 43 \u2014 Critical Route Status\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 43\nknowledge: Critical Route Status\ndescription: Identifies routes with\
+    \ critical risk levels.\ndefinition: A route where RRF > 0.8 and TSR < 0.3\ntype:\
+    \ domain_knowledge\nchildren_knowledge:\n- 38\n- 35"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_38
+  - memory:vaccine_kb_35
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_44
+  learning: "KB 44 \u2014 Unsafe Vaccine Condition\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 44\nknowledge: Unsafe Vaccine Condition\ndescription: Identifies potentially\
+    \ compromised vaccines.\ndefinition: A condition where VSI < 0.4 and CES < 0.5\n\
+    type: domain_knowledge\nchildren_knowledge:\n- 39\n- 36"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_39
+  - memory:vaccine_kb_36
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_45
+  learning: "KB 45 \u2014 Logger Critical State\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 45\nknowledge: Logger Critical State\ndescription: Identifies critically failing\
+    \ loggers.\ndefinition: A logger where LRS < 0.3 and CMR > 0.8\ntype: domain_knowledge\n\
+    children_knowledge:\n- 34\n- 32"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_34
+  - memory:vaccine_kb_32
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_46
+  learning: "KB 46 \u2014 Quality Alert Status\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 46\nknowledge: Quality Alert Status\ndescription: Identifies severe quality\
+    \ issues.\ndefinition: A status where QMI < 0.3 and VSI < 0.5\ntype: domain_knowledge\n\
+    children_knowledge:\n- 37\n- 39"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_37
+  - memory:vaccine_kb_39
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_47
+  learning: "KB 47 \u2014 Transport Safety Alert\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 47\nknowledge: Transport Safety Alert\ndescription: Identifies unsafe transport\
+    \ conditions.\ndefinition: A condition where TSR < 0.5 and RRF > 0.7\ntype: domain_knowledge\n\
+    children_knowledge:\n- 35\n- 38"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_35
+  - memory:vaccine_kb_38
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_48
+  learning: "KB 48 \u2014 Container Alert Status\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 48\nknowledge: Container Alert Status\ndescription: Identifies containers\
+    \ requiring urgent attention.\ndefinition: A status where CES < 0.4 and TRS >\
+    \ 0.7\ntype: domain_knowledge\nchildren_knowledge:\n- 36\n- 30"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_36
+  - memory:vaccine_kb_30
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_49
+  learning: "KB 49 \u2014 Critical Safety Condition\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 49\nknowledge: Critical Safety Condition\ndescription: Identifies critically\
+    \ unsafe overall conditions.\ndefinition: A condition where VSI < 0.3 and TSR\
+    \ < 0.4\ntype: domain_knowledge\nchildren_knowledge:\n- 39\n- 35"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_39
+  - memory:vaccine_kb_35
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_50
+  learning: "KB 50 \u2014 Thermal Stability Coefficient (TSC)\n\nKB item (verbatim\
+    \ from vaccine_kb.jsonl):\nid: 50\nknowledge: Thermal Stability Coefficient (TSC)\n\
+    description: Advanced temperature stability metric incorporating thermal mass\
+    \ and\n  ambient conditions.\ndefinition: TSC = \\text{TSS} \\cdot e^{-\\frac{|\\\
+    text{TempNowC} - \\text{StoreTempC}|}{5}}\n  \\cdot \\left(1 - \\alpha \\cdot\
+    \ \\frac{\\text{TempNowC} - \\text{TempPrevC}}{\\text{ReadingInterval}}\\right)\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 0\n- 60"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_60
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_51
+  learning: "KB 51 \u2014 Multi-Parameter Risk Assessment (MPRA)\n\nKB item (verbatim\
+    \ from vaccine_kb.jsonl):\nid: 51\nknowledge: Multi-Parameter Risk Assessment\
+    \ (MPRA)\ndescription: Comprehensive risk evaluation using multiple environmental\
+    \ parameters.\ndefinition: MPRA = \\sqrt{\\text{CRI}^2 + \\text{TBS}^2 + (1-\\\
+    text{HQI})^2} \\times (1\n  + \\frac{\\text{CDR}}{\\text{CDR}_{\\text{max}}})\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 2\n- 9\n- 8\n- 1"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_2
+  - memory:vaccine_kb_9
+  - memory:vaccine_kb_8
+  - memory:vaccine_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_52
+  learning: "KB 52 \u2014 Time-Weighted Quality Decay (TWQD)\n\nKB item (verbatim\
+    \ from vaccine_kb.jsonl):\nid: 52\nknowledge: Time-Weighted Quality Decay (TWQD)\n\
+    description: Calculates quality deterioration rate considering time and environmental\n\
+    \  factors.\ndefinition: TWQD = -\\frac{d}{dt}(\\text{VVP}) \\times (1 + \\beta\\\
+    text{TBS}) \\times (1\n  + \\gamma(\\text{1-TSS}))\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 3\n- 9\n- 0"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_3
+  - memory:vaccine_kb_9
+  - memory:vaccine_kb_0
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_53
+  learning: "KB 53 \u2014 Environmental Stress Factor (ESF)\n\nKB item (verbatim from\
+    \ vaccine_kb.jsonl):\nid: 53\nknowledge: Environmental Stress Factor (ESF)\ndescription:\
+    \ Quantifies combined environmental stressors on vaccine stability.\ndefinition:\
+    \ ESF = \\text{TSS} \\cdot (1 + \\frac{\\text{TBS}}{5}) \\cdot \\text{CEI} \\\
+    cdot\n  (1 + \\frac{|\\text{TempNowC} - \\text{StoreTempC}|}{\\text{TempTolC}})\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 0\n- 9\n- 31"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_0
+  - memory:vaccine_kb_9
+  - memory:vaccine_kb_31
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_54
+  learning: "KB 54 \u2014 Logistics Performance Metric (LPM)\n\nKB item (verbatim\
+    \ from vaccine_kb.jsonl):\nid: 54\nknowledge: Logistics Performance Metric (LPM)\n\
+    description: Evaluates overall logistics efficiency with temporal considerations.\n\
+    definition: LPM = \\text{RCP} \\cdot \\frac{\\text{HQI}}{\\sqrt{1 + \\text{TRS}}}\n\
+    type: calculation_knowledge\nchildren_knowledge:\n- 4\n- 8\n- 30"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_4
+  - memory:vaccine_kb_8
+  - memory:vaccine_kb_30
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_55
+  learning: "KB 55 \u2014 Critical Cascade Condition\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 55\nknowledge: Critical Cascade Condition\ndescription: Identifies systemic\
+    \ failure patterns in the cold chain.\ndefinition: A condition where (MPRA > 0.8\
+    \ AND TSC < 0.4) OR (TWQD > 0.6 AND ESF >\n  0.7)\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 51\n- 50\n- 52\n- 53"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_51
+  - memory:vaccine_kb_50
+  - memory:vaccine_kb_52
+  - memory:vaccine_kb_53
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_56
+  learning: "KB 56 \u2014 Compound Quality Risk\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 56\nknowledge: Compound Quality Risk\ndescription: Identifies complex quality\
+    \ degradation scenarios.\ndefinition: A status where VSI decreases over three\
+    \ consecutive readings AND LPM <\n  0.5 AND ESF > 0.6\ntype: domain_knowledge\n\
+    children_knowledge:\n- 39\n- 54\n- 53"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_39
+  - memory:vaccine_kb_54
+  - memory:vaccine_kb_53
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_57
+  learning: "KB 57 \u2014 Dynamic Stability Threshold\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 57\nknowledge: Dynamic Stability Threshold\ndescription: Evaluates stability\
+    \ under varying conditions.\ndefinition: A condition where average TSC over last\
+    \ 5 readings < 0.7 AND MPRA > 0.6\ntype: domain_knowledge\nchildren_knowledge:\n\
+    - 50\n- 51"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_50
+  - memory:vaccine_kb_51
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_58
+  learning: "KB 58 \u2014 Multi-System Failure Risk\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 58\nknowledge: Multi-System Failure Risk\ndescription: Identifies concurrent\
+    \ failures across multiple subsystems.\ndefinition: A state where (CRI + TBS +\
+    \ (1-HQI))/3 > 0.7 AND all of (TSC, LPM, ESF)\n  < 0.3\ntype: domain_knowledge\n\
+    children_knowledge:\n- 2\n- 8\n- 9\n- 50\n- 54\n- 53"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_2
+  - memory:vaccine_kb_8
+  - memory:vaccine_kb_9
+  - memory:vaccine_kb_50
+  - memory:vaccine_kb_54
+  - memory:vaccine_kb_53
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_59
+  learning: "KB 59 \u2014 Predictive Degradation Alert\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 59\nknowledge: Predictive Degradation Alert\ndescription: Forecasts potential\
+    \ quality degradation based on current trends.\ndefinition: Alert when TWQD increases\
+    \ over 3 consecutive readings AND ESF > 0.5 AND\n  TempDevCount > 3\ntype: domain_knowledge\n\
+    children_knowledge:\n- 52\n- 53"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_52
+  - memory:vaccine_kb_53
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_60
+  learning: "KB 60 \u2014 ReadingInterval\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 60\nknowledge: ReadingInterval\ndescription: Time denominator used for calculating\
+    \ rate of temperature change\ndefinition: Time interval in minutes between successive\
+    \ temperature readings, used\n  to normalize temperature differences into rates\
+    \ of change. Standard value is 15\n  minutes with acceptable range 5-60 minutes\
+    \ depending on monitoring requirements\ntype: domain_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_61
+  learning: "KB 61 \u2014 Days Overdue\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 61\nknowledge: Days Overdue\ndescription: Calculates the number of days past\
+    \ the scheduled maintenance or calibration\n  date.\ndefinition: DaysOverdue =\
+    \ \\max\\left( (\\text{Current_Date} - \\text{MaintDateNext}),\n  (\\text{Current_Date}\
+    \ - \\text{CalibDateNext}), 0 \\right)\ntype: calculation_knowledge\nchildren_knowledge:\
+    \ -1"
+  entities:
+  - vaccine
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_62
+  learning: "KB 62 \u2014 Depletion Rank\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 62\nknowledge: Depletion Rank\ndescription: Ranks containers based on the\
+    \ rate of coolant depletion.\ndefinition: Rank assigned to containers based on\
+    \ descending order of CDR\ntype: domain_knowledge\nchildren_knowledge:\n- 1"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_1
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_63
+  learning: "KB 63 \u2014 Efficiency Rank\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 63\nknowledge: Efficiency Rank\ndescription: Ranks containers based on their\
+    \ storage efficiency.\ndefinition: Rank assigned to containers based on descending\
+    \ order of SER\ntype: domain_knowledge\nchildren_knowledge:\n- 5"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_5
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_64
+  learning: "KB 64 \u2014 Risk Rank\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 64\nknowledge: Risk Rank\ndescription: Ranks containers based on their risk\
+    \ level.\ndefinition: Rank assigned to containers based on descending order of\
+    \ CRI\ntype: domain_knowledge\nchildren_knowledge:\n- 2"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_2
+  query: null
+  created_at: *id001
+- version: 1
+  id: vaccine_kb_65
+  learning: "KB 65 \u2014 Urgency Rank\n\nKB item (verbatim from vaccine_kb.jsonl):\n\
+    id: 65\nknowledge: Urgency Rank\ndescription: Ranks vehicles based on maintenance\
+    \ risk and overdue days.\ndefinition: \\text{Rank assigned to vehicles based on\
+    \ descending order of } \\text{CMR}\n  + \\text{DaysOverdue} / 30\ntype: calculation_knowledge\n\
+    children_knowledge:\n- 32\n- 61"
+  entities:
+  - vaccine
+  - memory:vaccine_kb_32
+  - memory:vaccine_kb_61
+  query: null
+  created_at: *id001

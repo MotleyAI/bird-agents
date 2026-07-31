@@ -1,0 +1,411 @@
+version: 7
+name: bank_and_transactions
+sql_table: bank_and_transactions
+query_variables: {}
+data_source: credit
+columns:
+- name: bankexpref
+  sql: bankexpref
+  type: TEXT
+  primary_key: true
+  description: A VARCHAR(20) primary key referencing expenses_and_assets(ExpEmplRef).
+  hidden: false
+- name: banktxfreq
+  sql: banktxfreq
+  type: TEXT
+  primary_key: false
+  description: An enum (BankTransactionFrequency_enum) describing transaction frequency
+    (Low, Medium, High).
+  hidden: false
+  sampled: Low, Medium, High
+  sampled_values:
+  - Low
+  - Medium
+  - High
+  distinct_count: 3
+- name: banktxamt
+  sql: banktxamt
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(14,2) typical monthly transaction amount (e.g., '3000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 126.0 .. 9998.0
+- name: bankrelscore
+  sql: bankrelscore
+  type: DOUBLE
+  primary_key: false
+  description: A NUMERIC(4,3) measuring the strength of the bank relationship (e.g.,
+    '0.850').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.001 .. 0.999
+- name: ovrfreq
+  sql: ovrfreq
+  type: TEXT
+  primary_key: false
+  description: An enum (OverdraftFrequency_enum) capturing overdraft occurrences (Frequent,
+    Occasional, Rare, Never).
+  hidden: false
+  sampled: Frequent, Occasional, Never, Rare
+  sampled_values:
+  - Frequent
+  - Occasional
+  - Never
+  - Rare
+  distinct_count: 4
+- name: bouncecount
+  sql: bouncecount
+  type: INT
+  primary_key: false
+  description: A SMALLINT for how many checks or payments have bounced (e.g., '1').
+  hidden: false
+  format:
+    type: integer
+  sampled: 0 .. 10
+- name: inscoverage
+  sql: inscoverage
+  type: TEXT
+  primary_key: false
+  description: An enum (InsuranceCoverage_enum) for coverage level (Comprehensive,
+    Basic).
+  hidden: false
+  sampled: Basic, Comprehensive
+  sampled_values:
+  - Basic
+  - Comprehensive
+  distinct_count: 2
+- name: lifeinsval
+  sql: lifeinsval
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(14,2) denoting total life insurance value (e.g., '50000.00').
+  hidden: false
+  format:
+    type: float
+  sampled: 959.0 .. 999906.0
+- name: hlthinsstat
+  sql: hlthinsstat
+  type: TEXT
+  primary_key: false
+  description: An enum (HealthInsuranceStatus_enum) capturing health insurance (Basic,
+    Premium).
+  hidden: false
+  sampled: Basic, Premium
+  sampled_values:
+  - Basic
+  - Premium
+  distinct_count: 2
+- name: fraudrisk
+  sql: fraudrisk
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(5,3) rating potential fraud risk (e.g., '0.120').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.001 .. 0.999
+- name: idverscore
+  sql: idverscore
+  type: DOUBLE
+  primary_key: false
+  description: A DECIMAL(5,3) indicating identity verification confidence (e.g., '0.890').
+  hidden: false
+  format:
+    type: float
+  sampled: 0.003 .. 1.0
+- name: docverstat
+  sql: docverstat
+  type: TEXT
+  primary_key: false
+  description: An enum (DocumentVerificationStatus_enum) describing document checks
+    (Pending, Verified, Failed).
+  hidden: false
+  sampled: Pending, Failed, Verified
+  sampled_values:
+  - Pending
+  - Failed
+  - Verified
+  distinct_count: 3
+- name: kycstat
+  sql: kycstat
+  type: TEXT
+  primary_key: false
+  description: An enum (KYCStatus_enum) capturing KYC outcome (Pending, Failed, Completed).
+  hidden: false
+  sampled: Pending, Completed, Failed
+  sampled_values:
+  - Pending
+  - Completed
+  - Failed
+  distinct_count: 3
+- name: amlresult
+  sql: amlresult
+  type: TEXT
+  primary_key: false
+  description: An enum (AMLScreeningResult_enum) storing AML screening result (Flag,
+    Pass, Fail).
+  hidden: false
+  sampled: Pass, Flag, Fail
+  sampled_values:
+  - Pass
+  - Flag
+  - Fail
+  distinct_count: 3
+- name: chaninvdatablock
+  sql: chaninvdatablock
+  type: TEXT
+  primary_key: false
+  description: "JSONB column. Packs together digital\u2011channel habits and investment/trading\
+    \ style flags for engagement and cross\u2011sell scoring."
+  hidden: false
+  meta:
+    jsonb: true
+  sampled: '{"autopay": "Yes", "depostat": "No", "mobileuse": "Low", "onlineuse":
+    "High", "invcluster": {"tradeact": "Medium", "investexp": "Moderate", "investport":
+    "Conservative"}}, {"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse":
+    "High", "invcluster": {"tradeact": "High", "investexp": "Extensive", "investport":
+    "Conservative"}}, {"autopay": "No", "depostat": "No", "mobileuse": "Medium", "onlineuse":
+    "High", "invcluster": {"tradeact": "Low", "investexp": "Moderate", "investport":
+    null}}, {"autopay": "No", "depostat": "No", "mobileuse": "Medium", "onlineuse":
+    "High", "invcluster": {"tradeact": null, "investexp": "Moderate", "investport":
+    null}}, {"autopay": "No", "depostat": "No", "mobileuse": "Medium", "onlineuse":
+    "Low", "invcluster": {"tradeact": "High", "investexp": null, "investport": "Moderate"}},
+    {"autopay": "No", "depostat": "Yes", "mobileuse": "High", "onlineuse": "Medium",
+    "invcluster": {"tradeact": "Medium", "investexp": "Limited", "investport": null}},
+    {"autopay": "No", "depostat": "Yes", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": null, "investexp": null, "investport": "Aggressive"}},
+    {"autopay": "No", "depostat": "Yes", "mobileuse": "Medium", "onlineuse": "High",
+    "invcluster": {"tradeact": "Low", "investexp": null, "investport": "Aggressive"}},
+    {"autopay": "No", "depostat": "Yes", "mobileuse": "Medium", "onlineuse": "Low",
+    "invcluster": {"tradeact": "High", "investexp": "Limited", "investport": "Aggressive"}},
+    {"autopay": "No", "depostat": "Yes", "mobileuse": "Medium", "onlineuse": "Low",
+    "invcluster": {"tradeact": null, "investexp": "Limited", "investport": null}},
+    {"autopay": "Yes", "depostat": "No", "mobileuse": "High", "onlineuse": "High",
+    "invcluster": {"tradeact": "High", "investexp": "Limited", "investport": "Conservative"}},
+    {"autopay": "Yes", "depostat": "No", "mobileuse": "High", "onlineuse": "Medium",
+    "invcluster": {"tradeact": null, "investexp": "Limited", "investport": "Moderate"}},
+    {"autopay": "Yes", "depostat": "No", "mobileuse": "Low", "onlineuse": "Medium",
+    "invcluster": {"tradeact": null, "investexp": null, "investport": null}}, {"autopay":
+    "Yes", "depostat": "No", "mobileuse": "Medium", "onlineuse": "High", "invcluster":
+    {"tradeact": null, "investexp": "Extensive", "investport": "Aggressive"}}, {"autopay":
+    "Yes", "depostat": "No", "mobileuse": "Medium", "onlineuse": "Low", "invcluster":
+    {"tradeact": "Medium", "investexp": "Limited", "investport": "Moderate"}}, {"autopay":
+    "Yes", "depostat": "Yes", "mobileuse": "High", "onlineuse": "Medium", "invcluster":
+    {"tradeact": "Medium", "investexp": "Moderate", "investport": "Aggressive"}},
+    {"autopay": "Yes", "depostat": "Yes", "mobileuse": "High", "onlineuse": "Medium",
+    "invcluster": {"tradeact": "Medium", "investexp": null, "investport": "Moderate"}},
+    {"autopay": "Yes", "depostat": "Yes", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": null, "investexp": "Extensive", "investport": "Moderate"}},
+    {"autopay": "Yes", "depostat": "Yes", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": null, "investexp": "Limited", "investport": null}},
+    {"autopay": "Yes", "depostat": "Yes", "mobileuse": "Low", "onlineuse": "Low",
+    "invcluster": {"tradeact": null, "investexp": "Moderate", "investport": null}}
+    ... (810 distinct)'
+  sampled_values:
+  - '{"autopay": "Yes", "depostat": "No", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": "Medium", "investexp": "Moderate", "investport": "Conservative"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": "High", "investexp": "Extensive", "investport": "Conservative"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Medium", "onlineuse": "High",
+    "invcluster": {"tradeact": "Low", "investexp": "Moderate", "investport": null}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Medium", "onlineuse": "High",
+    "invcluster": {"tradeact": null, "investexp": "Moderate", "investport": null}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Medium", "onlineuse": "Low",
+    "invcluster": {"tradeact": "High", "investexp": null, "investport": "Moderate"}}'
+  - '{"autopay": "No", "depostat": "Yes", "mobileuse": "High", "onlineuse": "Medium",
+    "invcluster": {"tradeact": "Medium", "investexp": "Limited", "investport": null}}'
+  - '{"autopay": "No", "depostat": "Yes", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": null, "investexp": null, "investport": "Aggressive"}}'
+  - '{"autopay": "No", "depostat": "Yes", "mobileuse": "Medium", "onlineuse": "High",
+    "invcluster": {"tradeact": "Low", "investexp": null, "investport": "Aggressive"}}'
+  - '{"autopay": "No", "depostat": "Yes", "mobileuse": "Medium", "onlineuse": "Low",
+    "invcluster": {"tradeact": "High", "investexp": "Limited", "investport": "Aggressive"}}'
+  - '{"autopay": "No", "depostat": "Yes", "mobileuse": "Medium", "onlineuse": "Low",
+    "invcluster": {"tradeact": null, "investexp": "Limited", "investport": null}}'
+  - '{"autopay": "Yes", "depostat": "No", "mobileuse": "High", "onlineuse": "High",
+    "invcluster": {"tradeact": "High", "investexp": "Limited", "investport": "Conservative"}}'
+  - '{"autopay": "Yes", "depostat": "No", "mobileuse": "High", "onlineuse": "Medium",
+    "invcluster": {"tradeact": null, "investexp": "Limited", "investport": "Moderate"}}'
+  - '{"autopay": "Yes", "depostat": "No", "mobileuse": "Low", "onlineuse": "Medium",
+    "invcluster": {"tradeact": null, "investexp": null, "investport": null}}'
+  - '{"autopay": "Yes", "depostat": "No", "mobileuse": "Medium", "onlineuse": "High",
+    "invcluster": {"tradeact": null, "investexp": "Extensive", "investport": "Aggressive"}}'
+  - '{"autopay": "Yes", "depostat": "No", "mobileuse": "Medium", "onlineuse": "Low",
+    "invcluster": {"tradeact": "Medium", "investexp": "Limited", "investport": "Moderate"}}'
+  - '{"autopay": "Yes", "depostat": "Yes", "mobileuse": "High", "onlineuse": "Medium",
+    "invcluster": {"tradeact": "Medium", "investexp": "Moderate", "investport": "Aggressive"}}'
+  - '{"autopay": "Yes", "depostat": "Yes", "mobileuse": "High", "onlineuse": "Medium",
+    "invcluster": {"tradeact": "Medium", "investexp": null, "investport": "Moderate"}}'
+  - '{"autopay": "Yes", "depostat": "Yes", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": null, "investexp": "Extensive", "investport": "Moderate"}}'
+  - '{"autopay": "Yes", "depostat": "Yes", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": null, "investexp": "Limited", "investport": null}}'
+  - '{"autopay": "Yes", "depostat": "Yes", "mobileuse": "Low", "onlineuse": "Low",
+    "invcluster": {"tradeact": null, "investexp": "Moderate", "investport": null}}'
+  - '{"autopay": "Yes", "depostat": "Yes", "mobileuse": "Low", "onlineuse": "Medium",
+    "invcluster": {"tradeact": "Low", "investexp": "Limited", "investport": "Conservative"}}'
+  - '{"autopay": "Yes", "depostat": "Yes", "mobileuse": "Low", "onlineuse": "Medium",
+    "invcluster": {"tradeact": "Low", "investexp": null, "investport": "Moderate"}}'
+  - '{"autopay": "Yes", "depostat": "Yes", "mobileuse": "Medium", "onlineuse": "Low",
+    "invcluster": {"tradeact": "Medium", "investexp": "Extensive", "investport": null}}'
+  - '{"autopay": "Yes", "depostat": "Yes", "mobileuse": "Medium", "onlineuse": "Low",
+    "invcluster": {"tradeact": "Medium", "investexp": "Moderate", "investport": "Aggressive"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "High", "onlineuse": "High",
+    "invcluster": {"tradeact": "High", "investexp": null, "investport": null}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "High", "onlineuse": "High",
+    "invcluster": {"tradeact": "Low", "investexp": null, "investport": "Conservative"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "High", "onlineuse": "High",
+    "invcluster": {"tradeact": null, "investexp": "Limited", "investport": "Aggressive"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "High", "onlineuse": "High",
+    "invcluster": {"tradeact": null, "investexp": "Limited", "investport": "Moderate"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "High", "onlineuse": "High",
+    "invcluster": {"tradeact": null, "investexp": null, "investport": "Conservative"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "High", "onlineuse": "Low",
+    "invcluster": {"tradeact": "Low", "investexp": "Extensive", "investport": "Aggressive"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "High", "onlineuse": "Low",
+    "invcluster": {"tradeact": null, "investexp": "Extensive", "investport": "Moderate"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "High", "onlineuse": "Low",
+    "invcluster": {"tradeact": null, "investexp": "Moderate", "investport": "Conservative"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "High", "onlineuse": "Medium",
+    "invcluster": {"tradeact": "High", "investexp": "Limited", "investport": null}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "High", "onlineuse": "Medium",
+    "invcluster": {"tradeact": "High", "investexp": "Moderate", "investport": "Conservative"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "High", "onlineuse": "Medium",
+    "invcluster": {"tradeact": null, "investexp": "Limited", "investport": "Conservative"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": "High", "investexp": "Extensive", "investport": "Moderate"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": "Low", "investexp": "Extensive", "investport": null}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": "Low", "investexp": "Moderate", "investport": "Moderate"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": "Medium", "investexp": "Extensive", "investport": "Conservative"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "High",
+    "invcluster": {"tradeact": "Medium", "investexp": null, "investport": "Moderate"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "Low", "invcluster":
+    {"tradeact": "High", "investexp": "Limited", "investport": "Moderate"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "Low", "invcluster":
+    {"tradeact": "Low", "investexp": "Limited", "investport": "Conservative"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "Low", "invcluster":
+    {"tradeact": "Low", "investexp": "Limited", "investport": "Moderate"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "Low", "invcluster":
+    {"tradeact": "Low", "investexp": null, "investport": "Conservative"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "Low", "invcluster":
+    {"tradeact": null, "investexp": "Moderate", "investport": "Aggressive"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "Medium",
+    "invcluster": {"tradeact": "High", "investexp": "Moderate", "investport": "Moderate"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "Medium",
+    "invcluster": {"tradeact": "Low", "investexp": "Moderate", "investport": "Moderate"}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "Medium",
+    "invcluster": {"tradeact": null, "investexp": "Limited", "investport": null}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "Medium",
+    "invcluster": {"tradeact": null, "investexp": "Moderate", "investport": null}}'
+  - '{"autopay": "No", "depostat": "No", "mobileuse": "Low", "onlineuse": "Medium",
+    "invcluster": {"tradeact": null, "investexp": null, "investport": "Moderate"}}'
+  distinct_count: 810
+- name: chaninvdatablock__onlineuse
+  sql: JSON_EXTRACT(chaninvdatablock, '$.onlineuse')
+  type: TEXT
+  primary_key: false
+  description: An enum (OnlineBankingUsage_enum) describing online banking use (High,
+    Medium, Low).
+  label: Onlineuse
+  hidden: false
+  meta:
+    derived_from:
+      json_col: chaninvdatablock
+      path:
+      - onlineuse
+- name: chaninvdatablock__mobileuse
+  sql: JSON_EXTRACT(chaninvdatablock, '$.mobileuse')
+  type: TEXT
+  primary_key: false
+  description: An enum (MobileBankingUsage_enum) describing mobile banking usage (High,
+    Medium, Low).
+  label: Mobileuse
+  hidden: false
+  meta:
+    derived_from:
+      json_col: chaninvdatablock
+      path:
+      - mobileuse
+- name: chaninvdatablock__autopay
+  sql: JSON_EXTRACT(chaninvdatablock, '$.autopay')
+  type: TEXT
+  primary_key: false
+  description: An enum (YesNo_enum) indicating if automatic payments are active (Yes,
+    No).
+  label: Autopay
+  hidden: false
+  meta:
+    derived_from:
+      json_col: chaninvdatablock
+      path:
+      - autopay
+- name: chaninvdatablock__depostat
+  sql: JSON_EXTRACT(chaninvdatablock, '$.depostat')
+  type: TEXT
+  primary_key: false
+  description: An enum (YesNo_enum) indicating direct deposit usage (Yes, No).
+  label: Depostat
+  hidden: false
+  meta:
+    derived_from:
+      json_col: chaninvdatablock
+      path:
+      - depostat
+- name: chaninvdatablock__invcluster__investport
+  sql: JSON_EXTRACT(chaninvdatablock, '$.invcluster.investport')
+  type: TEXT
+  primary_key: false
+  description: An enum (InvestmentPortfolio_enum) labeling investment portfolio style
+    (Conservative, Moderate, Aggressive).
+  label: Investport
+  hidden: false
+  meta:
+    derived_from:
+      json_col: chaninvdatablock
+      path:
+      - invcluster
+      - investport
+- name: chaninvdatablock__invcluster__investexp
+  sql: JSON_EXTRACT(chaninvdatablock, '$.invcluster.investexp')
+  type: TEXT
+  primary_key: false
+  description: An enum (InvestmentExperience_enum) capturing investing experience
+    (Extensive, Moderate, Limited).
+  label: Investexp
+  hidden: false
+  meta:
+    derived_from:
+      json_col: chaninvdatablock
+      path:
+      - invcluster
+      - investexp
+- name: chaninvdatablock__invcluster__tradeact
+  sql: JSON_EXTRACT(chaninvdatablock, '$.invcluster.tradeact')
+  type: TEXT
+  primary_key: false
+  description: An enum (TradingActivity_enum) describing trading activity (High, Medium,
+    Low).
+  label: Tradeact
+  hidden: false
+  meta:
+    derived_from:
+      json_col: chaninvdatablock
+      path:
+      - invcluster
+      - tradeact
+measures: []
+aggregations: []
+joins:
+- target_model: expenses_and_assets
+  join_pairs:
+  - - bankexpref
+    - expemplref
+  join_type: left
+filters: []
+hidden: false

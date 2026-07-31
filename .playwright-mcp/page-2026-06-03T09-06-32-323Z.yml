@@ -1,0 +1,275 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - link "JetBrains Logo" [ref=e6] [cursor=pointer]:
+      - /url: /
+      - img "JetBrains Logo" [ref=e7]
+    - generic [ref=e8]:
+      - link "Help" [ref=e9] [cursor=pointer]:
+        - /url: https://sales.jetbrains.com/hc/en-gb
+        - img "Help" [ref=e10]
+      - link "Cart" [ref=e11] [cursor=pointer]:
+        - /url: https://www.jetbrains.com/shop/cart/empty
+        - img "Cart" [ref=e12]
+      - button "Account" [ref=e13] [cursor=pointer]:
+        - img "Account" [ref=e14]
+  - generic [ref=e15]:
+    - generic [ref=e17]:
+      - generic [ref=e19]:
+        - link "Egor Kraev" [ref=e20] [cursor=pointer]:
+          - /url: /licenses/assets
+        - strong [ref=e22]: Transactions / Invoices
+        - link "JetBrains AI Settings" [ref=e23] [cursor=pointer]:
+          - /url: /licenses/ai-settings
+        - link "Notifications" [ref=e24] [cursor=pointer]:
+          - /url: /licenses/notifications
+        - link "Payment Methods" [ref=e25] [cursor=pointer]:
+          - /url: /licenses/tokens
+      - generic [ref=e28]:
+        - heading "9 Transactions / Invoices" [level=1] [ref=e29]
+        - button " Export transactions into .xlsx" [ref=e31] [cursor=pointer]:
+          - generic [ref=e33]: 
+          - text: Export transactions into .xlsx
+        - generic [ref=e35]:
+          - generic [ref=e36]:
+            - generic [ref=e39]:
+              - searchbox [active] [ref=e40]
+              - text: 
+            - text: . .
+          - table [ref=e43]:
+            - rowgroup [ref=e44]:
+              - 'row "Order ref. #: activate to sort column ascending Date: activate to sort column ascending Contact: activate to sort column ascending Items Payment details Invoice" [ref=e45]':
+                - 'columnheader "Order ref. #: activate to sort column ascending" [ref=e46] [cursor=pointer]': " Order ref. #"
+                - 'columnheader "Date: activate to sort column ascending" [ref=e47] [cursor=pointer]':  Date
+                - 'columnheader "Contact: activate to sort column ascending" [ref=e48] [cursor=pointer]':  Contact
+                - columnheader "Items" [ref=e49]
+                - columnheader "Payment details" [ref=e50]
+                - columnheader "Invoice" [ref=e51]
+                - columnheader [ref=e52]
+            - rowgroup [ref=e53]:
+              - row "R33324962 May 17, 2026 Egor Kraev egor.kraev@gmail.com 1 × PyCharm Pro - personal annual subscription with 20% continuity discount €94.05 Credit Card  CH2026-15824 Paid" [ref=e54]:
+                - cell "R33324962" [ref=e55]:
+                  - link "R33324962" [ref=e58] [cursor=pointer]:
+                    - /url: /orders/view/74974634
+                - cell "May 17, 2026" [ref=e59]
+                - cell "Egor Kraev egor.kraev@gmail.com" [ref=e60]:
+                  - generic [ref=e61]: Egor Kraev
+                  - link "egor.kraev@gmail.com" [ref=e64] [cursor=pointer]:
+                    - /url: mailto:egor.kraev@gmail.com
+                - cell "1 × PyCharm Pro - personal annual subscription with 20% continuity discount" [ref=e65]:
+                  - generic [ref=e66]:
+                    - generic [ref=e67]: 1 ×
+                    - generic [ref=e68]: PyCharm Pro - personal annual subscription with 20% continuity discount
+                - cell "€94.05 Credit Card" [ref=e69]:
+                  - generic [ref=e70]:
+                    - generic [ref=e71]: €94.05
+                    - generic [ref=e72]: Credit Card
+                - cell " CH2026-15824 Paid" [ref=e73]:
+                  - generic [ref=e74]:
+                    - link " CH2026-15824" [ref=e76] [cursor=pointer]:
+                      - /url: /invoice/sentpdf?code=73bjhmtn4mh1mw9aof2j2l8a9
+                      - generic [ref=e78]: 
+                      - text: CH2026-15824
+                    - generic [ref=e80]: Paid
+                - cell [ref=e81]
+              - row "R32446751 Apr 20, 2026 Egor Kraev egor.kraev@gmail.com 1 × WebStorm - personal non-commercial license €0.00" [ref=e82]:
+                - cell "R32446751" [ref=e83]:
+                  - link "R32446751" [ref=e86] [cursor=pointer]:
+                    - /url: /orders/view/73612854
+                - cell "Apr 20, 2026" [ref=e87]
+                - cell "Egor Kraev egor.kraev@gmail.com" [ref=e88]:
+                  - generic [ref=e89]: Egor Kraev
+                  - link "egor.kraev@gmail.com" [ref=e92] [cursor=pointer]:
+                    - /url: mailto:egor.kraev@gmail.com
+                - cell "1 × WebStorm - personal non-commercial license" [ref=e93]:
+                  - generic [ref=e94]:
+                    - generic [ref=e95]: 1 ×
+                    - generic [ref=e96]: WebStorm - personal non-commercial license
+                - cell "€0.00" [ref=e97]:
+                  - generic [ref=e99]: €0.00
+                - cell [ref=e100]
+                - cell [ref=e101]
+              - row "R27138876 Jun 02, 2025 Egor Kraev egor.kraev@gmail.com 1 × WebStorm - personal annual subscription €74.59 Credit Card  CH2025-18912 Paid" [ref=e102]:
+                - cell "R27138876" [ref=e103]:
+                  - link "R27138876" [ref=e106] [cursor=pointer]:
+                    - /url: /orders/view/62988723
+                - cell "Jun 02, 2025" [ref=e107]
+                - cell "Egor Kraev egor.kraev@gmail.com" [ref=e108]:
+                  - generic [ref=e109]: Egor Kraev
+                  - link "egor.kraev@gmail.com" [ref=e112] [cursor=pointer]:
+                    - /url: mailto:egor.kraev@gmail.com
+                - cell "1 × WebStorm - personal annual subscription" [ref=e113]:
+                  - generic [ref=e114]:
+                    - generic [ref=e115]: 1 ×
+                    - generic [ref=e116]: WebStorm - personal annual subscription
+                - cell "€74.59 Credit Card" [ref=e117]:
+                  - generic [ref=e118]:
+                    - generic [ref=e119]: €74.59
+                    - generic [ref=e120]: Credit Card
+                - cell " CH2025-18912 Paid" [ref=e121]:
+                  - generic [ref=e122]:
+                    - link " CH2025-18912" [ref=e124] [cursor=pointer]:
+                      - /url: /invoice/sentpdf?code=1spnp0kiqmez0abldn215sn36
+                      - generic [ref=e126]: 
+                      - text: CH2025-18912
+                    - generic [ref=e128]: Paid
+                - cell [ref=e129]
+              - row "R26841549 May 18, 2025 Egor Kraev egor.kraev@gmail.com 1 × PyCharm Pro - personal annual subscription €107.02 Credit Card Failed  €107.02 Credit Card Failed  €107.02 Credit Card  CH2025-17119 Paid" [ref=e130]:
+                - cell "R26841549" [ref=e131]:
+                  - link "R26841549" [ref=e134] [cursor=pointer]:
+                    - /url: /orders/view/62413502
+                - cell "May 18, 2025" [ref=e135]
+                - cell "Egor Kraev egor.kraev@gmail.com" [ref=e136]:
+                  - generic [ref=e137]: Egor Kraev
+                  - link "egor.kraev@gmail.com" [ref=e140] [cursor=pointer]:
+                    - /url: mailto:egor.kraev@gmail.com
+                - cell "1 × PyCharm Pro - personal annual subscription" [ref=e141]:
+                  - generic [ref=e142]:
+                    - generic [ref=e143]: 1 ×
+                    - generic [ref=e144]: PyCharm Pro - personal annual subscription
+                - cell "€107.02 Credit Card Failed  €107.02 Credit Card Failed  €107.02 Credit Card" [ref=e145]:
+                  - generic [ref=e146]:
+                    - generic [ref=e147]: €107.02
+                    - generic [ref=e148]: Credit Card
+                  - generic [ref=e149]:
+                    - generic [ref=e151]:
+                      - text: Failed
+                      - generic "Not supported" [ref=e152] [cursor=pointer]:
+                        - generic [ref=e153]: 
+                    - generic [ref=e154]: €107.02
+                    - generic [ref=e155]: Credit Card
+                  - generic [ref=e156]:
+                    - generic [ref=e158]:
+                      - text: Failed
+                      - generic "Not supported" [ref=e159] [cursor=pointer]:
+                        - generic [ref=e160]: 
+                    - generic [ref=e161]: €107.02
+                    - generic [ref=e162]: Credit Card
+                - cell " CH2025-17119 Paid" [ref=e163]:
+                  - generic [ref=e164]:
+                    - link " CH2025-17119" [ref=e166] [cursor=pointer]:
+                      - /url: /invoice/sentpdf?code=c0vyfp5kurd8oqe9wl97gwblz
+                      - generic [ref=e168]: 
+                      - text: CH2025-17119
+                    - generic [ref=e170]: Paid
+                - cell [ref=e171]
+              - row "R26255362 Apr 21, 2025 Egor Kraev egor.kraev@gmail.com 1 × WebStorm - personal non-commercial license £0.00" [ref=e172]:
+                - cell "R26255362" [ref=e173]:
+                  - link "R26255362" [ref=e176] [cursor=pointer]:
+                    - /url: /orders/view/61352613
+                - cell "Apr 21, 2025" [ref=e177]
+                - cell "Egor Kraev egor.kraev@gmail.com" [ref=e178]:
+                  - generic [ref=e179]: Egor Kraev
+                  - link "egor.kraev@gmail.com" [ref=e182] [cursor=pointer]:
+                    - /url: mailto:egor.kraev@gmail.com
+                - cell "1 × WebStorm - personal non-commercial license" [ref=e183]:
+                  - generic [ref=e184]:
+                    - generic [ref=e185]: 1 ×
+                    - generic [ref=e186]: WebStorm - personal non-commercial license
+                - cell "£0.00" [ref=e187]:
+                  - generic [ref=e189]: £0.00
+                - cell [ref=e190]
+                - cell [ref=e191]
+              - row "R25897613 Apr 04, 2025 Egor Kraev egor.kraev@gmail.com 1 × JetBrains AI Pro - trial £0.00" [ref=e192]:
+                - cell "R25897613" [ref=e193]:
+                  - link "R25897613" [ref=e196] [cursor=pointer]:
+                    - /url: /orders/view/60684636
+                - cell "Apr 04, 2025" [ref=e197]
+                - cell "Egor Kraev egor.kraev@gmail.com" [ref=e198]:
+                  - generic [ref=e199]: Egor Kraev
+                  - link "egor.kraev@gmail.com" [ref=e202] [cursor=pointer]:
+                    - /url: mailto:egor.kraev@gmail.com
+                - cell "1 × JetBrains AI Pro - trial" [ref=e203]:
+                  - generic [ref=e204]:
+                    - generic [ref=e205]: 1 ×
+                    - generic [ref=e206]: JetBrains AI Pro - trial
+                - cell "£0.00" [ref=e207]:
+                  - generic [ref=e209]: £0.00
+                - cell [ref=e210]
+                - cell [ref=e211]
+              - row "R8189872 Feb 19, 2022 Egor Kraev egor.kraev@gmail.com 1 × CLion - personal annual subscription with 40% continuity discount £49.20 Credit Card  INVJBD613725 Paid" [ref=e212]:
+                - cell "R8189872" [ref=e213]:
+                  - link "R8189872" [ref=e216] [cursor=pointer]:
+                    - /url: /orders/view/26884356
+                - cell "Feb 19, 2022" [ref=e217]
+                - cell "Egor Kraev egor.kraev@gmail.com" [ref=e218]:
+                  - generic [ref=e219]: Egor Kraev
+                  - link "egor.kraev@gmail.com" [ref=e222] [cursor=pointer]:
+                    - /url: mailto:egor.kraev@gmail.com
+                - cell "1 × CLion - personal annual subscription with 40% continuity discount" [ref=e223]:
+                  - generic [ref=e224]:
+                    - generic [ref=e225]: 1 ×
+                    - generic [ref=e226]: CLion - personal annual subscription with 40% continuity discount
+                - cell "£49.20 Credit Card" [ref=e227]:
+                  - generic [ref=e228]:
+                    - generic [ref=e229]: £49.20
+                    - generic [ref=e230]: Credit Card
+                - cell " INVJBD613725 Paid" [ref=e231]:
+                  - generic [ref=e232]:
+                    - link " INVJBD613725" [ref=e234] [cursor=pointer]:
+                      - /url: /invoice/sentpdf?code=ekms4v9wm0b25030by06gzo50
+                      - generic [ref=e236]: 
+                      - text: INVJBD613725
+                    - generic [ref=e238]: Paid
+                - cell [ref=e239]
+              - row "R4977766 Feb 20, 2021 Egor Kraev egor.kraev@gmail.com 1 × CLion - personal annual subscription with 20% continuity discount £66.00 Credit Card  INVJBD301534 Paid" [ref=e240]:
+                - cell "R4977766" [ref=e241]:
+                  - link "R4977766" [ref=e244] [cursor=pointer]:
+                    - /url: /orders/view/19540420
+                - cell "Feb 20, 2021" [ref=e245]
+                - cell "Egor Kraev egor.kraev@gmail.com" [ref=e246]:
+                  - generic [ref=e247]: Egor Kraev
+                  - link "egor.kraev@gmail.com" [ref=e250] [cursor=pointer]:
+                    - /url: mailto:egor.kraev@gmail.com
+                - cell "1 × CLion - personal annual subscription with 20% continuity discount" [ref=e251]:
+                  - generic [ref=e252]:
+                    - generic [ref=e253]: 1 ×
+                    - generic [ref=e254]: CLion - personal annual subscription with 20% continuity discount
+                - cell "£66.00 Credit Card" [ref=e255]:
+                  - generic [ref=e256]:
+                    - generic [ref=e257]: £66.00
+                    - generic [ref=e258]: Credit Card
+                - cell " INVJBD301534 Paid" [ref=e259]:
+                  - generic [ref=e260]:
+                    - link " INVJBD301534" [ref=e262] [cursor=pointer]:
+                      - /url: /invoice/sentpdf?code=atrpibdt8uqv6mj214z3mbjvm
+                      - generic [ref=e264]: 
+                      - text: INVJBD301534
+                    - generic [ref=e266]: Paid
+                - cell [ref=e267]
+              - row "R3513828 Feb 20, 2020 Anonymized 1 × CLion - personal annual subscription £82.80 Credit Card  INVCZ2610338 Paid" [ref=e268]:
+                - cell "R3513828" [ref=e269]:
+                  - link "R3513828" [ref=e272] [cursor=pointer]:
+                    - /url: /orders/view/14523459
+                - cell "Feb 20, 2020" [ref=e273]
+                - cell "Anonymized" [ref=e274]:
+                  - emphasis [ref=e275]: Anonymized
+                - cell "1 × CLion - personal annual subscription" [ref=e276]:
+                  - generic [ref=e277]:
+                    - generic [ref=e278]: 1 ×
+                    - generic [ref=e279]: CLion - personal annual subscription
+                - cell "£82.80 Credit Card" [ref=e280]:
+                  - generic [ref=e281]:
+                    - generic [ref=e282]: £82.80
+                    - generic [ref=e283]: Credit Card
+                - cell " INVCZ2610338 Paid" [ref=e284]:
+                  - generic [ref=e285]:
+                    - link " INVCZ2610338" [ref=e287] [cursor=pointer]:
+                      - /url: /invoice/sentpdf?code=dbkhxgxmapi5206pcu222k1l9
+                      - generic [ref=e289]: 
+                      - text: INVCZ2610338
+                    - generic [ref=e291]: Paid
+                - cell [ref=e292]
+    - text: . .
+  - generic [ref=e294]:
+    - generic [ref=e295]:
+      - generic [ref=e296]: Copyright © 2000–2026 JetBrains s.r.o.
+      - generic [ref=e297]:
+        - link "Help" [ref=e298] [cursor=pointer]:
+          - /url: https://sales.jetbrains.com/hc/en-gb
+        - link "Support" [ref=e299] [cursor=pointer]:
+          - /url: mailto:support@jetbrains.com?subject=JetBrains Account Support
+        - link "JetBrains Privacy Policy" [ref=e300] [cursor=pointer]:
+          - /url: https://www.jetbrains.com/legal/docs/privacy/privacy
+        - link "JetBrains Account Agreement" [ref=e301] [cursor=pointer]:
+          - /url: https://www.jetbrains.com/legal/docs/agreements/jetbrains_account
+    - generic [ref=e302]: "Build #2026.06-4295"

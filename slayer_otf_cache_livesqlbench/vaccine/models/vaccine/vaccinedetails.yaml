@@ -1,0 +1,408 @@
+version: 7
+name: vaccinedetails
+sql_table: vaccinedetails
+query_variables: {}
+data_source: vaccine
+columns:
+- name: vacregistry
+  sql: vacregistry
+  type: INT
+  primary_key: true
+  description: A SERIAL primary key that uniquely identifies each vaccine detail record.
+  hidden: false
+  format:
+    type: integer
+- name: vacvariant
+  sql: vacvariant
+  type: TEXT
+  primary_key: false
+  description: "A VARCHAR(50) naming the vaccine type or variant (e.g., \u2018Viral\
+    \ Vector\u2019, \u2018mRNA\u2019, \u2018Inactivated\u2019, \u2018Protein Subunit\u2019\
+    )."
+  hidden: false
+  sampled: Protein Subunit, Inactivated, Viral Vector, mRNA
+  sampled_values:
+  - Protein Subunit
+  - Inactivated
+  - Viral Vector
+  - mRNA
+  distinct_count: 4
+- name: mfgsource
+  sql: mfgsource
+  type: TEXT
+  primary_key: false
+  description: A TEXT field describing the manufacturer or source information of the
+    vaccine.
+  hidden: false
+  sampled: Moderna, Sinovac, AstraZeneca, BioNTech, Novavax
+  sampled_values:
+  - Moderna
+  - Sinovac
+  - AstraZeneca
+  - BioNTech
+  - Novavax
+  distinct_count: 5
+- name: batchlabel
+  sql: batchlabel
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(50) specifying the batch or lot number label.
+  hidden: false
+  sampled: B26918, B44950, B81187, B81238, B91127, B10050, B10068, B10242, B10295,
+    B10298, B10307, B10390, B10434, B10489, B10586, B10591, B10642, B11223, B11495,
+    B11504 ... (895 distinct)
+  sampled_values:
+  - B26918
+  - B44950
+  - B81187
+  - B81238
+  - B91127
+  - B10050
+  - B10068
+  - B10242
+  - B10295
+  - B10298
+  - B10307
+  - B10390
+  - B10434
+  - B10489
+  - B10586
+  - B10591
+  - B10642
+  - B11223
+  - B11495
+  - B11504
+  - B11557
+  - B11785
+  - B11816
+  - B12151
+  - B12335
+  - B12457
+  - B12492
+  - B12532
+  - B12827
+  - B12988
+  - B13055
+  - B13094
+  - B13282
+  - B13541
+  - B13883
+  - B13968
+  - B13987
+  - B13993
+  - B14101
+  - B14186
+  - B14203
+  - B14250
+  - B14296
+  - B14524
+  - B14572
+  - B14635
+  - B14726
+  - B14904
+  - B15148
+  - B15160
+  distinct_count: 895
+- name: prodday
+  sql: prodday
+  type: DATE
+  primary_key: false
+  description: A DATE indicating the production/manufacture date of the vaccine batch.
+  hidden: false
+  sampled: 2024-10-18, 2024-12-09, 2024-12-22, 2024-11-04, 2024-12-08, 2025-01-15,
+    2024-09-17, 2024-09-21, 2024-09-22, 2024-11-15, 2024-12-31, 2025-01-09, 2024-09-08,
+    2024-10-22, 2024-11-18, 2024-12-26, 2025-01-17, 2024-09-03, 2024-09-09, 2024-09-14
+    ... (150 distinct)
+  sampled_values:
+  - '2024-10-18'
+  - '2024-12-09'
+  - '2024-12-22'
+  - '2024-11-04'
+  - '2024-12-08'
+  - '2025-01-15'
+  - '2024-09-17'
+  - '2024-09-21'
+  - '2024-09-22'
+  - '2024-11-15'
+  - '2024-12-31'
+  - '2025-01-09'
+  - '2024-09-08'
+  - '2024-10-22'
+  - '2024-11-18'
+  - '2024-12-26'
+  - '2025-01-17'
+  - '2024-09-03'
+  - '2024-09-09'
+  - '2024-09-14'
+  - '2024-09-23'
+  - '2024-10-05'
+  - '2024-10-06'
+  - '2024-10-17'
+  - '2024-10-19'
+  - '2024-10-25'
+  - '2024-10-29'
+  - '2024-11-14'
+  - '2024-11-27'
+  - '2024-12-01'
+  - '2024-12-07'
+  - '2024-12-13'
+  - '2024-12-18'
+  - '2025-01-06'
+  - '2025-01-08'
+  - '2025-01-11'
+  - '2024-09-05'
+  - '2024-09-06'
+  - '2024-09-07'
+  - '2024-09-10'
+  - '2024-09-11'
+  - '2024-09-12'
+  - '2024-09-16'
+  - '2024-10-03'
+  - '2024-10-07'
+  - '2024-10-10'
+  - '2024-10-26'
+  - '2024-11-01'
+  - '2024-11-06'
+  - '2024-11-07'
+  distinct_count: 150
+- name: expireday
+  sql: expireday
+  type: DATE
+  primary_key: false
+  description: "A DATE specifying the vaccine\u2019s expiration date."
+  hidden: false
+  sampled: 2025-12-14, 2025-11-26, 2026-05-19, 2026-01-29, 2026-02-18, 2026-06-03,
+    2026-08-21, 2026-09-14, 2026-12-12, 2025-08-18, 2025-08-25, 2025-09-15, 2025-09-20,
+    2025-10-02, 2025-10-15, 2025-10-28, 2025-10-31, 2025-11-03, 2025-11-06, 2025-12-07
+    ... (447 distinct)
+  sampled_values:
+  - '2025-12-14'
+  - '2025-11-26'
+  - '2026-05-19'
+  - '2026-01-29'
+  - '2026-02-18'
+  - '2026-06-03'
+  - '2026-08-21'
+  - '2026-09-14'
+  - '2026-12-12'
+  - '2025-08-18'
+  - '2025-08-25'
+  - '2025-09-15'
+  - '2025-09-20'
+  - '2025-10-02'
+  - '2025-10-15'
+  - '2025-10-28'
+  - '2025-10-31'
+  - '2025-11-03'
+  - '2025-11-06'
+  - '2025-12-07'
+  - '2025-12-08'
+  - '2025-12-17'
+  - '2025-12-24'
+  - '2025-12-28'
+  - '2025-12-30'
+  - '2026-01-07'
+  - '2026-01-12'
+  - '2026-02-02'
+  - '2026-02-12'
+  - '2026-03-26'
+  - '2026-05-04'
+  - '2026-05-17'
+  - '2026-05-22'
+  - '2026-06-08'
+  - '2026-06-11'
+  - '2026-06-12'
+  - '2026-06-30'
+  - '2026-07-02'
+  - '2026-09-03'
+  - '2026-09-09'
+  - '2026-09-12'
+  - '2026-10-13'
+  - '2026-11-01'
+  - '2026-12-03'
+  - '2026-12-23'
+  - '2026-12-24'
+  - '2027-01-15'
+  - '2027-01-21'
+  - '2025-09-01'
+  - '2025-09-03'
+  distinct_count: 447
+- name: lotmeasure
+  sql: lotmeasure
+  type: INT
+  primary_key: false
+  description: A BIGINT representing the quantity or measure of this vaccine lot (e.g.,
+    total units produced).
+  hidden: false
+  format:
+    type: integer
+  sampled: 1051 .. 99864
+- name: vialtally
+  sql: vialtally
+  type: INT
+  primary_key: false
+  description: A SMALLINT counting how many vials are included in this particular
+    batch.
+  hidden: false
+  format:
+    type: integer
+  sampled: 110 .. 9990
+- name: dosepervial
+  sql: dosepervial
+  type: INT
+  primary_key: false
+  description: A SMALLINT indicating the number of individual doses contained in each
+    vial.
+  hidden: false
+  format:
+    type: integer
+  sampled: 1 .. 10
+- name: dosetotal
+  sql: dosetotal
+  type: INT
+  primary_key: false
+  description: "An INTEGER summing the total doses in this record (VialTally \xD7\
+    \ DosePerVial)."
+  hidden: false
+  format:
+    type: integer
+  sampled: 154 .. 99810
+- name: shipinject
+  sql: shipinject
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) foreign key referencing Shipments(ShipmentRegistry),
+    tying this vaccine detail to a shipment.
+  hidden: false
+  sampled: VS101443, VS101896, VS103453, VS107213, VS107478, VS108663, VS109470, VS110349,
+    VS111220, VS113526, VS116114, VS120493, VS121615, VS122057, VS122283, VS124761,
+    VS124785, VS125521, VS126219, VS126297 ... (900 distinct)
+  sampled_values:
+  - VS101443
+  - VS101896
+  - VS103453
+  - VS107213
+  - VS107478
+  - VS108663
+  - VS109470
+  - VS110349
+  - VS111220
+  - VS113526
+  - VS116114
+  - VS120493
+  - VS121615
+  - VS122057
+  - VS122283
+  - VS124761
+  - VS124785
+  - VS125521
+  - VS126219
+  - VS126297
+  - VS127092
+  - VS128180
+  - VS128465
+  - VS129414
+  - VS131248
+  - VS131616
+  - VS133967
+  - VS135208
+  - VS135323
+  - VS136255
+  - VS140768
+  - VS141136
+  - VS141866
+  - VS143336
+  - VS143586
+  - VS144344
+  - VS144593
+  - VS145015
+  - VS147256
+  - VS147622
+  - VS148137
+  - VS149025
+  - VS150281
+  - VS150918
+  - VS151303
+  - VS151690
+  - VS152703
+  - VS153208
+  - VS153333
+  - VS154617
+  distinct_count: 900
+- name: containvac
+  sql: containvac
+  type: TEXT
+  primary_key: false
+  description: A VARCHAR(20) foreign key referencing Container(ContainRegistry), linking
+    vaccine details to a specific container.
+  hidden: false
+  sampled: C10354, C10487, C10510, C10514, C10643, C10909, C11016, C11046, C11266,
+    C11279, C11412, C11511, C11519, C11543, C11718, C11805, C11949, C11970, C12122,
+    C12271 ... (900 distinct)
+  sampled_values:
+  - C10354
+  - C10487
+  - C10510
+  - C10514
+  - C10643
+  - C10909
+  - C11016
+  - C11046
+  - C11266
+  - C11279
+  - C11412
+  - C11511
+  - C11519
+  - C11543
+  - C11718
+  - C11805
+  - C11949
+  - C11970
+  - C12122
+  - C12271
+  - C12283
+  - C12384
+  - C12393
+  - C12534
+  - C12680
+  - C12710
+  - C12718
+  - C12750
+  - C12789
+  - C12921
+  - C12953
+  - C13057
+  - C13064
+  - C13212
+  - C13246
+  - C13337
+  - C13598
+  - C13623
+  - C13653
+  - C13824
+  - C13869
+  - C13929
+  - C13958
+  - C14028
+  - C14038
+  - C14075
+  - C14208
+  - C14365
+  - C14400
+  - C14425
+  distinct_count: 900
+measures: []
+aggregations: []
+joins:
+- target_model: container
+  join_pairs:
+  - - containvac
+    - containregistry
+  join_type: left
+- target_model: shipments
+  join_pairs:
+  - - shipinject
+    - shipmentregistry
+  join_type: left
+filters: []
+hidden: false
