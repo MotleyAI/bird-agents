@@ -13,6 +13,7 @@ The harness calls ``run_task()`` which drives the SDK loop and returns an
 """
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import json
 import logging
@@ -47,7 +48,9 @@ from bird_interact_agents.harness import (
 )
 from bird_interact_agents.model_string import is_anthropic, native_model_id
 from bird_interact_agents.provider_registry import get_provider
+from bird_interact_agents.usage import TokenUsage
 from bird_interact_agents.agents.annotator.prompts import build_system_prompt
+from bird_interact_agents.agents.claude_sdk.agent import SdkUsageTracker
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
     hermetic_claude_sdk_session,
 )
@@ -66,6 +69,10 @@ class AnnotatorResult(BaseModel):
     task_annotation: Optional[TaskAnnotation] = None
     audited_gold_variants: list[dict] = []
     usage: dict = {}
+    # DEV-1657: serialized SDK message stream, captured on EVERY outcome
+    # (success or error) so a never-submitted run can be diagnosed. Empty when
+    # the SDK session never started (e.g. the model-admission gate rejected it).
+    trajectory: list[dict] = []
     duration_s: float = 0.0
     error: Optional[str] = None
 
@@ -570,6 +577,26 @@ def _fill_deterministic_fields(
 
 
 # ---------------------------------------------------------------------------
+# Forced-submit nudge (DEV-1657)
+# ---------------------------------------------------------------------------
+
+# Turns held back from the exploration budget for a single "submit now" round.
+# A weaker model (e.g. doubleword/zai-org/GLM-5.2-FP8) ran the full 60-turn cap
+# twice without ever volunteering a submit_annotation call; reserving a slice
+# guarantees it gets one explicit prompt to submit before the task is failed.
+FORCE_SUBMIT_RESERVE_TURNS = 8
+
+_FORCE_SUBMIT_NUDGE = (
+    "You have used your exploration budget for this task and only a few turns "
+    "remain. STOP investigating now and call the `submit_annotation` tool "
+    "immediately with your best current assessment. A task with no submitted "
+    "annotation counts as a total failure, so submit your best-effort "
+    "TaskAnnotation even if you are not fully certain. Do not call any other "
+    "tool — call `submit_annotation` now."
+)
+
+
+# ---------------------------------------------------------------------------
 # run_task
 # ---------------------------------------------------------------------------
 
@@ -649,7 +676,24 @@ async def run_task(
             model=native_model_id(model),
         )
 
+    # DEV-1657: hold back a slice of the turn budget for one forced-submit
+    # nudge. For tiny caps (tests) the reserve collapses to 0 so the single-pass
+    # behaviour is unchanged.
+    reserve = min(FORCE_SUBMIT_RESERVE_TURNS, cap // 2) if cap > 2 else 0
+    explore_cap = cap - reserve
+
+    # DEV-1657: capture usage + the serialized message stream so a failed /
+    # never-submitted run is diagnosable (previously both were discarded, which
+    # is why a doomed GLM-5.2 annotator run showed 0 tokens and no trajectory).
+    # A fresh SdkUsageTracker is created PER receive_response() cycle (the
+    # initial query and any forced-submit nudge) and committed into the shared
+    # ``accum`` — one tracker finalizes permanently on its first ResultMessage,
+    # so reusing it across the nudge would silently drop the nudge round's usage.
+    accum = TokenUsage()
+    tracker: Optional[SdkUsageTracker] = None
+    trajectory: list[dict] = []
     turns = 0
+    nudged = False
     try:
         async with hermetic_claude_sdk_session(
             model,
@@ -657,29 +701,74 @@ async def run_task(
             build_options=_build_options,
             provider_aware=True,
         ) as client:
+            # ``client.transcript`` is the live-growing serialized message list
+            # (the session yields a transcript-recording proxy); bind it now so
+            # even a mid-stream exception preserves what was captured so far.
+            trajectory = client.transcript
             await client.query(task_data["amb_user_query"])
-            async for msg in client.receive_response():
-                if ctx_dict.get("_submission_done"):
-                    break
-                if type(msg).__name__ == "AssistantMessage":
-                    turns += 1
-                    if turns >= cap:
+            while True:
+                tracker = SdkUsageTracker(
+                    accum, native_model_id(model), scope="agent"
+                )
+                # Bind the response generator so a mid-stream ``break`` (turn cap
+                # or submission) can explicitly ``aclose()`` it before the next
+                # ``query()`` — an ``async for`` break does NOT synchronously run
+                # the generator's finally, so without this the nudge query could
+                # overlap a half-open receive stream (matches the warm-client
+                # pattern in discovery_channel / setup_encoder).
+                response = client.receive_response()
+                try:
+                    async for msg in response:
+                        tracker.observe(msg)
+                        if ctx_dict.get("_submission_done"):
+                            break
+                        if type(msg).__name__ == "AssistantMessage":
+                            turns += 1
+                            limit = cap if nudged else explore_cap
+                            if turns >= limit:
+                                break
+                finally:
+                    aclose = getattr(response, "aclose", None)
+                    if aclose is not None:
+                        with contextlib.suppress(Exception):
+                            await response.aclose()
+                tracker.finalize()
+                if ctx_dict.get("_submission_done") or turns >= cap or nudged:
+                    if turns >= cap and not ctx_dict.get("_submission_done"):
                         logger.warning(
                             "Max turns (%d) reached for %s; stopping.", cap, instance_id
                         )
-                        break
+                    break
+                # Exploration ended (budget spent or the model stopped its turn)
+                # without a submission and reserve turns remain: prompt it once
+                # to submit now, then let it use the reserve.
+                nudged = True
+                logger.info(
+                    "Forced-submit nudge for %s at %d/%d turns.",
+                    instance_id, turns, cap,
+                )
+                await client.query(_FORCE_SUBMIT_NUDGE)
     except Exception as e:
+        if tracker is not None:
+            tracker.finalize()
         logger.error("Annotator error on %s: %s", instance_id, e)
         return AnnotatorResult(
             instance_id=instance_id,
             error=str(e),
+            usage=accum.model_dump(),
+            trajectory=list(trajectory),
             duration_s=time.monotonic() - t0,
         )
+
+    # Each receive_response cycle already finalized its own tracker into
+    # ``accum``; nothing left to commit here.
 
     if not ctx_dict.get("_submission_done"):
         return AnnotatorResult(
             instance_id=instance_id,
             error=f"Agent did not submit an annotation after {turns} turns.",
+            usage=accum.model_dump(),
+            trajectory=list(trajectory),
             duration_s=time.monotonic() - t0,
         )
 
@@ -688,6 +777,8 @@ async def run_task(
         return AnnotatorResult(
             instance_id=instance_id,
             error="Submission flag set but no annotation_result stored.",
+            usage=accum.model_dump(),
+            trajectory=list(trajectory),
             duration_s=time.monotonic() - t0,
         )
 
@@ -702,5 +793,7 @@ async def run_task(
         instance_id=instance_id,
         task_annotation=task_annotation,
         audited_gold_variants=audited_gold_variants,
+        usage=accum.model_dump(),
+        trajectory=list(trajectory),
         duration_s=time.monotonic() - t0,
     )

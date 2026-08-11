@@ -164,12 +164,18 @@ def _run_one_task(
 
     if result.error:
         logger.warning("[%s] agent returned error: %s", instance_id, result.error)
+        # DEV-1657: persist the trajectory + usage even on failure so a
+        # never-submitted run can actually be diagnosed.
+        _write_trajectory(
+            run_id, instance_id, result.trajectory, attempt=attempt, client=client
+        )
         attempt_row = {
             "instance_id": instance_id,
             "database": db,
             "status": "error",
             "error": result.error,
             "duration_s": result.duration_s,
+            "usage": result.usage,
         }
         _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
         return
@@ -188,23 +194,63 @@ def _run_one_task(
         _gcs.write_stable_audited_gold_variants(benchmark, db, instance_id, variants, client=client)
     except Exception as exc:
         logger.error("[%s] GCS write failed after annotation: %s", instance_id, exc)
+        # DEV-1657: this is still an outcome — carry usage + trajectory so the
+        # eval usage isn't zeroed and the (successful-but-unpersisted) run stays
+        # diagnosable.
+        _write_trajectory(
+            run_id, instance_id, result.trajectory, attempt=attempt, client=client
+        )
         attempt_row = {
             "instance_id": instance_id,
             "database": db,
             "status": "error",
             "error": f"GCS write failed: {exc}",
             "duration_s": result.duration_s,
+            "usage": result.usage,
         }
         _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
         return
 
+    # DEV-1657: persist the trajectory alongside the successful outcome too, for
+    # parity with the regular claude_sdk agent and to review borderline audits.
+    _write_trajectory(
+        run_id, instance_id, result.trajectory, attempt=attempt, client=client
+    )
     attempt_row = {
         "instance_id": instance_id,
         "database": db,
         "status": "annotated",
         "duration_s": result.duration_s,
+        "usage": result.usage,
     }
     _write_attempt(run_id, instance_id, attempt_row, attempt=attempt, client=client)
+
+
+def _write_trajectory(
+    run_id: str,
+    instance_id: str,
+    trajectory: list[dict],
+    *,
+    attempt: int = 1,
+    client=None,
+) -> None:
+    """DEV-1657: persist the annotator's serialized SDK message stream next to
+    the attempt row (``attempt-N.trajectory.json``). ``fetch`` pulls the whole
+    ``runs/<run_id>/`` prefix, so this lands in the local run dir automatically.
+    Best-effort: capture must never fail the task, and an empty trajectory (the
+    SDK session never started) writes nothing."""
+    if not trajectory:
+        return
+    blob_name = f"runs/{run_id}/rows/{instance_id}/attempt-{attempt}.trajectory.json"
+    client = client or default_gcs_client()
+    try:
+        blob = client.bucket(_gcs.BUCKET_NAME).blob(blob_name)
+        blob.upload_from_string(
+            json.dumps(trajectory, default=str).encode(),
+            content_type="application/json",
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort persistence
+        logger.warning("[%s] trajectory write failed: %s", instance_id, exc)
 
 
 def _write_attempt(
