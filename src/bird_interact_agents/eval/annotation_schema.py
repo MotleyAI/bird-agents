@@ -508,6 +508,11 @@ class SubmissionConfig(BaseModel):
     strict: Optional[bool] = None
     use_audited_gold_sql: Optional[bool] = None
     prompt_cache: Optional[bool] = None
+    # DEV-1666: slayer-only tool-surface flags. Recorded (resolved) bools on a
+    # flag-consuming slayer query run; None on raw AND on exempt slayer
+    # frameworks (encode/oracle/pydantic_ai/...).
+    lean_introspection: Optional[bool] = None
+    readonly_mode: Optional[bool] = None
 
 
 class SubmissionMetadata(BaseModel):

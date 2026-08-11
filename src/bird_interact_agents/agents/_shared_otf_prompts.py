@@ -368,6 +368,73 @@ window scope and resubmit. The point is to flip a single structural
 bit, not to keep submitting near-identical queries."""
 
 
+# DEV-1591 — search-vs-inspect discipline. Shared across every SLayer
+# prompt (v0 snapshots, v1 head blocks, the v1 main workflow note, and
+# the claude_sdk a/c-interact prompts). A glm-5.2 households run issued a
+# broad `search(question=..., compact=False)` that returned 10 full entity
+# renders (~55K chars) which then rode in cached context every turn
+# (~6x cache-read, ~3.8x prompt tokens vs raw mode). The opus cea364 run
+# repeated the pattern despite a prose rule forbidding it, so the
+# claude_sdk agents now HARDWIRE `search` to compact=True via a PreToolUse
+# hook (`_force_compact_search_hook`): broad discovery returns one-line
+# `description`s only, and every targeted detail read moves to the
+# `inspect` point-lookup (`entity_type=…`, `compact=False`) — which has no
+# RRF fusion, so it needs no `cypher_filter`. This prose teaches the same
+# split the hook enforces.
+#
+# DEV-1629 merge: `search` / `inspect` now live on the v1 slayer MAIN loop
+# too (no longer discovery-only), so this block is spliced into the main
+# workflow note as well. It therefore frames "discovery" as the ACTIVITY of
+# finding candidate ids (not the discovery subagent), and defers root / host
+# selection to `recommend_root_model` (Codex review of the merge).
+#
+# This constant is param-free AND brace-free (no `{`/`}`): several consumers
+# (SLAYER_A_INTERACT / SLAYER_C_INTERACT and the `.format()`-rendered v0/v1
+# templates) would break on a stray brace. All examples are synthetic — no
+# real eval-set DB / model / column names.
+_COMPACT_SEARCH_DISCIPLINE = """\
+SEARCH-vs-INSPECT DISCIPLINE. Two different jobs; keeping them separate is
+what keeps context cheap. `search` is for broad DISCOVERY — finding candidate
+entity ids by relevance. `inspect` is for DETAIL — reading the full body of
+ids you have already pinned down. ("Discovery" here is the activity of finding
+candidates, not any particular agent.) Choosing the query root / `source_model`
+/ encoding host is a SEPARATE decision — where your tool surface offers
+`recommend_root_model`, use that for it. `search` and `inspect` here are only
+for finding candidate ids and reading their details, never for selecting the
+root or host.
+
+  * DISCOVER with `search(question="…")`. It returns each hit's one-line
+    `description` — enough to choose candidates. Treat broad search as
+    compact-only: never pass `compact`, and don't try to pull per-entity
+    Type / Description / Sample values / SQL out of `search`. (A broad
+    `compact=False` search drags tens of thousands of characters of full
+    renders into cached context on every later turn for no added signal —
+    so the detail belongs in `inspect`, below.)
+
+  * NARROW THE DISCOVERY BY KIND with `cypher_filter`, so the `max_results`
+    slots are spent on the kind you actually want instead of an RRF-fused
+    mix of memories + columns + measures + models. Pass a
+    `MATCH … RETURN n.id AS id` constraint (multi-label is union semantics):
+      - only KB memories:        cypher_filter='MATCH (n:Memory) RETURN n.id AS id'
+      - only entity definitions: cypher_filter='MATCH (n:ModelColumn:Measure:Aggregation:Model) RETURN n.id AS id'
+      - only columns:            cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'
+    Use the `ModelColumn` label, NOT `Column` (`Column` is a reserved keyword
+    in LadybugDB ≥0.15 and only matches on the naive fallback path;
+    `ModelColumn` works on naive AND graph-backed installs).
+
+  * INSPECT for the full body once you have a SMALL, chosen set of known
+    ids. `inspect(reference=[…], entity_type="…", compact=False)` is a clean
+    point-lookup — no RRF fusion, no bundled memories — so it needs NO
+    `cypher_filter` and no `max_results` budgeting. Batch ids of the SAME
+    kind in one call:
+      - columns:  inspect(reference=["<db>.<model>.<col>", …], entity_type="column", compact=False)
+      - memories: inspect(reference=["memory:<id>", …], entity_type="memory", compact=False)
+
+Rule of thumb: `search(question=…)` to FIND ids (compact + a `cypher_filter`
+kind constraint); `inspect(reference=[ids], entity_type=…, compact=False)` to
+READ them."""
+
+
 _RAW_HOST_PATH_PRINCIPLE = """\
 HOST / JOIN-PATH PRINCIPLE (when a value the question needs lives on a
 table your main query does not yet reach, or could be reached from more
@@ -391,26 +458,71 @@ a shared lookup or log table — those chains are one-to-many at each step
 and silently multiply rows."""
 
 
-
 # DEV-1550 A3: shared "SLAYER TOOLS" block — extracted byte-for-byte
 # from the previously-duplicated `_AINTERACT_SLAYER_TOOLS` /
 # `_ENCODE_CORE_HEAD` (verified identical at extraction time), with
-# the new "READ A KNOWN MEMORY'S FULL BODY" drill-in paragraph
+# the "READ A KNOWN MEMORY'S FULL BODY" drill-in paragraph
 # inserted as a sibling between the existing column-drill-in
-# paragraph and the `ENCODE-THEN-QUERY DISCIPLINE:` header. The
-# memory-drill-in nudge documents the compact-mode opt-out introduced
-# by SLayer 0.7.3 (DEV-1549): `search` now defaults to `compact=True`
-# and renders one-line `description` summaries; agents need
-# `compact=False` (plus a tight `max_results=1`) to get the full
-# `learning` body for a memory id they've already identified.
-#
-# SLayer 0.7.3 also collapsed the per-kind caps (`max_memories`,
-# `max_entities`, `max_example_queries`) into a single `max_results`,
-# so the column-drill-in pattern below also migrated to the new
-# kwargs at the same time.
+# paragraph and the `ENCODE-THEN-QUERY DISCIPLINE:` header. Both
+# drill-ins document the DEV-1591 split: `search` is discovery-only
+# (hardwired compact; one-line `description`s), and the verbatim body
+# of a column or a memory you have already identified is read with the
+# `inspect` point-lookup (`entity_type=…`, `compact=False`) — which has
+# no RRF fusion, so it needs no `cypher_filter`. (DEV-1612 added batch
+# `inspect`: pass a list of same-kind refs in one call.)
 #
 # Format params: {db_name}
-_SLAYER_TOOLS_BLOCK = """\
+
+# ---------------------------------------------------------------------------
+# DEV-1666: the SLAYER TOOLS inventory tail is a gated block. Defined here so
+# the constant-level occurrence in `_SLAYER_TOOLS_BLOCK` (which feeds the v1
+# template, FULL/byte-identical) and the two v0 template functions
+# (`_build_oneshot_v0` / `_build_ainteract_v0`, which shadow `_tools_tail` with
+# a param) all resolve. Four EXPLICITLY-AUTHORED variants — no runtime string
+# surgery. FULL is the frozen text (SHA-pinned); lean drops `inspect_model` in
+# favour of the compact `inspect(entity_type="model", …)`, readonly drops the
+# `create_model` / `edit_model` build mention.
+# ---------------------------------------------------------------------------
+_INSPECT_MODEL_LEAN = (
+    '`inspect(entity_type="model", sections=["columns","joins"], compact=True)`'
+)
+_TOOLS_TAIL_FULL = (
+    "`inspect_model` to see a whole model's columns / measures / joins;\n"
+    "`create_model` / `edit_model` to add columns and measures; `query` to test."
+)
+_TOOLS_TAIL_LEAN = (
+    "a whole model's columns / measures / joins via "
+    + _INSPECT_MODEL_LEAN
+    + ";\n`create_model` / `edit_model` to add columns and measures; "
+    "`query` to test."
+)
+_TOOLS_TAIL_READONLY = (
+    "`inspect_model` to see a whole model's columns / measures / joins. The\n"
+    "SLayer models are FIXED — you cannot create or edit models; `query` to test."
+)
+_TOOLS_TAIL_LEAN_READONLY = (
+    "a whole model's columns / measures / joins via "
+    + _INSPECT_MODEL_LEAN
+    + ". The\nSLayer models are FIXED — you cannot create or edit models; "
+    "`query` to test."
+)
+#: Module-level default used by the CONSTANT-level occurrence (v1 tools block);
+#: the v0 template functions shadow this name with their `_tools_tail` param.
+_tools_tail = _TOOLS_TAIL_FULL
+
+
+def _slayer_tools_tail(*, lean_introspection: bool, readonly_mode: bool) -> str:
+    if lean_introspection and readonly_mode:
+        return _TOOLS_TAIL_LEAN_READONLY
+    if lean_introspection:
+        return _TOOLS_TAIL_LEAN
+    if readonly_mode:
+        return _TOOLS_TAIL_READONLY
+    return _TOOLS_TAIL_FULL
+
+
+_SLAYER_TOOLS_BLOCK = (
+    """\
 The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
 knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body
 starts `KB <n> —`. The base tables are already ingested as SLayer models,
@@ -420,9 +532,12 @@ on the fly.
 SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`search` to find relevant memories and existing entities; `inspect_model`
-to see a model's columns / measures / joins; `create_model` / `edit_model`
-to add columns and measures; `query` to test.
+`search` to DISCOVER relevant memories and existing entities (it returns
+one-line descriptions only); `inspect` to read the FULL body of specific
+entities you have already pinned down — columns, measures, or memories — by
+reference; """
+    + _tools_tail
+    + """
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `inspect` the column reference
@@ -434,16 +549,16 @@ whitespace forms, abbreviations, alternate phrasings of the same
 concept. Use it BEFORE writing any IN-set (see rule 3 below).
 
 READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
-a memory id you've already identified — `search` with `entities=[
-"memory:<id>"]`, `max_results=1`, `compact=False`,
-`cypher_filter='MATCH (n:Memory) RETURN n.id AS id'`. By default `search`
-is compact (one-line `description` summary per hit); `compact=False`
-returns the full `learning` body. The `:Memory` kind filter pins the
-result to the memory you asked for — without it, a parent memory whose
-entities cross-reference `memory:<id>` can occupy the single slot
-instead of the memory you want.
+a memory id you've already identified — `inspect(reference=["memory:<id>"],
+entity_type="memory", compact=False)` returns the full `learning` body
+(single-entity point lookup).
+
+"""
+    + _COMPACT_SEARCH_DISCIPLINE
+    + """
 
 ENCODE-THEN-QUERY DISCIPLINE:"""
+)
 
 
 # DEV-1623: cut submit-verify thrash on noisy categorical columns. A single
@@ -513,6 +628,26 @@ projected under that name; create anything else with `create_model` /
 and check spelling. SLayer rejects an unknown name outright rather than
 guessing."""
 
+# DEV-1666: readonly variant — the models are FIXED, so the "create anything
+# else with create_model / edit_model" escape hatch is dropped (project from the
+# prior stage instead). Only used when readonly_mode gates the v0 OTF prompts.
+_DEFINE_BEFORE_REFERENCE_READONLY = """\
+DEFINE BEFORE YOU REFERENCE. Every name you put in a `filter`, `dimension`,
+`measure`, or `order` must ALREADY exist on the model that stage queries —
+as a Column, a ModelMeasure, or a named alias. A nested-DAG stage can
+reference only what its own `source_model` defines or what the prior stage
+projected under that name; the SLayer models are FIXED (you cannot create or
+edit them), so project anything else from the prior stage BEFORE you reference
+it, and check spelling. SLayer rejects an unknown name outright rather than
+guessing."""
+
+
+def _slayer_define_ref(*, readonly_mode: bool) -> str:
+    return (
+        _DEFINE_BEFORE_REFERENCE_READONLY if readonly_mode
+        else _DEFINE_BEFORE_REFERENCE
+    )
+
 
 # ---------------------------------------------------------------------------
 # DEV-1629 — root-model / host selection via the SLayer `recommend_root_model`
@@ -568,15 +703,29 @@ merely a model where the input columns happen to live:
 # ---------------------------------------------------------------------------
 # DEV-1555 v0/v1 split — origin/main prompt snapshots.
 #
-# These four constants are the byte-for-byte origin/main rendered prompt
-# templates (post-helper-substitution, pre-`.format(budget=..., db_name=...,
-# user_query=...)`). They back the four v0 agents under
-# `claude_sdk_otf*/prompts.py`. SHA-256 snapshots pinned in
-# `tests/test_dev1555_v0_v1_shared_prompts.py`.
+# These four constants started as the byte-for-byte origin/main rendered
+# prompt templates (post-helper-substitution, pre-`.format(budget=...,
+# db_name=..., user_query=...)`) backing the four v0 agents under
+# `claude_sdk_otf*/prompts.py`. The byte-identity SHA-256 pin was dropped
+# when the unified `query` tool landed (see
+# `tests/test_dev1555_v0_v1_shared_prompts.py`, which now keeps only
+# presence + "v0 != v1" + "no query_nested/query_json" contracts), so they
+# are NO LONGER a pure frozen origin/main snapshot.
+#
+# DEV-1591 deliberately patches the two SLAYER v0 snapshots (one-shot +
+# a-interact) to carry the broad-search compact discipline alongside the
+# live v1 prompts — the raw v0 snapshots have no `search`/`compact` concept
+# and stay untouched.
 # ---------------------------------------------------------------------------
 
 
-SLAYER_OTF_ONE_SHOT_V0 = (
+def _build_oneshot_v0(
+    _tools_tail: str, _define_ref: str = _DEFINE_BEFORE_REFERENCE
+) -> str:
+    # DEV-1666: the SLAYER TOOLS inventory tail is a gated block (`_tools_tail`)
+    # so lean/readonly can drop the `inspect_model` / `create_model`+`edit_model`
+    # mentions statically. Everything else is the frozen literal.
+    return (
     """\
 You are a data analyst. You have a SLayer semantic-layer MCP server plus a
 native `submit_query` tool. Your job: answer the user's question by
@@ -599,9 +748,12 @@ on the fly.
 SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`search` to find relevant memories and existing entities; `inspect_model`
-to see a model's columns / measures / joins; `create_model` / `edit_model`
-to add columns and measures; `query` to test.
+`search` to DISCOVER relevant memories and existing entities (it returns
+one-line descriptions only); `inspect` to read the FULL body of specific
+entities you have already pinned down — columns, measures, or memories — by
+reference; """
+    + _tools_tail
+    + """
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `inspect` the column reference
@@ -613,14 +765,13 @@ whitespace forms, abbreviations, alternate phrasings of the same
 concept. Use it BEFORE writing any IN-set (see rule 3 below).
 
 READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
-a memory id you've already identified — `search` with `entities=[
-"memory:<id>"]`, `max_results=1`, `compact=False`,
-`cypher_filter='MATCH (n:Memory) RETURN n.id AS id'`. By default `search`
-is compact (one-line `description` summary per hit); `compact=False`
-returns the full `learning` body. The `:Memory` kind filter pins the
-result to the memory you asked for — without it, a parent memory whose
-entities cross-reference `memory:<id>` can occupy the single slot
-instead of the memory you want.
+a memory id you've already identified — `inspect(reference=["memory:<id>"],
+entity_type="memory", compact=False)` returns the full `learning` body
+(single-entity point lookup).
+
+"""
+    + _COMPACT_SEARCH_DISCIPLINE
+    + """
 
 ENCODE-THEN-QUERY DISCIPLINE:
 
@@ -825,11 +976,15 @@ User question: {user_query}
     + "\n\n"
     + ENCODE_HOST_GUIDANCE
     + "\n\n"
-    + _DEFINE_BEFORE_REFERENCE
+    + _define_ref
     + "\n"
 )
 
-SLAYER_OTF_AINTERACT_V0 = (
+def _build_ainteract_v0(
+    _tools_tail: str, _define_ref: str = _DEFINE_BEFORE_REFERENCE
+) -> str:
+    # DEV-1666: gated SLAYER TOOLS inventory tail (see _build_oneshot_v0).
+    return (
     """\
 You are a data analyst. You have a SLayer semantic-layer MCP server plus
 native `ask_user` and `submit_query` tools. Your job: answer the user's
@@ -857,9 +1012,12 @@ on the fly.
 SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`search` to find relevant memories and existing entities; `inspect_model`
-to see a model's columns / measures / joins; `create_model` / `edit_model`
-to add columns and measures; `query` to test.
+`search` to DISCOVER relevant memories and existing entities (it returns
+one-line descriptions only); `inspect` to read the FULL body of specific
+entities you have already pinned down — columns, measures, or memories — by
+reference; """
+    + _tools_tail
+    + """
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `inspect` the column reference
@@ -871,14 +1029,13 @@ whitespace forms, abbreviations, alternate phrasings of the same
 concept. Use it BEFORE writing any IN-set (see rule 3 below).
 
 READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
-a memory id you've already identified — `search` with `entities=[
-"memory:<id>"]`, `max_results=1`, `compact=False`,
-`cypher_filter='MATCH (n:Memory) RETURN n.id AS id'`. By default `search`
-is compact (one-line `description` summary per hit); `compact=False`
-returns the full `learning` body. The `:Memory` kind filter pins the
-result to the memory you asked for — without it, a parent memory whose
-entities cross-reference `memory:<id>` can occupy the single slot
-instead of the memory you want.
+a memory id you've already identified — `inspect(reference=["memory:<id>"],
+entity_type="memory", compact=False)` returns the full `learning` body
+(single-entity point lookup).
+
+"""
+    + _COMPACT_SEARCH_DISCIPLINE
+    + """
 
 ENCODE-THEN-QUERY DISCIPLINE:
 
@@ -1127,7 +1284,7 @@ User question: {user_query}
     + "\n\n"
     + ENCODE_HOST_GUIDANCE
     + "\n\n"
-    + _DEFINE_BEFORE_REFERENCE
+    + _define_ref
     + "\n"
 )
 
@@ -1441,3 +1598,45 @@ User question: {user_query}
     + "\n"
     + _RAW_HOST_PATH_PRINCIPLE
 )
+
+
+# ---------------------------------------------------------------------------
+# DEV-1666: lean_introspection / readonly_mode prompt gating (STATIC blocks).
+#
+# The SLAYER TOOLS inventory tail is the only flag-gated block in the v0 slayer
+# templates. It has four EXPLICITLY-AUTHORED variants (no runtime string
+# surgery): lean drops the `inspect_model` mention in favour of the compact
+# `inspect(entity_type="model", …)` primitive; readonly drops the
+# `create_model` / `edit_model` build mention. The FULL variant is the frozen
+# text, so `_build_*_v0(_TOOLS_TAIL_FULL)` == the byte-for-byte legacy constant
+# (pinned by the SHA-256 snapshot tests). Absence of the dropped tool names in
+# the lean/readonly variants is pinned by DEV-1666 tests.
+# ---------------------------------------------------------------------------
+
+#: The frozen legacy constants == the FULL-variant composition (byte-for-byte).
+SLAYER_OTF_ONE_SHOT_V0 = _build_oneshot_v0(_TOOLS_TAIL_FULL)
+SLAYER_OTF_AINTERACT_V0 = _build_ainteract_v0(_TOOLS_TAIL_FULL)
+
+
+def build_slayer_otf_one_shot_v0(
+    *, lean_introspection: bool = False, readonly_mode: bool = False
+) -> str:
+    """DEV-1666 gated build of the v0 slayer one-shot template. False/False ==
+    ``SLAYER_OTF_ONE_SHOT_V0`` (byte-for-byte)."""
+    return _build_oneshot_v0(
+        _slayer_tools_tail(
+            lean_introspection=lean_introspection, readonly_mode=readonly_mode),
+        _slayer_define_ref(readonly_mode=readonly_mode),
+    )
+
+
+def build_slayer_otf_ainteract_v0(
+    *, lean_introspection: bool = False, readonly_mode: bool = False
+) -> str:
+    """DEV-1666 gated build of the v0 slayer a-interact template. False/False ==
+    ``SLAYER_OTF_AINTERACT_V0`` (byte-for-byte)."""
+    return _build_ainteract_v0(
+        _slayer_tools_tail(
+            lean_introspection=lean_introspection, readonly_mode=readonly_mode),
+        _slayer_define_ref(readonly_mode=readonly_mode),
+    )

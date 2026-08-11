@@ -123,6 +123,13 @@ env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   pass that to the `ray exec` inspection commands below. Use
   `uv run bird-interact-cloud list` / `fetch <run-id>` / `kill <run-id>` /
   `resubmit <run-id>` for the rest of the lifecycle.
+- **ALWAYS pass the run-id to `list` when you know it**:
+  `bird-interact-cloud list <run-id>` queries ONLY that run's manifest and
+  returns immediately. The bare `bird-interact-cloud list` (no arg) does a
+  bucket-wide scan over EVERY run's manifest and gets progressively slower as
+  runs accumulate — it can take tens of seconds and looks like a hang. For a
+  single-run status check (the common case in a watcher/status loop), the
+  positional `list <run-id>` form is the right tool.
 - **Postgres benchmarks (livesqlbench-base-lite, livesqlbench-base-full,
   livesqlbench-large, bird-interact-lite-exp, bird-interact-full)**: at worker
   startup `_ensure_postgres_loaded` starts ONE PostgreSQL instance per VM
@@ -225,7 +232,9 @@ Polling for a run's terminal state from a bash loop is a maintenance trap.
 The output of `bird-interact-cloud list` is positional (`run_id  combo
 state  done/total`), so an awk-column off-by-one (`$4` vs `$3`) makes the
 loop silently never terminate — once burned in DEV-1470 because the loop
-compared `done|error` against `0/1` instead of against `live`.
+compared `done|error` against `0/1` instead of against `live`. (And if you
+DO query a single run's line, always use `list <run-id>` — see the run-id
+note above — so you don't pay the bucket-wide manifest scan on every poll.)
 
 The canonical primitive is already in the driver and was used by
 `driver.submit` (non-detached path) from day one:
@@ -276,6 +285,8 @@ asyncio.run(ensure_db_cache('<db>',
 "
 
 # 3. Submit otf_encode (cloud does the LLM stage).
+# on-the-fly is the default; --slayer-setup was retired (DEV-1586).
+# Pass --pre-encoded-models otf|custom to use pre-encoded models instead.
 #    claude_sdk_otf_encode is a claude_sdk* framework, so an Anthropic
 #    agent model REQUIRES an explicit --subscription-auth / --no-subscription-auth
 #    choice (DEV-1602). Use --subscription-auth for Anthropic; registry
@@ -324,6 +335,8 @@ asyncio.run(ensure_db_cache('households',
 "
 
 # 3. Submit otf_encode — Opus encoder, Sonnet user-sim, households only.
+# on-the-fly is the default; --slayer-setup was retired (DEV-1586).
+# Pass --pre-encoded-models otf|custom to use pre-encoded models instead.
 #    Anthropic claude_sdk* framework → explicit --subscription-auth required.
 env -u SSH_AUTH_SOCK uv run bird-interact-cloud submit \
   --framework claude_sdk_otf_encode --query-mode slayer \
@@ -412,6 +425,31 @@ Reach for this script, not ad-hoc `rglob` + cascade computation. The
 `aggregate_cascading_latest` in `cascading_report.py` does NOT apply
 either of these two filters. Contract is pinned by
 `tests/scripts/test_cascade_for_combo.py`.
+
+### Per-task baselines — record-by-record, NEVER run-by-run
+
+To compare a run against "the latest raw/slayer `<model>` result **per
+task**" (e.g. a fresh slayer run vs the newest raw-opus numbers), reuse
+`cascade_for_combo.collect_latest_per_task(benchmark=…, mode=…,
+agent_model=…)` — it returns the chosen record `Path` for each
+`(db, instance_id)`. This is **record-by-record / latest-per-task, NOT
+run-by-run**: the newest *whole run* is NOT necessarily the latest for a
+given task (one task's latest raw record can come from a different, older
+run than another task's). Do not pick a single run and compare every task
+to it — walk per task and let each task resolve independently. Mode comes
+from the run-id filename slot (`…-raw-…` / `…-slayer-…`), `agent_model`
+from the record (manifest fallback), so `opus` = `anthropic/claude-opus-4-7`.
+
+The `runs/<bench>/<db>/<iid>/<run-id>.json` records
+(`SubmissionAnnotation`) carry **correctness + provenance only** —
+`evaluation.phase1_against_original_gold` (N1 / original gold),
+`evaluation.phase1_against_any_audited_variant` (audited best-of),
+`evaluation.verdict`, plus stamped `agent_model` / `version` — but **NOT
+turns or tokens**. For turns/tokens read the cloud eval row instead:
+`gcs.read_row(run_id, iid, gcs.latest_attempt(run_id, iid))` →
+`n_agent_turns` + `usage` (prompt/completion/cache tokens). `run_id` is the
+record filename stem. (GCS rows persist for past runs, so this works for
+old baselines too.)
 
 ## Debugging the cloud runner: pull live state, don't guess
 

@@ -95,7 +95,7 @@ def _framework_choices_from_func(func) -> set[str]:
 def test_run_py_framework_choices_include_encode():
     from bird_interact_agents import run as run_mod
 
-    choices = _framework_choices_from_func(run_mod.main)
+    choices = _framework_choices_from_func(run_mod.build_arg_parser)
     assert "claude_sdk_otf_encode" in choices
     # legacy choice preserved
     assert "pydantic_ai_otf_encode" in choices

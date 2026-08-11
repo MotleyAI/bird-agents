@@ -22,6 +22,7 @@ agent.
 """
 
 import contextvars
+import copy
 import functools
 import inspect
 import logging
@@ -872,9 +873,9 @@ async def dispose_task_slayer_engine() -> None:
 # pydantic_ai_otf_encode adapter, which already normalizes every write.
 _SLAYER_NATIVE_NAMES: frozenset[str] = frozenset({
     "search",
+    "inspect",
     "models_summary",
     "inspect_model",
-    "inspect",
     "recommend_root_model",
     "create_model",
     "edit_model",
@@ -907,13 +908,37 @@ def _slayer_tool_metadata(name: str) -> tuple[str, dict]:
     return t.description, t.parameters
 
 
+def _schema_without_param(schema: dict, param: str) -> dict:
+    """Return a deep copy of a JSON-schema dict with ``param`` removed from
+    ``properties`` and ``required``. Used to hide a parameter the agent must
+    never set from the advertised tool signature. Never mutates the input
+    (the source is the lru_cached ``_slayer_tool_metadata`` dict)."""
+    out = copy.deepcopy(schema)
+    props = out.get("properties")
+    if isinstance(props, dict):
+        props.pop(param, None)
+    req = out.get("required")
+    if isinstance(req, list) and param in req:
+        out["required"] = [r for r in req if r != param]
+    return out
+
+
 def _make_slayer_native(name: str):
     """Build an in-process SDK ``@tool`` for SLayer tool ``name``, bridging
     SLayer's real description + schema and forwarding to the shared task-local
     engine fn. ``create_model`` / ``edit_model`` payloads are filter-normalized
-    before SLayer persists them."""
+    before SLayer persists them. DEV-1591: ``search`` is discovery-only — we
+    DROP its ``compact`` parameter from the advertised schema (so the agent
+    never sees it) and pin ``compact=True`` in the handler. (The v0 path uses
+    SLayer's own stdio schema, which we can't edit per-parameter, so it relies
+    on ``_force_compact_search_hook`` to override instead; here we own the
+    schema, so we simply don't expose the param.) Detail reads go through
+    ``inspect``."""
     description, schema = _slayer_tool_metadata(name)
     normalize_write = name in _SLAYER_NATIVE_NORMALIZE_WRITE
+    force_compact_search = name == "search"
+    if force_compact_search:
+        schema = _schema_without_param(schema, "compact")
 
     async def _handler(args: dict) -> dict:
         _ensure_slayer_storage_attached()
@@ -922,6 +947,10 @@ def _make_slayer_native(name: str):
             normalized = normalize_tool_filters(name, payload)
             if isinstance(normalized, dict):
                 payload = normalized
+        if force_compact_search:
+            # Belt-and-suspenders: the param is not advertised, but pin the
+            # value so behaviour is independent of SLayer's own default.
+            payload["compact"] = True
         fn = _query_mod._get_slayer_tool_fn(name)
         result = fn(**payload)
         if inspect.isawaitable(result):

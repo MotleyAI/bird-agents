@@ -131,8 +131,10 @@ down without a task. A deferred block has NO encoded column/measure — only a
 `[kb=<n>]` MEMORY recording WHY it was deferred, its open clarifying questions,
 and the raw definition. When the question needs such a block and neither
 `search` nor `inspect_model` surfaces an encoded entity for it:
-  - `search` for the KB MEMORY (allow memories — do NOT pass `max_memories=0`)
-    and READ the `[kb=<n>]` item's deferral notes + definition.
+  - `search` for the KB MEMORY to find its id (compact discovery returns
+    one-line descriptions only), then `inspect(reference=["memory:<id>"],
+    entity_type="memory", compact=False)` to READ the `[kb=<n>]` item's full
+    deferral notes + definition.
   - Build that logic yourself INSIDE your query from the base columns, following
     the definition and taking the most conservative reading the notes + the
     columns' sampled values support. There is no user to consult — resolve the
@@ -145,8 +147,10 @@ down without a task. A deferred block has NO encoded column/measure — only a
 `[kb=<n>]` MEMORY recording WHY it was deferred, its open clarifying questions,
 and the raw definition. When the question needs such a block and neither
 `search` nor `inspect_model` surfaces an encoded entity for it:
-  - `search` for the KB MEMORY (allow memories — do NOT pass `max_memories=0`)
-    and READ the `[kb=<n>]` item's deferral notes + clarifying questions.
+  - `search` for the KB MEMORY to find its id (compact discovery returns
+    one-line descriptions only), then `inspect(reference=["memory:<id>"],
+    entity_type="memory", compact=False)` to READ the `[kb=<n>]` item's full
+    deferral notes + clarifying questions.
   - Use `ask_user` to resolve the SPECIFIC missing operationalisation the
     deferral left open (the threshold / predicate / join / grain named in its
     clarifying questions) BEFORE building the query — do NOT silently guess a
@@ -291,3 +295,30 @@ __all__ = [
     "SLAYER_PRE_ENCODED_ONE_SHOT_V1",
     "SLAYER_PRE_ENCODED_AINTERACT_V1",
 ]
+
+
+# ---------------------------------------------------------------------------
+# DEV-1666: the pre-encoded (read-only) query templates get the tool-surface
+# leaning (inspect_model + KB tools dropped from the agent's tool list) but the
+# PROMPT-text gating for their four `inspect_model` sub-constants is tracked as a
+# follow-up (the templates are read-only and secondary to the on-the-fly path).
+# These builders are pass-through so the call sites are already flag-aware and
+# only the sub-constant swaps remain to land. readonly is inert here (no write
+# tools on the pre-encoded surface).
+# ---------------------------------------------------------------------------
+
+
+def build_slayer_pre_encoded_one_shot(
+    *, lean_introspection: bool = False, readonly_mode: bool = False
+) -> str:
+    """DEV-1666 flag-aware pre-encoded one-shot template (prompt-text gating is a
+    follow-up; currently pass-through). == ``SLAYER_PRE_ENCODED_ONE_SHOT``."""
+    return SLAYER_PRE_ENCODED_ONE_SHOT
+
+
+def build_slayer_pre_encoded_one_shot_v1(
+    *, lean_introspection: bool = False, readonly_mode: bool = False
+) -> str:
+    """DEV-1666 flag-aware pre-encoded one-shot v1 template (prompt-text gating is
+    a follow-up; currently pass-through). == ``SLAYER_PRE_ENCODED_ONE_SHOT_V1``."""
+    return SLAYER_PRE_ENCODED_ONE_SHOT_V1

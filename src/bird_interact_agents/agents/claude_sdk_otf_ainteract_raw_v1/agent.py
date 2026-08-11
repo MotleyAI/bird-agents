@@ -362,7 +362,9 @@ class ClaudeSDKOtfAInteractRawAgent:
             def _build_discovery_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
                 return ClaudeAgentOptions(
                     **_opt_kwargs,
-                    system_prompt=build_discovery_prompt(with_ask_user=True),
+                    system_prompt=build_discovery_prompt(
+                        with_ask_user=True, query_mode="raw"
+                    ),
                     mcp_servers=discovery_mcp_servers,
                     allowed_tools=list(discovery_tools),
                     tools=[],

@@ -477,6 +477,46 @@ async def test_hermetic_session_gets_real_mcp_servers(tmp_path, monkeypatch):
     assert "slayer" in servers and "bird-interact-tools" in servers
 
 
+async def test_encoder_registers_force_compact_search_hook(tmp_path, monkeypatch):
+    """DEV-1591 (merge with DEV-1629): the build-time encoder hardwires SLayer
+    ``search`` to ``compact=True`` via ``_force_compact_search_hook`` — parity
+    with the on-the-fly task agents, so a broad encoder ``search`` cannot drag
+    full per-entity renders into context. Assert the PreToolUse hook is wired on
+    the ``mcp__slayer__search`` matcher alongside the write-normalization hook.
+    """
+    from bird_interact_agents.agents.claude_sdk_otf.agent import (
+        _SLAYER_SEARCH_TOOL,
+        _force_compact_search_hook,
+    )
+
+    await _seed(tmp_path, kb_id=7)
+    captured: list[dict] = []
+
+    async def behavior():
+        await _write_col(tmp_path, "c", 7)
+        await _submit(_encoded(7, ["c"]))
+
+    _patch_session(monkeypatch, [_FakeClient([{"behavior": behavior}])],
+                   captured=captured)
+    be = se.make_claude_sdk_build_encoder(model="zai/glm-5.2", self_model_id="glm")
+    run_one = be(YAMLStorage(base_dir=str(tmp_path)), tmp_path, DB, tmp_path / "s")
+    await run_one.aopen()
+    try:
+        await run_one(7, _row(7), [])
+    finally:
+        await run_one.aclose()
+    assert captured, "hermetic session must be entered"
+    options = captured[0]["build_options"]({})
+    pre_matchers = options.hooks["PreToolUse"]
+    search_matchers = [
+        m for m in pre_matchers if getattr(m, "matcher", None) == _SLAYER_SEARCH_TOOL
+    ]
+    assert search_matchers, "encoder must register a `search` PreToolUse matcher"
+    assert any(
+        _force_compact_search_hook in m.hooks for m in search_matchers
+    ), "the search matcher must run _force_compact_search_hook"
+
+
 def _dep_kb4_measure():
     return EncoderResult(
         kb_id=4, status="encoded",
