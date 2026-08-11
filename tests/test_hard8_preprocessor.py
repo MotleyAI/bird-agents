@@ -23,6 +23,10 @@ from bird_interact_agents.hard8_preprocessor import (
     build_task_variant_storage,
     extract_deleted_kb_ids,
 )
+from bird_interact_agents.memory_store_io import (
+    read_memories,
+    write_memories_files,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -296,34 +300,33 @@ async def _seed_memories_and_embeddings(canonical_root: Path) -> None:
     follow the kb-to-slayer-models skill convention (``KB <n> — ``).
     """
     import sqlite3
-    import yaml
 
     db_root = canonical_root / DB_NAME
 
     # Two memories: one for KB 2 (will be deleted in the filter test),
     # one for KB 99 (always survives — not in any task's deleted set).
-    (db_root / "memories.yaml").write_text(
-        yaml.safe_dump(
-            [
-                {
-                    "version": 1,
-                    "id": 1,
-                    "learning": "KB 2 — Important value bands\n\nKB body...",
-                    "entities": [f"{DB_NAME}.beta.amount"],
-                    "query": None,
-                    "created_at": "2026-05-14T00:00:00Z",
-                },
-                {
-                    "version": 1,
-                    "id": 2,
-                    "learning": "KB 99 — Unrelated note\n\nKB body...",
-                    "entities": [f"{DB_NAME}.gamma"],
-                    "query": None,
-                    "created_at": "2026-05-14T00:00:00Z",
-                },
-            ],
-            sort_keys=False,
-        )
+    # DEV-1668: slayer 0.9.6 stores per-id ``memories/<id>.md``; the int-suffix
+    # id (``memory:1`` / ``memory:2``) keys the embedding rows below.
+    write_memories_files(
+        db_root,
+        [
+            {
+                "version": 1,
+                "id": "1",
+                "learning": "KB 2 — Important value bands\n\nKB body...",
+                "entities": [f"{DB_NAME}.beta.amount"],
+                "query": None,
+                "created_at": "2026-05-14T00:00:00Z",
+            },
+            {
+                "version": 1,
+                "id": "2",
+                "learning": "KB 99 — Unrelated note\n\nKB body...",
+                "entities": [f"{DB_NAME}.gamma"],
+                "query": None,
+                "created_at": "2026-05-14T00:00:00Z",
+            },
+        ],
     )
 
     # Three embedding rows:
@@ -360,9 +363,7 @@ async def _seed_memories_and_embeddings(canonical_root: Path) -> None:
 
 
 async def test_variant_copies_memories_yaml(canonical_root: Path, tmp_path: Path):
-    """Memories from canonical land in the variant's `memories.yaml`."""
-    import yaml
-
+    """Memories from canonical land in the variant's per-id memory store."""
     await _seed_memories_and_embeddings(canonical_root)
     work = tmp_path / "work"
     work.mkdir()
@@ -372,8 +373,7 @@ async def test_variant_copies_memories_yaml(canonical_root: Path, tmp_path: Path
         deleted_kb_ids=set(),
         work_dir=work,
     )
-    rows = yaml.safe_load((out / "memories.yaml").read_text())
-    assert {r["id"] for r in rows} == {1, 2}
+    assert {m.id for m in read_memories(out)} == {"1", "2"}
 
 
 async def test_variant_copies_embeddings_db(canonical_root: Path, tmp_path: Path):
@@ -402,7 +402,6 @@ async def test_variant_filters_memory_and_embedding_for_deleted_kb(
     `memory:1` embedding both drop. The KB-99 memory and its embedding
     survive, and non-memory embedding rows are left alone."""
     import sqlite3
-    import yaml
 
     await _seed_memories_and_embeddings(canonical_root)
     work = tmp_path / "work"
@@ -413,8 +412,8 @@ async def test_variant_filters_memory_and_embedding_for_deleted_kb(
         deleted_kb_ids={2},
         work_dir=work,
     )
-    rows = yaml.safe_load((out / "memories.yaml").read_text())
-    assert {r["id"] for r in rows} == {2}, "KB-2 memory should be filtered"
+    # KB 2's memory has id "1"; filtering by KB id 2 drops it, leaving KB 99 (id "2").
+    assert {m.id for m in read_memories(out)} == {"2"}, "KB-2 memory should be filtered"
 
     con = sqlite3.connect(out / "embeddings.db")
     cids = {r[0] for r in con.execute("SELECT canonical_id FROM embeddings")}
@@ -427,10 +426,65 @@ async def test_variant_filters_memory_and_embedding_for_deleted_kb(
     assert f"{DB_NAME}.beta.amount" in cids
 
 
+async def test_variant_prunes_string_id_memory_embedding(
+    canonical_root: Path, tmp_path: Path
+):
+    """DEV-1668 (Codex): memories keyed with `<db>_kb_<n>` STRING ids (the
+    encode_kb_as_memories scheme) must have their `memory:<db>_kb_<n>`
+    embedding row pruned on KB deletion — the prune is id-scheme-agnostic and
+    mirrors runtime._prune_deleted_memory_embeddings, not just the int-id case.
+    """
+    import sqlite3
+
+    db_root = canonical_root / DB_NAME
+    write_memories_files(db_root, [
+        {"version": 1, "id": f"{DB_NAME}_kb_2",
+         "learning": "KB 2 — Important value bands\n\nbody",
+         "entities": [f"{DB_NAME}.beta.amount"],
+         "created_at": "2026-05-14T00:00:00Z"},
+        {"version": 1, "id": f"{DB_NAME}_kb_99",
+         "learning": "KB 99 — Unrelated note\n\nbody",
+         "entities": [f"{DB_NAME}.gamma"],
+         "created_at": "2026-05-14T00:00:00Z"},
+    ])
+    db_path = db_root / "embeddings.db"
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS embeddings (canonical_id TEXT NOT NULL, "
+        "embedding_model_name TEXT NOT NULL, entity_kind TEXT NOT NULL, "
+        "content_hash TEXT NOT NULL, embedding TEXT NOT NULL, "
+        "created_at TEXT NOT NULL, PRIMARY KEY (canonical_id, embedding_model_name))"
+    )
+    con.executemany("INSERT INTO embeddings VALUES (?, ?, ?, ?, ?, ?)", [
+        (f"memory:{DB_NAME}_kb_2", "test-model", "memory", "h1", "[]", "2026-05-14"),
+        (f"memory:{DB_NAME}_kb_99", "test-model", "memory", "h2", "[]", "2026-05-14"),
+        (f"{DB_NAME}.beta.amount", "test-model", "column", "h3", "[]", "2026-05-14"),
+    ])
+    con.commit()
+    con.close()
+
+    work = tmp_path / "work"
+    work.mkdir()
+    out = await build_task_variant_storage(
+        canonical_storage_root=canonical_root, db_name=DB_NAME,
+        deleted_kb_ids={2}, work_dir=work,
+    )
+    assert {m.id for m in read_memories(out)} == {f"{DB_NAME}_kb_99"}
+
+    con = sqlite3.connect(out / "embeddings.db")
+    cids = {r[0] for r in con.execute("SELECT canonical_id FROM embeddings")}
+    con.close()
+    # The dropped string-id memory's embedding is pruned; the survivor + the
+    # non-memory entity row stay.
+    assert f"memory:{DB_NAME}_kb_2" not in cids
+    assert f"memory:{DB_NAME}_kb_99" in cids
+    assert f"{DB_NAME}.beta.amount" in cids
+
+
 async def test_variant_omits_memories_when_canonical_lacks_them(
     canonical_root: Path, tmp_path: Path
 ):
-    """No `memories.yaml` in canonical → variant doesn't get a spurious one.
+    """No memories in canonical → variant doesn't get spurious ones.
 
     `embeddings.db` is created lazily by YAMLStorage's init regardless;
     if canonical's was absent the variant's stays empty (0 rows), which
@@ -445,7 +499,7 @@ async def test_variant_omits_memories_when_canonical_lacks_them(
         deleted_kb_ids=set(),
         work_dir=work,
     )
-    assert not (out / "memories.yaml").exists()
+    assert read_memories(out) == []
     if (out / "embeddings.db").exists():
         con = sqlite3.connect(out / "embeddings.db")
         try:

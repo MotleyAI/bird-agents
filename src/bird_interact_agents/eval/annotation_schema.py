@@ -851,6 +851,7 @@ _AutopsyErrorKind = Literal[
     "api_error",
     "network_error",
     "missing_tool_use",
+    "auth_unavailable",
     "unknown",
 ]
 

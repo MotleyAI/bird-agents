@@ -42,6 +42,7 @@ from bird_interact_agents.eval.annotation_io import run_edited_models_archive
 from bird_interact_agents.slayer_otf.datasource_reanchor import (
     rewrite_datasource_connection_string,
 )
+from bird_interact_agents.slayer_otf.hide_jsonb_stores import hide_store_dir
 from bird_interact_agents.slayer_otf.timing import log_otf_event
 
 ARCHIVE_NAME = "edited_models.tar.gz"
@@ -310,6 +311,19 @@ async def materialize_from_saved_store(
         db=db, scratch=scratch, mini_interact_root=mini_interact_root,
         db_root=db_root,
     )
+    # DEV-1672: self-heal — hide raw JSON columns in the materialised store so an
+    # UN-migrated archive (snapshotted before the encoder change) still queries
+    # against hidden raw cols. MUST run BEFORE the baseline so the flip is part
+    # of the baseline and --save-edited-models does not count it as an agent edit.
+    # Best-effort: a store we cannot traverse has no hideable JSON col we could
+    # safely process, and crashing the whole apply over it is worse than skipping
+    # (mirrors the phase-3 sampling best-effort pattern). Never aborts apply.
+    try:
+        await hide_store_dir(scratch, data_source=db)
+    except Exception as exc:  # NOSONAR(S112) — best-effort hygiene, see above
+        log_otf_event(
+            "otf.edited_models.self_heal_failed", db=db, error=repr(exc),
+        )
     write_baseline_manifest(work_dir, scratch)
     return scratch
 

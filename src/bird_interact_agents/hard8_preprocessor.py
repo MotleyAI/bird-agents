@@ -17,12 +17,16 @@ import shutil
 import sqlite3
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
-
-import yaml
+from typing import Any, Dict, Optional
 
 from slayer.core.models import SlayerModel
+from slayer.memories.models import MEMORY_CANONICAL_PREFIX, Memory
 from slayer.storage.yaml_storage import YAMLStorage
+
+from bird_interact_agents.memory_store_io import (
+    persist_memories,
+    read_memories,
+)
 
 
 # Memories saved by the kb-to-slayer-models skill start their `learning`
@@ -213,95 +217,73 @@ async def build_task_variant_storage(
         else:
             await dst.save_model(model)
 
-    # Copy memories + embeddings. YAMLStorage.save_memory allocates new
-    # ids (so embedding rows keyed on `memory:<old_id>` would point to
-    # nothing post-copy); we therefore bypass the storage API and copy
-    # the underlying files directly, preserving ids and filtering
-    # deleted-KB rows in lockstep so memory rows and their embedding
-    # rows stay in sync.
-    _copy_memories_and_embeddings(
+    # Copy memories + embeddings. DEV-1668: persist through the slayer storage
+    # layer with the ORIGINAL ids preserved (``save_memory(id=...)`` /
+    # ``_save_memory_row`` keep them), so the embedding rows keyed on
+    # ``memory:<id>`` still resolve. Filtering of deleted-KB memory rows and
+    # their embedding rows stays in lockstep.
+    await _copy_memories_and_embeddings(
         canonical=canonical, variant_root=variant_root,
         deleted_kb_ids=deleted_kb_ids,
     )
     return variant_root
 
 
-def _copy_memories_and_embeddings(
+async def _copy_memories_and_embeddings(
     *,
     canonical: Path,
     variant_root: Path,
     deleted_kb_ids: set[int],
 ) -> None:
-    """Copy ``memories.yaml`` and ``embeddings.db`` from canonical → variant,
+    """Copy the memory store + ``embeddings.db`` from canonical → variant,
     filtering out any memory whose ``KB <n>`` header lands in
-    ``deleted_kb_ids`` and the corresponding ``memory:<n>`` embedding row.
+    ``deleted_kb_ids`` and the corresponding ``memory:<id>`` embedding row.
 
     Memory ids are preserved across the copy so embedding ``canonical_id``
-    references (``memory:<id>``) keep resolving inside the variant.
+    references (``memory:<id>``) keep resolving inside the variant. DEV-1668:
+    reads/persists via :mod:`bird_interact_agents.memory_store_io` (slayer 0.9.6 per-id
+    ``memories/<id>.md``).
     """
-    src_mem = canonical / "memories.yaml"
-    dst_mem = variant_root / "memories.yaml"
-    surviving_ids: set[int] = set()
-    if src_mem.exists():
-        rows = _load_yaml_list(src_mem)
-        kept: list[dict[str, Any]] = []
-        for row in rows:
-            kb_id = _memory_kb_id(row.get("learning") or "")
-            if kb_id is not None and kb_id in deleted_kb_ids:
-                continue
-            kept.append(row)
-            if isinstance(row.get("id"), int):
-                surviving_ids.add(int(row["id"]))
-        _dump_yaml_list(dst_mem, kept)
+    dropped_ids: list[str] = []
+    kept: list[Memory] = []
+    for mem in read_memories(canonical):
+        kb_id = _memory_kb_id(mem.learning or "")
+        if kb_id is not None and kb_id in deleted_kb_ids:
+            dropped_ids.append(mem.id)
+            continue
+        kept.append(mem)
+    if kept:
+        await persist_memories(variant_root, kept)
 
     src_emb = canonical / "embeddings.db"
     dst_emb = variant_root / "embeddings.db"
     if src_emb.exists():
         shutil.copyfile(src_emb, dst_emb)
-        if deleted_kb_ids:
-            _prune_dropped_memory_embeddings(dst_emb, surviving_ids)
-
-
-def _load_yaml_list(path: Path) -> list[dict[str, Any]]:
-    text = path.read_text()
-    data = yaml.safe_load(text) or []
-    if not isinstance(data, list):
-        raise ValueError(f"{path}: expected a YAML list at top level")
-    return data
-
-
-def _dump_yaml_list(path: Path, rows: Iterable[dict[str, Any]]) -> None:
-    path.write_text(yaml.safe_dump(list(rows), sort_keys=False))
+        if dropped_ids:
+            _prune_dropped_memory_embeddings(dst_emb, dropped_ids)
 
 
 def _prune_dropped_memory_embeddings(
-    db_path: Path, surviving_memory_ids: set[int],
+    db_path: Path, dropped_memory_ids: list[str],
 ) -> None:
-    """Delete embedding rows whose ``canonical_id`` is ``memory:<n>`` for
-    any ``n`` not in ``surviving_memory_ids``. Non-memory canonical_ids
-    are left alone — they belong to the model/column/measure tree, which
-    ``_apply_deletions`` has already pruned at the YAML level (unused
-    embedding rows are inert because the search corpus is rebuilt from
-    the YAMLs each call).
+    """Delete the embedding rows for the DROPPED memories — the ones filtered
+    out above — keyed on ``memory:<id>``. Deleting by the dropped ids directly
+    (rather than a keep-list over int-parsed suffixes) is id-scheme-agnostic:
+    it handles both int ids (committed references) AND ``<db>_kb_<n>`` string
+    ids, mirroring ``runtime._prune_deleted_memory_embeddings`` (Codex). Non-
+    memory canonical_ids are left alone — they belong to the model/column/
+    measure tree, which ``_apply_deletions`` already pruned at the YAML level
+    (unused embedding rows are inert; the search corpus is rebuilt from the
+    YAMLs each call).
     """
+    if not dropped_memory_ids:
+        return
     con = sqlite3.connect(db_path)
     try:
-        rows = con.execute(
-            "SELECT canonical_id FROM embeddings WHERE canonical_id LIKE 'memory:%'"
-        ).fetchall()
-        to_delete: list[str] = []
-        for (cid,) in rows:
-            try:
-                mid = int(cid.split(":", 1)[1])
-            except (ValueError, IndexError):
-                continue
-            if mid not in surviving_memory_ids:
-                to_delete.append(cid)
-        if to_delete:
-            con.executemany(
-                "DELETE FROM embeddings WHERE canonical_id = ?",
-                [(cid,) for cid in to_delete],
-            )
-            con.commit()
+        con.executemany(
+            "DELETE FROM embeddings WHERE canonical_id = ?",
+            [(f"{MEMORY_CANONICAL_PREFIX}{mid}",) for mid in dropped_memory_ids],
+        )
+        con.commit()
     finally:
         con.close()

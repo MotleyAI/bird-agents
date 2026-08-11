@@ -50,7 +50,8 @@ def test_content_manifest_excludes_transient_and_meta(tmp_path):
     keys = set(manifest)
 
     assert "models/alien/foo.yaml" in keys
-    assert "memories.yaml" in keys
+    # DEV-1668: slayer 0.9.6 stores per-id ``memories/<id>.md``.
+    assert "memories/alien_kb_0.md" in keys
     assert "_kb_rows.json" in keys
     assert "embeddings.db" in keys
     # Excluded:
@@ -211,7 +212,8 @@ def _save_one(tmp_path, checkout, *, deleted, cache_fp):
 def test_materialize_round_trip_preserves_agent_edits(tmp_path, checkout):
     dest, orig = _save_one(tmp_path, checkout, deleted=set(), cache_fp="fp0")
     orig_model = (orig / "models" / "alien" / "foo.yaml").read_text()
-    orig_mem = (orig / "memories.yaml").read_text()
+    # DEV-1668: per-id ``memories/<id>.md`` (make_fake_store seeds alien_kb_0).
+    orig_mem = (orig / "memories" / "alien_kb_0.md").read_text()
 
     work2 = tmp_path / "apply_wd"
     work2.mkdir()
@@ -228,7 +230,7 @@ def test_materialize_round_trip_preserves_agent_edits(tmp_path, checkout):
     # Agent-authored model + memories are preserved byte-for-byte (NOT
     # re-encoded from cache kb_rows — the clobber Codex #1 flagged).
     assert (out / "models" / "alien" / "foo.yaml").read_text() == orig_model
-    assert (out / "memories.yaml").read_text() == orig_mem
+    assert (out / "memories" / "alien_kb_0.md").read_text() == orig_mem
     # And a fresh baseline is written so a no-op run is detected as unchanged.
     assert em.scratch_changed(work2, out) is False
 

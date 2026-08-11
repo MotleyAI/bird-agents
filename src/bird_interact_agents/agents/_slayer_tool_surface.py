@@ -40,11 +40,17 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 #: Read tools dropped by ``lean_introspection`` that live on the SLayer MCP
-#: surface. ``inspect_model`` is redundant with ``inspect(entity_type="model",
-#: sections=["columns","joins"], compact=True)``; ``list_datasources`` is dead
-#: weight (exactly one datasource per task). v1 already omits both from its
-#: in-process natives, so filtering a v1 list for these is a harmless no-op.
-LEAN_DROP_SLAYER_MCP: frozenset[str] = frozenset({"inspect_model", "list_datasources"})
+#: surface, all subsumed by the unified ``inspect`` (DEV-1668). ``inspect_model``
+#: is redundant with ``inspect(entity_type="model", sections=["columns","joins"],
+#: compact=True)`` (per-model shape); ``models_summary`` is redundant with the
+#: null-reference COLLECTION view ``inspect(reference=None, entity_type="model")``
+#: (slayer 0.9.6 / DEV-1667); ``list_datasources`` is dead weight (exactly one
+#: datasource per task) and equivalently ``inspect(reference=None,
+#: entity_type="datasource")``. ``help`` is NOT here — it is removed
+#: unconditionally (the tool no longer exists on slayer 0.9.6), not gate-able.
+LEAN_DROP_SLAYER_MCP: frozenset[str] = frozenset(
+    {"inspect_model", "models_summary", "list_datasources"}
+)
 
 #: Read tools dropped by ``lean_introspection`` that live on the in-process
 #: ``bird-interact-tools`` server (the knowledge tools). Superseded by SLayer
@@ -184,7 +190,12 @@ def all_slayer_mcp_tool_names() -> frozenset[str]:
                 pass
             # ingest_on_startup=False: registering tools must not connect to a
             # datasource; we only need the advertised tool names.
-            server = create_mcp_server(YAMLStorage(base_dir=tmp), ingest_on_startup=False)
+            # _seed_help=False (DEV-1668/DEV-1669): a metadata-only build must not
+            # trigger slayer 0.9.6's DEV-1658 help-seeding (storage round-trip +
+            # event loop) — we only enumerate tool names here.
+            server = create_mcp_server(
+                YAMLStorage(base_dir=tmp), ingest_on_startup=False, _seed_help=False,
+            )
         bare = {tool.name for tool in server._tool_manager.list_tools()}
 
     if not bare:

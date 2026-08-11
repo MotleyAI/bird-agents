@@ -309,3 +309,25 @@ def _forbid_real_llm_completions(request, monkeypatch):
     monkeypatch.setattr(_usage, "_acompletion", _aboom, raising=False)
     monkeypatch.setattr(_litellm, "acompletion", _aboom, raising=False)
     monkeypatch.setattr(_litellm, "completion", _boom, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _dummy_anthropic_api_key(monkeypatch):
+    """Provide a deterministic, INVALID Anthropic key for the whole suite.
+
+    Several code paths (autopsy's ``_build_anthropic_client``, the agent
+    factories) read ``ANTHROPIC_API_KEY`` at construction time to pick the
+    auth header, and hard-fail if neither it nor ``CLAUDE_CODE_OAUTH_TOKEN``
+    is present. Those tests already stub the actual client / completion seam,
+    so they must never make a real call — but they DID silently depend on a
+    developer's ambient key being in the shell, so the suite broke the moment
+    the key was removed from the environment (the no-real-APIs rule cuts both
+    ways: a test must not *need* a valid key either).
+
+    Inject an obviously-fake key so the presence check passes deterministically
+    while a real call would 401 loudly rather than succeed. Function-scoped so
+    the handful of tests that manage this env themselves (``monkeypatch.delenv``
+    for the "no creds → raise" path, or set an OAuth token to test precedence)
+    still win — their per-test ``monkeypatch`` runs after this autouse one.
+    """
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-test-dummy-not-a-real-key")

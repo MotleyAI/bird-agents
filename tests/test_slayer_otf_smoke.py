@@ -147,7 +147,7 @@ async def test_on_the_fly_build_produces_expected_layout(
     """``ensure_db_cache`` + ``prepare_task_storage`` materialise a
     scratch dir with: ``datasources/<db>.yaml`` (absolute connection
     string), ``models/<db>/*.yaml`` (one per sqlite table), and
-    ``memories.yaml`` (one per KB row, no deletions)."""
+    ``memories/<id>.md`` (one per KB row, no deletions — slayer 0.9.6)."""
     from bird_interact_agents.slayer_otf import (
         cache as otf_cache,
         runtime as otf_runtime,
@@ -174,7 +174,11 @@ async def test_on_the_fly_build_produces_expected_layout(
 
     # Layout
     assert (scratch / "datasources" / f"{db}.yaml").is_file()
-    assert (scratch / "memories.yaml").is_file()
+    # DEV-1668: slayer 0.9.6 stores per-id ``memories/<id>.md`` (not flat) — one
+    # per KB row (no deletions), keyed ``<db>_kb_<id>`` (CodeRabbit: assert the
+    # complete set, not just that one file exists).
+    mem_stems = {p.stem for p in (scratch / "memories").glob("*.md")}
+    assert {f"{db}_kb_{int(r['id'])}" for r in kb_rows} <= mem_stems
 
     # Datasource connection string resolves to an existing absolute file.
     storage = YAMLStorage(base_dir=str(scratch))

@@ -409,9 +409,6 @@ Budget: {budget} bird-coins. inspect_model, inspect and query cost 0.5-1,
 asking the user costs 2, submitting costs 3. If your first submission is
 wrong you may have one chance to debug it.
 
-# SLayer help (excerpt)
-{slayer_help}
-
 # Available models
 {models_summary}
 

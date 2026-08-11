@@ -34,8 +34,9 @@ THE KB ITEM TO ENCODE (id {kb_id}):
 {reverse_deps_block}
 
 TOOLS (read their own descriptions):
-* `help` — learn the query/colon-aggregation syntax (`revenue:sum`, `*:count`)
-  and the `source_model` / `dimensions` / `measures` / `filters` schema.
+* `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` —
+  learn the query/colon-aggregation syntax (`revenue:sum`, `*:count`) and the
+  `source_model` / `dimensions` / `measures` / `filters` schema.
 * `search` — find existing models / columns / measures relevant to the KB.
 * `inspect` — read a known entity's full `Description:` + `Sample values:` by
   reference (`<db>.<model>.<col>`; single-entity point lookup).

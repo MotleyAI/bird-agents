@@ -112,9 +112,13 @@ _NUDGE_TURN_BUDGET = 35
 
 # SLayer MCP tools the encoder may call. `save_memory` is REQUIRED (the agent
 # wires its own KB memory); `query_nested` lets it self-test a multi-stage DAG.
+# DEV-1668: `help` is gone from slayer 0.9.6 (help content is now
+# `inspect(reference="memory:help.intro", entity_type="memory")`); allow-listing
+# it would crash `derive_disallowed_slayer_tools`. The encoder is EXEMPT from the
+# lean surface reduction, so `models_summary` / `inspect_model` stay.
 SLAYER_MCP_TOOLS = [
     "create_model", "edit_model", "save_memory", "validate_models",
-    "help", "search", "models_summary", "inspect_model", "inspect",
+    "search", "models_summary", "inspect_model", "inspect",
     "recommend_root_model", "query", "query_nested",
 ]
 

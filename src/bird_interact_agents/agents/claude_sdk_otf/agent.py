@@ -181,7 +181,12 @@ def _make_query_before_submit_guard():
 # normalization mid-flight via the `normalize_filters` parameter. They
 # are NOT in this allowlist.
 SLAYER_MCP_TOOLS = [
-    "help",
+    # DEV-1668: `help` is gone from slayer 0.9.6 (help content is now
+    # `inspect(reference="memory:help.intro", entity_type="memory")`). Allow-
+    # listing it would crash `derive_disallowed_slayer_tools` (unknown name).
+    # `list_datasources` / `models_summary` stay here for the LEGACY (lean=False)
+    # surface; `lean_introspection=True` (default) drops them via
+    # `effective_slayer_allow` → `inspect(reference=None, entity_type=…)`.
     "list_datasources",
     "models_summary",
     "inspect_model",

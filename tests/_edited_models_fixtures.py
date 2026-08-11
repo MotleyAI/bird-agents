@@ -21,6 +21,8 @@ from pathlib import Path
 
 import yaml
 
+from bird_interact_agents.memory_store_io import write_memories_files
+
 DEFAULT_ABS_CONN = "sqlite:////nonexistent/build/machine/alien/alien.sqlite"
 
 
@@ -52,8 +54,17 @@ def make_fake_store(
     (scratch / "models" / db).mkdir(parents=True)
     (scratch / "models" / db / "foo.yaml").write_text(model_body)
     if memories is None:
-        memories = [{"version": 1, "id": f"{db}_kb_0", "entities": [db]}]
-    (scratch / "memories.yaml").write_text(yaml.safe_dump(memories, sort_keys=False))
+        # A fixed ``created_at`` keeps the per-id ``.md`` bytes deterministic
+        # (the content-manifest tests hash them); otherwise ``Memory`` stamps
+        # the wall clock.
+        memories = [{
+            "version": 1, "id": f"{db}_kb_0",
+            "learning": f"KB 0 — {db} seed", "entities": [db],
+            "created_at": "1970-01-01T00:00:00Z",
+        }]
+    # DEV-1668: slayer 0.9.6 stores per-id ``memories/<id>.md``; write via the
+    # shared helper so the fixture store matches the runtime format.
+    write_memories_files(scratch, memories)
 
     # Match SLayer's SidecarEmbeddingStore schema exactly so the real
     # YAMLStorage / reanchor path can open the sidecar without a migration

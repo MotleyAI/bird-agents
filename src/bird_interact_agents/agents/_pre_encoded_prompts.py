@@ -66,7 +66,7 @@ description. The base tables and these encoded entities are already
 ingested — you do NOT (and CANNOT) create or edit models; your job is to
 DISCOVER the entities the question needs and QUERY off them.
 
-SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
+SLAYER TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 {inventory_tools}`search` to find the encoded entities and KB-derived columns

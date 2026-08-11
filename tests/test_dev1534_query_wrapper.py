@@ -489,7 +489,7 @@ def test_otf_one_shot_slayer_allowlist_excludes_subprocess_query():
     )
     # Spot-check the other slayer MCP tools are still there.
     for kept in (
-        "help", "list_datasources", "models_summary", "inspect_model",
+        "list_datasources", "models_summary", "inspect_model",
         "search", "create_model", "edit_model", "save_memory",
         "validate_models",
     ):
@@ -637,6 +637,17 @@ async def test_query_wrapper_does_not_decrement_budget(monkeypatch):
         return "ok"
 
     monkeypatch.setattr(_query_mod, "_get_slayer_query_fn", lambda: fake_slayer_query)
+
+    # slayer 0.9.6 (DEV-1658) seeds help memories inside ``create_mcp_server``
+    # via ``await storage.get_memory_row(...)``. This budget test uses a stub
+    # ``object()`` storage, so no-op the seed here (it is unrelated to budget
+    # accounting; the storage-less crash is tracked upstream in DEV-1669).
+    import slayer.mcp.server as _sms
+
+    async def _no_seed(*args, **kwargs):
+        return 0
+
+    monkeypatch.setattr(_sms, "seed_help_memories", _no_seed)
 
     status = agent_mod._ctx_var.get()["status"]
     start = status.remaining_budget

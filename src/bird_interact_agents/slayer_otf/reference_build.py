@@ -44,7 +44,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Collection, Iterator
 
-import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from slayer.storage.yaml_storage import YAMLStorage
@@ -60,6 +59,7 @@ from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     _normalise_children,
     encode_kb_as_memories,
 )
+from bird_interact_agents.memory_store_io import persist_memories
 from bird_interact_agents.slayer_pipeline.portable_connection import (
     reanchor_connection_string,
     to_portable_connection_string,
@@ -757,8 +757,10 @@ async def _build_reference_inside_lock(
         )
 
         # 3. Preload the full KB as memories (no deletions at build time).
+        # DEV-1668: persist through the slayer storage layer (per-id
+        # ``memories/<id>.md``) — see :mod:`bird_interact_agents.memory_store_io`.
         mems = encode_kb_as_memories(db, kb_rows, deleted_kb_ids=set())
-        (tmp / "memories.yaml").write_text(yaml.safe_dump(mems, sort_keys=False))
+        await persist_memories(tmp, mems)
 
         # 4. Run the setup encoder over the whole DAG. Pass the real `db` —
         # the encoder must NOT infer it from the tmp build-dir name (Codex).

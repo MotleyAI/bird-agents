@@ -242,9 +242,11 @@ async def test_aopen_aclose_are_noops(tmp_path):
 def test_exact_tool_surface():
     """Mechanical contract (NOT prompt content)."""
     slayer = set(se.SLAYER_MCP_TOOLS)
+    # DEV-1668: `help` removed (slayer 0.9.6 dropped the tool); the encoder is
+    # exempt from the lean surface reduction so models_summary/inspect_model stay.
     assert slayer == {
         "create_model", "edit_model", "save_memory", "validate_models",
-        "help", "search", "models_summary", "inspect_model", "inspect",
+        "search", "models_summary", "inspect_model", "inspect",
         "recommend_root_model", "query", "query_nested",
     }
     assert se.NATIVE_TOOL_NAME == "mcp__bird-interact-tools__submit_encoding"

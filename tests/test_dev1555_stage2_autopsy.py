@@ -348,6 +348,7 @@ async def test_zai_autopsy_request_shape_no_thinking(monkeypatch, tmp_path):
 def test_build_client_anthropic_resolution_unchanged(monkeypatch):
     from bird_interact_agents.eval.autopsy import _build_anthropic_client
 
+    monkeypatch.delenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anth-key")
     client = _build_anthropic_client("anthropic/claude-sonnet-4-5")
@@ -356,3 +357,54 @@ def test_build_client_anthropic_resolution_unchanged(monkeypatch):
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-y")
     client = _build_anthropic_client("anthropic/claude-sonnet-4-5")
     assert client.auth_token == "sk-ant-oat01-y"
+
+
+def test_build_client_oauth_ignores_ambient_api_key(monkeypatch):
+    """DEV-1670 root cause: on the OAuth path the client must Bearer-auth with
+    the OAuth token and NOT silently pick up an ambient ANTHROPIC_API_KEY. With
+    the old ``api_key=None`` the SDK loaded the ambient key and sent both an
+    x-api-key header and the Bearer token — the server honoured the x-api-key,
+    so a local run with a depleted developer key 400'd with 'credit balance too
+    low' while claiming to be on the subscription. ``api_key=""`` forces OAuth."""
+    from bird_interact_agents.eval.autopsy import _build_anthropic_client
+
+    # Both an ambient API key AND the OAuth token are present (the exact local
+    # setup that mis-billed the API key before the fix).
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-ambient-should-not-win")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-x")
+    client = _build_anthropic_client("anthropic/claude-opus-4-8")
+    assert client.auth_token == "sk-ant-oat01-x"
+    # The empty string (not None) is what stops the SDK from loading the ambient
+    # key — so the request carries ONLY the Bearer/OAuth auth.
+    assert client.api_key == ""
+
+
+def test_build_client_subscription_path_no_oauth_raises_not_apikey(monkeypatch):
+    """DEV-1670: on the subscription path (signal set) with no OAuth token, the
+    autopsy must NOT fall back to ANTHROPIC_API_KEY (the operator opted out of
+    it). It raises ``_AutopsyAuthUnavailable`` so run_autopsy skips rather than
+    billing the API key."""
+    from bird_interact_agents.eval.autopsy import (
+        _AutopsyAuthUnavailable,
+        _build_anthropic_client,
+    )
+
+    monkeypatch.setenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", "1")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    # An ambient API key is present — the pre-fix code would have used it.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-must-not-be-used")
+    with pytest.raises(_AutopsyAuthUnavailable):
+        _build_anthropic_client("anthropic/claude-opus-4-8")
+
+
+def test_build_client_apikey_path_still_uses_apikey(monkeypatch):
+    """Off the subscription path (--no-subscription-auth: signal absent), the
+    API-key fallback is unchanged — the guard only fires when the operator
+    explicitly chose subscription auth."""
+    from bird_interact_agents.eval.autopsy import _build_anthropic_client
+
+    monkeypatch.delenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anth-key")
+    client = _build_anthropic_client("anthropic/claude-opus-4-8")
+    assert client.api_key == "anth-key"

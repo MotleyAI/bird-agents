@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from pydantic_ai import Agent, RunContext
 
 from slayer.core.models import Column, DatasourceConfig, SlayerModel
@@ -25,6 +24,7 @@ from slayer.storage.yaml_storage import YAMLStorage
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
+from bird_interact_agents.memory_store_io import write_memories_files
 
 
 DB = "tinydb"
@@ -65,7 +65,7 @@ async def _seed(
         by_id = {m["id"]: m for m in mems}
         for kb_id, refs in extra_memory_entities.items():
             by_id[f"{DB}_kb_{kb_id}"]["entities"].extend(refs)
-    (tmp_path / "memories.yaml").write_text(yaml.safe_dump(mems, sort_keys=False))
+    write_memories_files(tmp_path, mems)
     return storage
 
 
@@ -253,11 +253,11 @@ async def test_memory_without_verbatim_block_still_encodes(tmp_path):
         columns=[Column(name="id", primary_key=True)],
     ))
     # A memory with NO verbatim YAML block — just prose.
-    (tmp_path / "memories.yaml").write_text(yaml.safe_dump([{
+    write_memories_files(tmp_path, [{
         "version": 1, "id": f"{DB}_kb_11",
         "learning": "KB 11 — high-income households (prose only, no block)",
         "entities": [DB], "query": None,
-    }], sort_keys=False))
+    }])
 
     record: list[int] = []
     tool = _agent_with_stub(_encoding_stub(record))

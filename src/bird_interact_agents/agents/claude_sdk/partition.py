@@ -126,16 +126,18 @@ _DISCOVERY_COMPACT_NOTE = (
     + _COMPACT_SEARCH_DISCIPLINE
     + "\n"
 )
-# DEV-1666: lean variant — `inspect_model` dropped (a model's shape is read via
-# the compact `inspect(entity_type="model", …)` primitive); `models_summary`
-# stays on discovery.
+# DEV-1666/DEV-1668: lean variant — `inspect_model` dropped (a model's shape is
+# read via the compact `inspect(entity_type="model", …)` primitive) and
+# `models_summary` dropped (list ALL models via the collection view
+# `inspect(reference=None, entity_type="model")`).
 _DISCOVERY_COMPACT_NOTE_LEAN = (
-    "\nTOOL-USAGE EFFICIENCY. You own `search` and `inspect` (plus\n"
-    "`models_summary`); read a whole model's shape via\n"
-    '`inspect(entity_type="model", sections=["columns","joins"], compact=True)`.\n'
-    "Use the search-for-discovery, inspect-for-detail discipline below so a\n"
-    "single broad sweep does not bloat your warm context — and so the facts\n"
-    "you report stay crisp:\n\n"
+    "\nTOOL-USAGE EFFICIENCY. You own `search` and `inspect`; read a whole\n"
+    'model\'s shape via `inspect(entity_type="model", sections=["columns",\n'
+    '"joins"], compact=True)` and list ALL models via the collection view\n'
+    '`inspect(reference=None, entity_type="model")`. Use the\n'
+    "search-for-discovery, inspect-for-detail discipline below so a single\n"
+    "broad sweep does not bloat your warm context — and so the facts you\n"
+    "report stay crisp:\n\n"
     + _COMPACT_SEARCH_DISCIPLINE
     + "\n"
 )
@@ -197,7 +199,8 @@ and `inspect` for detail: a known column's sample values via
 model's shape via `inspect(entity_type="model", sections=["columns","joins"],
 compact=True)`. A long-lived warm 'discovery' assistant is ALSO available
 through the `ask_discovery` tool for delegating broad whole-schema questions
-(it owns `models_summary` and accumulates context across questions).
+(it lists all models via `inspect(reference=None, entity_type="model")` and
+accumulates context across questions).
 Knowledge-base items are SLayer memories: `search` surfaces them (`kind:
 memory`); read them verbatim with `inspect(entity_type="memory",
 reference=["memory:<id>"])`.
