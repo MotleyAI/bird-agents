@@ -34,9 +34,10 @@ PGDATA="${PGDATA:-$HOME/.local/share/bird-agents/pgdata}"
 # connection (host:port:user) — the connection is runtime-reanchored from
 # BIRD_PG_* and persisted references are portabilised to canonical defaults, so
 # the port you build on here does not affect cache reuse across machines/cloud.
-# The 5432 default below is now only about which local server this script talks
-# to; set PGPORT to any free port if 5432 is taken (e.g. by the IAP tunnel).
-PGPORT="${PGPORT:-5432}"
+# That removed the old reason to pin 5432; default to 5435 instead (matching the
+# usage doc above) because :5432 is RESERVED for the IAP tunnel — defaulting the
+# builder there would block or collide with it. Override PGPORT if 5435 is taken.
+PGPORT="${PGPORT:-5435}"
 PGHOST="${PGHOST:-localhost}"
 ADMIN_USER="postgres"  # role created by initdb; used only for admin operations
 CACHE_USER="${CACHE_USER:-bird_interact}"  # role used for cache build — must match cloud
