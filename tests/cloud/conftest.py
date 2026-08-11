@@ -118,13 +118,25 @@ def fake_gcs_bucket():
     actually calls (`bucket`, `bucket().blob`, `blob.upload_from_string`,
     `blob.download_as_bytes`, `bucket.list_blobs`).
     """
+    from pathlib import Path
     from types import SimpleNamespace
 
     store: dict[str, bytes] = {}
+    # DEV-1653: capture every upload_from_filename call as
+    # (name, timeout, retry) so tests can assert which blobs were (not) sent
+    # and with which timeout/retry — skip-existing must NOT re-send matches.
+    upload_calls: list = []
 
     def _blob(name: str):
         def _upload(data, content_type=None, **_kw):
             store[name] = data if isinstance(data, bytes) else data.encode()
+
+        def _upload_from_filename(filename, *, timeout=None, retry=None,
+                                  content_type=None, **_kw):
+            # DEV-1653: real Blob.upload_from_filename streams a file from disk.
+            # The fake reads it eagerly and records the call for assertions.
+            upload_calls.append((name, timeout, retry))
+            store[name] = Path(filename).read_bytes()
 
         def _download():
             if name not in store:
@@ -133,18 +145,23 @@ def fake_gcs_bucket():
 
         return SimpleNamespace(
             name=name,
+            # DEV-1653: real listed blobs carry `.size` (object byte length);
+            # None for a blob that isn't in the store yet.
+            size=len(store[name]) if name in store else None,
             upload_from_string=_upload,
+            upload_from_filename=_upload_from_filename,
             download_as_bytes=_download,
             exists=lambda: name in store,
         )
 
     def _list_blobs(*, prefix: str = "", **_kw):
         # Match real google.cloud.storage.Client.list_blobs(prefix=...):
-        # returned objects have BOTH `.name` and `.download_as_bytes()`.
+        # returned objects have `.name`, `.size`, and `.download_as_bytes()`.
         return [_blob(k) for k in sorted(store) if k.startswith(prefix)]
 
     bucket = SimpleNamespace(
-        blob=_blob, list_blobs=_list_blobs, name="motley-team-birdbench"
+        blob=_blob, list_blobs=_list_blobs, name="motley-team-birdbench",
+        upload_calls=upload_calls,
     )
     client = SimpleNamespace(bucket=lambda _name: bucket)
     return client, store

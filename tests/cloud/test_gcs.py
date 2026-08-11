@@ -313,24 +313,32 @@ def test_upload_dir_prefix_round_trip(fake_gcs_bucket, tmp_path: Path) -> None:
 def test_upload_dir_prefix_tolerates_file_vanishing_mid_walk(
     fake_gcs_bucket, tmp_path: Path, monkeypatch,
 ) -> None:
-    """A file enumerated by the dir-walk can disappear before it is read — e.g.
-    a transient SQLite WAL sidecar removed when its DB closes. The upload must
-    skip the vanished file, not abort the whole transfer with FileNotFoundError."""
+    """A file enumerated by the dir-walk can disappear before it is uploaded —
+    e.g. a transient SQLite WAL sidecar removed when its DB closes. The upload
+    must skip the vanished file, not abort the whole transfer with
+    FileNotFoundError.
+
+    DEV-1653: the file-touch point moved from ``read_bytes`` to
+    ``upload_from_filename``; simulate the vanish there (the file survives the
+    walk + stat, then disappears before the streamed upload opens it)."""
     client, store = fake_gcs_bucket
     src = tmp_path / "ds"
     src.mkdir()
     (src / "keep.txt").write_text("keep\n")
-    vanishing = src / "db.sqlite-shm"
-    vanishing.write_bytes(b"\x00")
+    (src / "db.sqlite-shm").write_bytes(b"\x00")
 
-    real_read = Path.read_bytes
+    bucket = client.bucket("b")
+    real_blob = bucket.blob
 
-    def _flaky_read(self):
-        if self.name == "db.sqlite-shm":
-            raise FileNotFoundError(2, "No such file or directory", str(self))
-        return real_read(self)
+    def _blob_vanishing(name):
+        b = real_blob(name)
+        if name.endswith("/db.sqlite-shm"):
+            def _gone(*a, **k):
+                raise FileNotFoundError(2, "No such file or directory", name)
+            b.upload_from_filename = _gone
+        return b
 
-    monkeypatch.setattr(Path, "read_bytes", _flaky_read)
+    monkeypatch.setattr(bucket, "blob", _blob_vanishing)
     gcs.upload_dir_prefix(src, "runs/r/ds", client=client)
     # The surviving file uploaded; the vanished one was skipped (no crash).
     assert store["runs/r/ds/keep.txt"] == b"keep\n"
@@ -352,6 +360,202 @@ def test_upload_dir_prefix_preserves_nested_rel_paths(
     assert f"{prefix}/top.txt" in store
     # No directory entries, only files.
     assert all(not k.endswith("/") for k in store)
+
+
+# ---------------------------------------------------------------------------
+# DEV-1653 — upload_dir_prefix skip-existing + tunable timeout/retry.
+#
+# Large postgres datasets (livesqlbench-large: 1.4 GB / 139 files, single
+# pg_dumps/*.sql blobs of 355/194/155 MB) on a flaky link timed out the old
+# ~120s single-shot upload_from_string; with no skip-existing every retry
+# re-uploaded the whole tree → non-convergent. The uploader now:
+#   * lists the prefix once and skips any blob already present with matching
+#     byte size (resumable at file granularity),
+#   * streams via upload_from_filename with a generous, tunable timeout and a
+#     retry carrying a long deadline.
+# ---------------------------------------------------------------------------
+
+
+def test_upload_constants_are_generous() -> None:
+    """The per-blob timeout and retry deadline are generous enough for a
+    355 MB pg_dump over a flaky link (the client-default ~120s is what
+    times out today)."""
+    assert gcs._UPLOAD_TIMEOUT_S == 900.0
+    assert gcs._UPLOAD_RETRY_DEADLINE_S == 1800.0
+
+
+def test_upload_dir_prefix_skips_matching_size(
+    fake_gcs_bucket, tmp_path: Path,
+) -> None:
+    """A blob already present with the SAME byte size is NOT re-uploaded; a
+    file whose size differs (or is absent) IS uploaded."""
+    client, store = fake_gcs_bucket
+    src = tmp_path / "ds"
+    src.mkdir()
+    (src / "same.txt").write_bytes(b"HELLO")   # 5 bytes
+    (src / "fresh.txt").write_bytes(b"WORLD!")  # 6 bytes, not present remotely
+
+    prefix = "benchmark-data/x/hash"
+    # Pre-seed a remote blob at same.txt with the SAME length but DIFFERENT
+    # bytes — proves the skip is size-keyed, not a re-upload that happens to
+    # match. (Under a content-hashed prefix, name+size is exact.)
+    store[f"{prefix}/same.txt"] = b"XXXXX"      # 5 bytes, sentinel content
+
+    gcs.upload_dir_prefix(src, prefix, client=client)
+
+    sent = {name for (name, _t, _r) in client.bucket("b").upload_calls}
+    assert f"{prefix}/same.txt" not in sent, "matching-size blob was re-sent"
+    assert f"{prefix}/fresh.txt" in sent, "new blob was not uploaded"
+    # The skipped blob keeps its original (sentinel) bytes — not overwritten.
+    assert store[f"{prefix}/same.txt"] == b"XXXXX"
+    assert store[f"{prefix}/fresh.txt"] == b"WORLD!"
+
+
+def test_upload_dir_prefix_reuploads_on_size_mismatch(
+    fake_gcs_bucket, tmp_path: Path,
+) -> None:
+    """A remote blob whose size differs from the local file is re-uploaded
+    (overwritten with the new bytes)."""
+    client, store = fake_gcs_bucket
+    src = tmp_path / "ds"
+    src.mkdir()
+    (src / "f.txt").write_bytes(b"NEW-LONGER-CONTENT")
+
+    prefix = "benchmark-data/x/hash"
+    store[f"{prefix}/f.txt"] = b"OLD"  # 3 bytes vs 18 → mismatch → re-upload
+
+    gcs.upload_dir_prefix(src, prefix, client=client)
+
+    sent = {name for (name, _t, _r) in client.bucket("b").upload_calls}
+    assert f"{prefix}/f.txt" in sent
+    assert store[f"{prefix}/f.txt"] == b"NEW-LONGER-CONTENT"
+
+
+def test_upload_dir_prefix_honours_explicit_timeout_and_retry(
+    fake_gcs_bucket, tmp_path: Path,
+) -> None:
+    """The passed timeout/retry reach every upload_from_filename call."""
+    client, store = fake_gcs_bucket
+    src = tmp_path / "ds"
+    src.mkdir()
+    (src / "a.txt").write_text("a\n")
+    (src / "b.txt").write_text("b\n")
+
+    sentinel_retry = object()
+    gcs.upload_dir_prefix(
+        src, "runs/r/ds", client=client, timeout=123.0, retry=sentinel_retry,
+    )
+
+    calls = client.bucket("b").upload_calls
+    assert len(calls) == 2
+    for _name, timeout, retry in calls:
+        assert timeout == 123.0
+        assert retry is sentinel_retry
+
+
+def test_upload_dir_prefix_default_timeout_and_retry(
+    fake_gcs_bucket, tmp_path: Path,
+) -> None:
+    """With no explicit timeout/retry, the module-level generous defaults are
+    used (900s timeout, a retry carrying the long deadline)."""
+    client, store = fake_gcs_bucket
+    src = tmp_path / "ds"
+    src.mkdir()
+    (src / "a.txt").write_text("a\n")
+
+    gcs.upload_dir_prefix(src, "runs/r/ds", client=client)
+
+    calls = client.bucket("b").upload_calls
+    assert len(calls) == 1
+    _name, timeout, retry = calls[0]
+    assert timeout == gcs._UPLOAD_TIMEOUT_S
+    assert timeout == 900.0
+    assert retry is gcs._UPLOAD_RETRY
+    assert gcs._UPLOAD_RETRY is not None  # cloud install → real retry object
+
+
+def test_upload_dir_prefix_resumes_after_partial(
+    fake_gcs_bucket, tmp_path: Path,
+) -> None:
+    """A prior attempt uploaded the small blobs but died before the big one
+    (a per-blob timeout); the retry uploads ONLY the remainder — the
+    already-present blobs are not re-sent, and the tree ends complete.
+
+    The partial state is modelled by pre-seeding the small blobs (byte-identical
+    → size match). The real-failure → no-marker path is covered at the
+    ``ensure_uploaded`` level in test_benchmark_data.py."""
+    client, store = fake_gcs_bucket
+    src = tmp_path / "ds"
+    src.mkdir()
+    (src / "small1.txt").write_bytes(b"a")
+    (src / "small2.txt").write_bytes(b"bb")
+    (src / "big.sql").write_bytes(b"BIGCONTENT")
+    prefix = "benchmark-data/x/hash"
+
+    # Prior partial upload: the two small blobs landed, big.sql never finished.
+    store[f"{prefix}/small1.txt"] = b"a"
+    store[f"{prefix}/small2.txt"] = b"bb"
+
+    gcs.upload_dir_prefix(src, prefix, client=client)
+
+    sent = {name for (name, _t, _r) in client.bucket("b").upload_calls}
+    assert sent == {f"{prefix}/big.sql"}, "retry re-sent already-present blobs"
+    assert store[f"{prefix}/big.sql"] == b"BIGCONTENT"
+    # The pre-seeded blobs are untouched.
+    assert store[f"{prefix}/small1.txt"] == b"a"
+    assert store[f"{prefix}/small2.txt"] == b"bb"
+
+
+def test_upload_dir_prefix_normalises_trailing_slash_prefix(
+    fake_gcs_bucket, tmp_path: Path,
+) -> None:
+    """A prefix passed WITH a trailing slash uploads to the same base, and the
+    skip-existing list is scoped to that base: an already-present blob UNDER the
+    base is found and skipped, while a sibling prefix sharing a name stem
+    (``dsX``) is neither consulted nor overwritten."""
+    client, store = fake_gcs_bucket
+    src = tmp_path / "ds"
+    src.mkdir()
+    (src / "f.txt").write_bytes(b"data")
+    (src / "already.txt").write_bytes(b"present")
+
+    # An already-uploaded blob UNDER the base (same bytes → size match). Proves
+    # list_blobs was scoped to `base + "/"` and the skip fired.
+    store["runs/r/ds/already.txt"] = b"present"
+    # Sibling namespace that shares the "ds" stem — must be untouched, and must
+    # NOT be treated as an already-present blob for our upload.
+    store["runs/r/dsX/f.txt"] = b"sibling"
+
+    gcs.upload_dir_prefix(src, "runs/r/ds/", client=client)
+
+    sent = {name for (name, _t, _r) in client.bucket("b").upload_calls}
+    assert store["runs/r/ds/f.txt"] == b"data"
+    assert f"runs/r/ds/f.txt" in sent               # new file uploaded
+    assert "runs/r/ds/already.txt" not in sent      # present blob skipped
+    assert store["runs/r/dsX/f.txt"] == b"sibling"  # sibling untouched
+
+
+def test_upload_dir_prefix_propagates_list_error(
+    fake_gcs_bucket, tmp_path: Path, monkeypatch,
+) -> None:
+    """A transient list_blobs failure must abort the upload (so the caller
+    never writes its completeness marker), not silently skip every file."""
+    client, store = fake_gcs_bucket
+    src = tmp_path / "ds"
+    src.mkdir()
+    (src / "f.txt").write_text("x\n")
+
+    bucket = client.bucket("b")
+
+    def _boom(*a, **k):
+        raise ConnectionError("transient list failure")
+
+    monkeypatch.setattr(bucket, "list_blobs", _boom)
+    with pytest.raises(ConnectionError):
+        gcs.upload_dir_prefix(src, "benchmark-data/x/hash", client=client)
+    # The listing happens BEFORE any upload — a list failure aborts before a
+    # single blob is sent (so the caller never writes its marker).
+    assert bucket.upload_calls == []
 
 
 def test_download_prefix_strips_prefix(fake_gcs_bucket, tmp_path: Path) -> None:
