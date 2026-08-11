@@ -215,9 +215,80 @@ def test_phase_sql_slayer_nested_dag_array_uses_compiled_sql(fake_count_tokens):
     assert dag_array not in str(row.subtask_1_predicted_sql)
 
 
-def test_phase_sql_slayer_mode_two_phase_loses_phase1_sql(fake_count_tokens):
-    """SLayer two-phase: only the FINAL submit's compiled SQL is
-    persisted. Phase-1 SQL is unrecoverable — emit empty + warning."""
+def test_phase_sql_slayer_two_phase_recovers_per_phase_from_generated_sql(
+    fake_count_tokens,
+):
+    """Codex round 10: real harness embeds compiled SQL in EVERY submit
+    observation via ``Generated SQL:\\n<sql>\\n\\nResult: ...`` (see
+    `_submit.py:806`). The converter parses it so both phases recover
+    their compiled SQL, NOT just the final one."""
+    from tests.reports._fixtures import (
+        assistant_msg,
+        build_trajectory,
+        system_msg,
+        tool_result_msg,
+        tool_use_block,
+        user_text_msg,
+    )
+
+    phase1_compiled = "SELECT a FROM x"
+    phase2_compiled = "SELECT a, b FROM x"
+    phase1_dsl = '{"source_model": "x", "dimensions": ["a"]}'
+    phase2_dsl = '{"source_model": "x", "dimensions": ["a", "b"]}'
+    steps = [
+        system_msg(),
+        user_text_msg(text="Task."),
+        assistant_msg(
+            tool_use=tool_use_block(
+                tool_use_id="tu_p1",
+                name="mcp__bird-interact-tools__submit_query",
+                inp={"query_json": phase1_dsl},
+            ),
+        ),
+        tool_result_msg(
+            tool_use_id="tu_p1",
+            content=(
+                f"Generated SQL:\n{phase1_compiled}\n\n"
+                "Result: Phase 1 SQL Correct! Moving to Phase 2."
+            ),
+        ),
+        user_text_msg(text="Follow-up."),
+        assistant_msg(
+            tool_use=tool_use_block(
+                tool_use_id="tu_p2",
+                name="mcp__bird-interact-tools__submit_query",
+                inp={"query_json": phase2_dsl},
+            ),
+        ),
+        tool_result_msg(
+            tool_use_id="tu_p2",
+            content=(
+                f"Generated SQL:\n{phase2_compiled}\n\n"
+                "Result: Phase 2 SQL Correct! Task finished."
+            ),
+        ),
+    ]
+    traj = build_trajectory(
+        instance_id="alien_6",
+        trajectory_steps=steps,
+        submitted_sql=phase2_compiled,
+        phase1_passed=True,
+        phase2_passed=True,
+    )
+    row, warnings = _convert_with_warnings(traj)
+    assert row.subtask_1_predicted_sql == [phase1_compiled]
+    assert row.subtask_2_predicted_sql == [phase2_compiled]
+    # No "not recoverable" warning — we recovered both.
+    assert not any("could not be recovered" in w for w in warnings)
+
+
+def test_phase_sql_slayer_two_phase_falls_back_when_marker_missing(
+    fake_count_tokens,
+):
+    """Legacy fixtures whose submit observations lack the ``Generated
+    SQL:`` prefix still recover the FINAL phase's SQL from
+    ``trajectory.submitted_sql`` and emit a manifest warning for the
+    lost earlier phase."""
     from tests.reports._fixtures import (
         assistant_msg,
         build_trajectory,
@@ -240,9 +311,10 @@ def test_phase_sql_slayer_mode_two_phase_loses_phase1_sql(fake_count_tokens):
                 inp={"query_json": phase1_dsl},
             ),
         ),
+        # No `Generated SQL:` prefix on this observation.
         tool_result_msg(
             tool_use_id="tu_p1",
-            content="Phase 1 SQL Correct! (Reward: 1 points). Moving to Phase 2.",
+            content="Phase 1 SQL Correct! Moving to Phase 2.",
         ),
         user_text_msg(text="Follow-up."),
         assistant_msg(
@@ -267,7 +339,7 @@ def test_phase_sql_slayer_mode_two_phase_loses_phase1_sql(fake_count_tokens):
     row, warnings = _convert_with_warnings(traj)
     assert row.subtask_1_predicted_sql == [""]
     assert row.subtask_2_predicted_sql == [phase2_compiled]
-    assert any("phase-1 SQL is not recoverable" in w for w in warnings), warnings
+    assert any("could not be recovered" in w for w in warnings), warnings
 
 
 # ---------------------------------------------------------------------------

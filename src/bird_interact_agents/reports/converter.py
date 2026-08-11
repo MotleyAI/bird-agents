@@ -16,6 +16,7 @@ Top-level entry point: ``build_submission_row``.
 from __future__ import annotations
 
 import json
+import re
 
 from bird_interact_agents.reports.action_canonicalize import (
     action_args_string,
@@ -110,19 +111,29 @@ def build_submission_row(
     phase_result: SplitResult = split_phases(submit_observations)
     extra_warnings: list[str] = []
 
-    # The compiled SQL the leaderboard grades comes from one of two
+    # The compiled SQL the leaderboard grades comes from one of three
     # places depending on query_mode:
     # * ``raw``: the agent literally passed SQL in ``query`` /
-    #   ``query_json``; ``submit(<sql>)`` already has it. We pull from
-    #   ``turn.tool_input`` directly so we don't depend on the
-    #   canonical-string slice (which keeps any wrapping the
-    #   canonicalizer added).
+    #   ``query_json``; we pull from ``turn.tool_input`` directly so we
+    #   don't depend on the canonical-string slice (which keeps any
+    #   wrapping the canonicalizer added).
     # * ``slayer``: the agent passed a SlayerQuery JSON DSL; the SERVER
-    #   compiled it to SQL but only the LAST submit's compiled SQL is
-    #   persisted (as ``trajectory.submitted_sql``). Earlier-phase
-    #   compiled SQL is LOST — we emit an empty list AND a manifest
-    #   warning so the operator knows about the gap.
+    #   compiles it to SQL. The compiled SQL is embedded in EVERY
+    #   submit's tool_result with the prefix ``Generated SQL:\n<sql>\n
+    #   \nResult: `` (see _submit.py:806). Parsing the observation lets
+    #   us recover per-phase compiled SQL — not just the final one
+    #   (which is the only one ``trajectory.submitted_sql`` persists).
+    # * Fallback for SLayer: if the observation has no ``Generated SQL``
+    #   marker (legacy / unexpected shape), use ``trajectory.submitted
+    #   _sql`` for the LAST submit only.
     trajectory_final_sql = str(trajectory_obj.get("submitted_sql") or "")
+    _GENERATED_SQL_RE = re.compile(
+        r"Generated SQL:\s*\n(?P<sql>.*?)(?=\n\nResult:|\Z)", re.DOTALL
+    )
+
+    def _extract_compiled_sql_from_observation(obs: str) -> str:
+        m = _GENERATED_SQL_RE.search(obs or "")
+        return m.group("sql").strip() if m else ""
 
     def _looks_like_json_dsl(s: str) -> bool:
         """SLayer's ``submit_query.query_json`` accepts either a single
@@ -151,12 +162,17 @@ def build_submission_row(
         turn = turns[idx]
         raw_input = _raw_input_sql(turn)
         if _looks_like_json_dsl(raw_input):
-            # SLayer DSL: compiled SQL only available for the LAST
-            # overall submit (the trajectory's `submitted_sql`).
-            if idx == last_submit_idx and trajectory_final_sql:
-                sql = trajectory_final_sql
-            else:
-                sql = ""  # earlier-phase compiled SQL not recoverable
+            # SLayer DSL. Try the per-submit `Generated SQL:` prefix in
+            # the observation first (real harness emits it for every
+            # submit, recoverable per-phase). Fall back to the
+            # trajectory's last `submitted_sql` if the observation has
+            # no marker (legacy / smoke fixtures).
+            sql = _extract_compiled_sql_from_observation(turn.observation)
+            if not sql:
+                if idx == last_submit_idx and trajectory_final_sql:
+                    sql = trajectory_final_sql
+                else:
+                    sql = ""
         else:
             sql = raw_input
 
@@ -167,16 +183,18 @@ def build_submission_row(
             last_phase1_sql = sql
             have_phase1 = True
 
-    # Manifest warning when an earlier phase's compiled SQL was lost
-    # because the agent ran in SLayer mode and only the FINAL submit's
-    # SQL is persisted (Codex round 4 finding).
+    # Manifest warning when an earlier phase's compiled SQL still
+    # couldn't be recovered (observation lacked the marker AND wasn't
+    # the trajectory's final submit). Real harness runs hit the
+    # observation-marker path; only legacy / malformed trajectories
+    # should fall through to this warning.
     if have_phase1 and have_phase2 and not last_phase1_sql:
         extra_warnings.append(
-            "SLayer-mode phase-1 SQL is not recoverable from the trajectory: "
-            "only the final submit's compiled SQL is stored as "
-            "`submitted_sql`; phase-1 was overwritten when phase-2 ran. "
-            "Emitting empty subtask_1_predicted_sql; review trajectory manually "
-            "or re-run with query_mode=raw to capture per-submit SQL."
+            "SLayer-mode phase-1 compiled SQL could not be recovered from "
+            "the trajectory: neither the submit observation carried a "
+            "`Generated SQL:` prefix nor was this the trajectory's final "
+            "submit. Emitting empty subtask_1_predicted_sql; review the "
+            "trajectory manually."
         )
 
     subtask_1_predicted_sql = [last_phase1_sql] if have_phase1 else []
