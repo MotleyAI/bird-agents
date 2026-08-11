@@ -241,6 +241,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sp_build = sub.add_parser("build")
     sp_build.add_argument("--force", action="store_true")
 
+    # DEV-1553: `bird-interact-cloud submission` — generate a
+    # BIRD-INTERACT-1.0 a-Interact submission directory from existing
+    # cloud runs. Subparser-registration lives in reports.cli so the
+    # cloud CLI module doesn't drag in the reports package at import time
+    # for non-submission subcommands.
+    from bird_interact_agents.reports import cli as _reports_cli
+
+    _reports_cli.add_subparser(sub)
+
     ns = p.parse_args(argv)
 
     # `--subscription-auth` / `--no-subscription-auth` is required on submit
@@ -534,6 +543,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{row['mode']}  {row['status']}  {row['done']}/{row['total']}"
             )
         return 0
+    if ns.subcommand == "submission":
+        from bird_interact_agents.reports import cli as _reports_cli
+
+        return _reports_cli.run_submission(ns)
     if ns.subcommand == "build":
         from bird_interact_agents import paths
         from bird_interact_agents.cloud import image
