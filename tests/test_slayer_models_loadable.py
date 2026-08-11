@@ -15,11 +15,32 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 from slayer.storage.yaml_storage import YAMLStorage
 
 
 SLAYER_MODELS_ROOT = Path(__file__).resolve().parent.parent / "slayer_models"
+
+
+def _repoint_datasource_to_tmp(work: Path, db_name: str) -> None:
+    """Rewrite the copied datasource's sqlite ``connection_string`` to a path
+    inside the tmp ``work`` dir.
+
+    The committed ``datasources/<db>.yaml`` bakes an absolute sqlite path from
+    whatever machine exported it (e.g. ``/home/.../Dropbox/SLayer/mini-interact/
+    <db>/<db>.sqlite``). Opening the datasource connects to that path, so the
+    round-trip gate would fail on any machine whose dataset lives elsewhere.
+    This gate only validates that the YAML round-trips through ``YAMLStorage``
+    (datasource + models Pydantic-validate) — it does NOT query data — so we
+    repoint the connection at a per-run tmp sqlite (parent always exists →
+    sqlite creates it on connect), making the test machine-independent.
+    """
+    ds_yaml = work / "datasources" / f"{db_name}.yaml"
+    doc = yaml.safe_load(ds_yaml.read_text())
+    if str(doc.get("type", "")).lower() == "sqlite":
+        doc["connection_string"] = f"sqlite:///{work / f'{db_name}.sqlite'}"
+        ds_yaml.write_text(yaml.safe_dump(doc, sort_keys=False))
 
 
 def _discover_dbs() -> list[str]:
@@ -47,6 +68,7 @@ async def test_db_storage_loads(db_name: str, tmp_path):
     src = SLAYER_MODELS_ROOT / db_name
     work = tmp_path / db_name
     shutil.copytree(src, work)
+    _repoint_datasource_to_tmp(work, db_name)
     storage = YAMLStorage(base_dir=str(work))
 
     ds = await storage.get_datasource(db_name)
