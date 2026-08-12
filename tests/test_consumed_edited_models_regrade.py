@@ -111,3 +111,26 @@ def test_regrade_falls_back_to_attempt_data_when_manifest_lacks_it(tmp_path, mon
     assert json.loads(dest.read_text())["consumed_edited_models"] == {
         "db": "alien", "instance_id": "alien_1", "store_fp": "fpLOCAL",
     }
+
+
+def test_regrade_fallback_rejects_mismatched_identity(tmp_path, monkeypatch):
+    """A stale/mismatched attempt record (wrong db/instance_id) is NOT stamped
+    onto this task's annotation."""
+    from bird_interact_agents import paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+    from bird_interact_agents.eval.regrade import regrade_run
+
+    run_dir = tmp_path / "results" / "cloud" / "r4"
+    _write_attempt(run_dir, "alien_1", consumed={
+        "db": "alien", "instance_id": "SOMEONE_ELSE", "store_fp": "fpWRONG",
+    })
+    (run_dir / "manifest.json").write_text(json.dumps(
+        {"run_id": "r4", "framework": "claude_sdk"}
+    ))
+
+    regrade_run(
+        run_id="r4", benchmark="mini-interact", run_dir=run_dir,
+        instance_ids=None, grader=_StubGrader(), repo_root=tmp_path,
+    )
+    dest = tmp_path / "runs" / "mini-interact" / "alien" / "alien_1" / "r4.json"
+    assert json.loads(dest.read_text())["consumed_edited_models"] is None

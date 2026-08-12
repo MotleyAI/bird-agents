@@ -81,7 +81,13 @@ def _consumed_for_instance(
     )
     if hit is None and isinstance(attempt_data, dict):
         cand = attempt_data.get("consumed_edited_models")
-        if isinstance(cand, dict):
+        # Validate identity like the manifest path — never stamp a stale /
+        # mismatched attempt record onto the wrong annotation.
+        if (
+            isinstance(cand, dict)
+            and cand.get("db") == db
+            and cand.get("instance_id") == instance_id
+        ):
             hit = cand
     return hit
 
