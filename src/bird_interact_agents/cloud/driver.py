@@ -1298,6 +1298,16 @@ def fetch(run_id: str, *, kill_after_fetch: bool = False) -> dict:
     benchmark = _benchmark_for_dataset(manifest.get("dataset"))
     dest = paths.results_root() / benchmark / "cloud" / run_id
     gcs.concurrent_download_prefix(run_id, dest, client=client)
+    # DEV-1778: aggregate the per-(db, instance_id) consumed edited-models
+    # records from the downloaded per-task annotations into the run manifest,
+    # so `manifest.json` answers "which saved store state did this run consume"
+    # without re-reading every annotation. MUST precede the manifest write.
+    from bird_interact_agents.slayer_otf.edited_models import (
+        collect_consumed_edited_models_from_run_dir,
+    )
+    manifest["consumed_edited_models"] = (
+        collect_consumed_edited_models_from_run_dir(dest)
+    )
     manifest_path = dest / "manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")

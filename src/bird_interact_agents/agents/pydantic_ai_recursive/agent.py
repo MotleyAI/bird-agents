@@ -226,7 +226,10 @@ async def _resolve_otf_task_storage_dir(
                     instance_id=instance_id,
                 )
             )
-            return str(applied), deleted
+            # DEV-1778: stash the consumed-store fingerprint for the finalize hook.
+            if applied.store_fp:
+                task_data["_edited_models_consumed_store_fp"] = applied.store_fp
+            return applied.scratch, deleted
     scratch = await prepare_task_storage(
         db=db_name,
         deleted_kb_ids=set(deleted),

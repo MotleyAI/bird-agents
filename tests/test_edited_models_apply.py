@@ -57,6 +57,10 @@ def test_apply_or_none_returns_none_without_archive(tmp_path, checkout):
     assert out is None
 
 
+def _is_sha256_hex(v) -> bool:
+    return isinstance(v, str) and len(v) == 64 and all(c in "0123456789abcdef" for c in v)
+
+
 def test_apply_or_none_materializes_when_valid(tmp_path, checkout):
     _save_store(tmp_path, cache_fp="fp0")
     work2 = tmp_path / "wd"
@@ -69,7 +73,9 @@ def test_apply_or_none_materializes_when_valid(tmp_path, checkout):
         )
     )
     assert out is not None
-    assert (Path(out) / "models" / "alien" / "foo.yaml").is_file()
+    # DEV-1778: apply_or_none now returns an AppliedStore(scratch, store_fp).
+    assert (Path(out.scratch) / "models" / "alien" / "foo.yaml").is_file()
+    assert _is_sha256_hex(out.store_fp)
 
 
 def test_apply_or_none_falls_back_on_stale(tmp_path, checkout):
@@ -134,6 +140,8 @@ def test_runtime_resolver_uses_saved_store(monkeypatch, tmp_path, checkout):
     # Applied from the saved store (not the cache sentinel).
     assert (Path(storage) / "models" / "alien" / "foo.yaml").is_file()
     assert td.get("_edited_models_applied_from") == str(archive)
+    # DEV-1778: the consumed-store fingerprint is stashed for the finalize hook.
+    assert _is_sha256_hex(td.get("_edited_models_consumed_store_fp"))
 
 
 def test_runtime_resolver_falls_back_when_stale(monkeypatch, tmp_path, checkout):
@@ -206,6 +214,7 @@ def test_recursive_resolver_uses_saved_store(monkeypatch, tmp_path, checkout):
     )
     assert (Path(storage) / "models" / "alien" / "foo.yaml").is_file()
     assert td.get("_edited_models_applied_from") == str(archive)
+    assert _is_sha256_hex(td.get("_edited_models_consumed_store_fp"))
 
 
 def test_recursive_resolver_falls_back_when_absent(monkeypatch, tmp_path, checkout):
@@ -220,3 +229,89 @@ def test_recursive_resolver_falls_back_when_absent(monkeypatch, tmp_path, checko
         )
     )
     assert Path(storage) == cache_scratch
+
+
+# --------------------------------------------------------------------------
+# DEV-1778: consumed-store fingerprint bound to the CONSUMED snapshot
+# --------------------------------------------------------------------------
+
+
+def _save_variant(tmp_path, tag, *, model_body):
+    from tests._edited_models_fixtures import make_fake_store
+
+    work = tmp_path / f"save_{tag}"
+    scratch = make_fake_store(work, model_body=model_body)
+    # No baseline written -> scratch_changed() is True -> the store is archived
+    # with EXACTLY this content (so the applied fp reflects `model_body`).
+    return em.save_edited_store(
+        benchmark="mini-interact", db="alien", instance_id="alien_1",
+        work_dir=work, scratch=scratch, deleted_kb_ids=set(), cache_fp="fp0",
+    )
+
+
+def _apply(tmp_path, wd):
+    return asyncio.run(
+        em.apply_or_none(
+            benchmark="mini-interact", db="alien", instance_id="alien_1",
+            work_dir=tmp_path / wd, task_deleted_kb_ids=set(),
+            current_cache_fp="fp0", mini_interact_root=tmp_path, db_root=tmp_path,
+        )
+    )
+
+
+def test_apply_fp_deterministic_for_identical_content(tmp_path, checkout):
+    """Two independent saves of byte-identical store content (distinct gzip
+    archives) apply to the SAME store_fp — content-deterministic, not
+    archive-byte-dependent (Codex #1/#2)."""
+    _save_variant(tmp_path, "a", model_body="name: foo\ncols: [x]\n")
+    fp1 = _apply(tmp_path, "wd1").store_fp
+    _save_variant(tmp_path, "b", model_body="name: foo\ncols: [x]\n")  # identical content
+    fp2 = _apply(tmp_path, "wd2").store_fp
+    assert fp1 == fp2
+
+
+def test_apply_fp_reflects_consumed_content(tmp_path, checkout):
+    """The fp is computed from the extracted snapshot, so replacing the archive
+    with DIFFERENT content yields a different fp on the next apply (the fp is
+    bound to what was consumed, not to the mutable archive path)."""
+    _save_variant(tmp_path, "orig", model_body="name: foo\ncols: [x]\n")
+    fp_orig = _apply(tmp_path, "wd_orig").store_fp
+    _save_variant(tmp_path, "changed", model_body="name: foo\ncols: [DIFFERENT]\n")
+    fp_changed = _apply(tmp_path, "wd_changed").store_fp
+    assert fp_orig != fp_changed
+
+
+def test_apply_fp_is_captured_pre_reanchor(tmp_path, checkout):
+    """Proves the stamped fp is the CONSUMED archive's content (pre-re-anchor):
+    it equals the archive's own content fingerprint, while the live scratch —
+    whose datasource was re-anchored during apply — fingerprints differently."""
+    import tarfile
+
+    _save_variant(tmp_path, "x", model_body="name: foo\ncols: [x]\n")
+    out = _apply(tmp_path, "wd")
+    archive = em.run_edited_models_archive(
+        benchmark="mini-interact", selected_database="alien", instance_id="alien_1",
+    )
+    extract = tmp_path / "extract"
+    with tarfile.open(archive, "r:gz") as tf:
+        tf.extractall(extract, filter="data")
+    assert out.store_fp == em.store_content_fingerprint(extract / "alien")
+    assert em.store_content_fingerprint(Path(out.scratch)) != out.store_fp
+
+
+def test_apply_fingerprint_failure_degrades_to_none_and_logs(tmp_path, checkout, monkeypatch):
+    """A fingerprint failure must NOT abort apply — it degrades to
+    ``store_fp=None`` and logs the failure (Codex #3)."""
+    _save_variant(tmp_path, "x", model_body="name: foo\ncols: [x]\n")
+    events: list[str] = []
+
+    def _boom(_root):
+        raise RuntimeError("fingerprint boom")
+
+    monkeypatch.setattr(em, "store_content_fingerprint", _boom)
+    monkeypatch.setattr(em, "log_otf_event", lambda name, **kw: events.append(name))
+
+    out = _apply(tmp_path, "wd")
+    assert out is not None            # apply still succeeded
+    assert out.store_fp is None
+    assert "otf.edited_models.fingerprint_failed" in events

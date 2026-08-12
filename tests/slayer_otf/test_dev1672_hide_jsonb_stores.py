@@ -204,8 +204,10 @@ async def test_materialize_self_heals_hidden(saved_archive, tmp_path) -> None:
         mini_interact_root=tmp_path,
     )
     assert scratch is not None, "archive must be accepted (cache_fp matches)"
-    assert await _raw_hidden(Path(scratch)) is True
+    # DEV-1778: materialize returns AppliedStore(scratch, store_fp).
+    scratch_path = Path(scratch.scratch)
+    assert await _raw_hidden(scratch_path) is True
     # Ordering: self-heal must run BEFORE the baseline manifest so the hidden
     # flip is part of the baseline — otherwise --save-edited-models would count
     # it as an agent edit and re-save a no-op store.
-    assert edited_models.scratch_changed(work_dir, Path(scratch)) is False
+    assert edited_models.scratch_changed(work_dir, scratch_path) is False

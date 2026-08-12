@@ -38,6 +38,8 @@ import tarfile
 import uuid
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from bird_interact_agents.eval.annotation_io import run_edited_models_archive
 from bird_interact_agents.slayer_otf.datasource_reanchor import (
     rewrite_datasource_connection_string,
@@ -98,6 +100,41 @@ def content_manifest(root: Path) -> dict[str, str]:
         h = hashlib.sha256(path.read_bytes()).hexdigest()
         out[rel] = h
     return out
+
+
+def store_content_fingerprint(root: Path) -> str:
+    """DEV-1778: content fingerprint of a materialised store — sha256 over the
+    sorted-JSON of ``content_manifest(root)``. Reuses the change-detector's
+    exclusion set (regular files only; ``-wal``/``-shm`` + store-meta +
+    baseline dropped), so it is content-deterministic and independent of gzip
+    mtime/order. Identifies the persisted store AS SAVED (incl. the saving
+    machine's datasource anchor); take it BEFORE re-anchoring so the consuming
+    machine's path never leaks in."""
+    manifest = content_manifest(root)
+    return hashlib.sha256(
+        json.dumps(manifest, sort_keys=True).encode()
+    ).hexdigest()
+
+
+def _safe_store_fingerprint(root: Path) -> str | None:
+    """``store_content_fingerprint`` that never raises into apply — a failed
+    fingerprint degrades to ``None`` (apply still succeeds) but is logged so a
+    systematic regression is discoverable, not silent."""
+    try:
+        return store_content_fingerprint(root)
+    except Exception as exc:  # noqa: BLE001
+        log_otf_event(
+            "otf.edited_models.fingerprint_failed", root=str(root), error=repr(exc),
+        )
+        return None
+
+
+class AppliedStore(BaseModel):
+    """DEV-1778: result of applying a saved edited-models store —
+    the materialised scratch path plus the consumed-store fingerprint
+    (``None`` if it could not be computed)."""
+    scratch: str
+    store_fp: str | None = None
 
 
 def write_baseline_manifest(work_dir: Path, scratch: Path) -> None:
@@ -254,14 +291,15 @@ async def materialize_from_saved_store(
     current_cache_fp: str,
     mini_interact_root: Path,
     db_root: Path | None = None,
-) -> Path | None:
+) -> "AppliedStore | None":
     """Untar ``archive`` into ``work_dir/<db>``, validate ``_STORE_META``,
     re-anchor the datasource connection_string, and write a fresh baseline.
 
-    Returns the scratch Path on success, or ``None`` to signal the caller to
-    FALL BACK to the fresh cache (missing/invalid archive, or a meta mismatch —
-    Codex #6). Deliberately does NOT re-run KB masking (would clobber the
-    agent-authored ``memories.yaml``)."""
+    Returns an ``AppliedStore`` (scratch path + DEV-1778 consumed-store
+    fingerprint) on success, or ``None`` to signal the caller to FALL BACK to
+    the fresh cache (missing/invalid archive, or a meta mismatch — Codex #6).
+    Deliberately does NOT re-run KB masking (would clobber the agent-authored
+    ``memories.yaml``)."""
     archive = Path(archive)
     work_dir = Path(work_dir)
     if not archive.is_file():
@@ -303,6 +341,12 @@ async def materialize_from_saved_store(
         shutil.rmtree(scratch, ignore_errors=True)
         return None
 
+    # DEV-1778: fingerprint the CONSUMED store from the just-extracted scratch
+    # — the archive's own content — BEFORE re-anchor / hide / meta-unlink mutate
+    # it. This binds the fingerprint to the exact bytes consumed (race-free vs a
+    # reopened archive path) and keeps it machine-portable (pre-re-anchor).
+    store_fp = _safe_store_fingerprint(scratch)
+
     # The meta file is an apply-time artefact; drop it from the live scratch so
     # it neither pollutes SLayer's view nor a subsequent baseline/manifest.
     meta_fp.unlink()
@@ -325,7 +369,7 @@ async def materialize_from_saved_store(
             "otf.edited_models.self_heal_failed", db=db, error=repr(exc),
         )
     write_baseline_manifest(work_dir, scratch)
-    return scratch
+    return AppliedStore(scratch=str(scratch), store_fp=store_fp)
 
 
 async def apply_or_none(
@@ -338,9 +382,10 @@ async def apply_or_none(
     current_cache_fp: str,
     mini_interact_root: Path,
     db_root: Path | None = None,
-) -> Path | None:
-    """Resolve + validate the saved store for a task. Returns the materialised
-    scratch Path, or ``None`` (no archive, or meta mismatch) to fall back."""
+) -> "AppliedStore | None":
+    """Resolve + validate the saved store for a task. Returns an
+    ``AppliedStore`` (materialised scratch path + consumed-store fingerprint),
+    or ``None`` (no archive, or meta mismatch) to fall back."""
     archive = run_edited_models_archive(
         benchmark=benchmark, selected_database=db, instance_id=instance_id,
     )
@@ -395,3 +440,49 @@ def maybe_save_edited_models(
     if dest is not None:
         row["edited_models_saved_path"] = str(dest)
     return dest
+
+
+# --------------------------------------------------------------------------
+# consumed-store provenance aggregation (DEV-1778)
+# --------------------------------------------------------------------------
+
+
+def _valid_consumed_record(rec) -> bool:
+    return isinstance(rec, dict) and all(
+        isinstance(rec.get(k), str) and rec.get(k)
+        for k in ("db", "instance_id", "store_fp")
+    )
+
+
+def dedupe_consumed_edited_models(items) -> list[dict]:
+    """Collapse per-task consumed-store records into one per (db, instance_id),
+    first-seen wins. Drops ``None`` / malformed. Returns a LIST (the manifest
+    never carries a Dict — repo/LLM convention)."""
+    by_key: dict[tuple[str, str], dict] = {}
+    for rec in items:
+        if not _valid_consumed_record(rec):
+            continue
+        by_key.setdefault((rec["db"], rec["instance_id"]), {
+            "db": rec["db"],
+            "instance_id": rec["instance_id"],
+            "store_fp": rec["store_fp"],
+        })
+    return list(by_key.values())
+
+
+def collect_consumed_edited_models_from_run_dir(run_dir) -> list[dict]:
+    """Walk a run dir's per-task ``submission_annotation.json`` files, read each
+    ``consumed_edited_models`` record, and dedupe into the per-(db, instance_id)
+    list the run manifest carries. Best-effort: unreadable/malformed annotations
+    are skipped. Candidate paths are SORTED so first-seen dedupe is
+    deterministic (never fs-order dependent)."""
+    run_dir = Path(run_dir)
+    found: list = []
+    for ann_fp in sorted(run_dir.rglob("submission_annotation.json")):
+        try:
+            data = json.loads(ann_fp.read_text())
+        except (ValueError, OSError):
+            continue
+        if isinstance(data, dict):
+            found.append(data.get("consumed_edited_models"))
+    return dedupe_consumed_edited_models(found)

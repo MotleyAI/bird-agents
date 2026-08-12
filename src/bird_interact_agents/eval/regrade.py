@@ -59,6 +59,23 @@ class RegradeReport(BaseModel):
     regraded_instances: list[str] = Field(default_factory=list)
 
 
+def _consumed_for_instance(
+    manifest: Optional[dict], db: str, instance_id: str,
+) -> Optional[dict]:
+    """DEV-1778: the ``consumed_edited_models`` record for ``(db, instance_id)``
+    from the run manifest's per-db aggregate, or ``None`` when absent."""
+    records = (manifest or {}).get("consumed_edited_models") or []
+    return next(
+        (
+            r for r in records
+            if isinstance(r, dict)
+            and r.get("db") == db
+            and r.get("instance_id") == instance_id
+        ),
+        None,
+    )
+
+
 def _attempt_rows_dir(run_dir: Path) -> Path:
     return run_dir / "rows"
 
@@ -321,6 +338,13 @@ def regrade_run(
                 attempt_data.get("gold_result_json"),
             ),
             original_gold_annotated_correct=original_gold_is_correct,
+            # DEV-1778: re-stamp the consumed edited-models provenance from THIS
+            # run's manifest aggregate (same source version/agent_model use), so
+            # a regrade never silently erases it. None when the manifest lacks it
+            # (e.g. local runs, non-apply runs).
+            consumed_edited_models=_consumed_for_instance(
+                _manifest, selected_database, instance_id,
+            ),
         )
 
         # OVERWRITE the per-(instance, run) annotation in the golden store.

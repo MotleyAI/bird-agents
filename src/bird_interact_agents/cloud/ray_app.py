@@ -1070,6 +1070,8 @@ def _run_one_in_actor(
             # agent_model so the cloud inline grader fires it (it never did
             # before — l6_llm_judge was 0 across the whole cohort).
             agent_model=cfg.get("agent_model"),
+            # DEV-1778: stamp the consumed edited-models store provenance.
+            consumed_edited_models=row.get("consumed_edited_models"),
         )
         store.write_submission_annotation(
             run_id, iid, json.loads(ann_path.read_text()),
@@ -1096,6 +1098,9 @@ def _run_one_in_actor(
                 n_agent_turns=_usage_dict.get("n_agent_turns"),
                 n_ask_user_calls=_usage_dict.get("n_ask_user_calls"),
                 config=_submission_config,
+                # DEV-1778: apply-success then grader-raise still stamps the
+                # consumed store onto the FAILED annotation.
+                consumed_edited_models=row.get("consumed_edited_models"),
             )
             store.write_submission_annotation(
                 run_id, iid, json.loads(failed_path.read_text()),

@@ -1889,6 +1889,9 @@ async def run_evaluation(
             n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
             predicted_row_count=r.get("predicted_row_count"),
             config=submission_config,
+            # DEV-1778: apply-success then no-SQL/grader-raise still stamps the
+            # consumed store onto the FAILED annotation.
+            consumed_edited_models=r.get("consumed_edited_models"),
         )
         if not submitted_sql or not selected_database:
             write_failed_submission_annotation(
@@ -1937,6 +1940,8 @@ async def run_evaluation(
                 # DEV-1613: build the N5 insufficient-task judge from the
                 # run's agent_model so the cascade can fire it inline.
                 agent_model=agent_model,
+                # DEV-1778: stamp the consumed edited-models store provenance.
+                consumed_edited_models=r.get("consumed_edited_models"),
             )
         except Exception as exc:  # noqa: BLE001 — keep the loop alive
             logger.exception(
