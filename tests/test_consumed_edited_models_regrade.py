@@ -7,10 +7,10 @@ import json
 from pathlib import Path
 
 
-def _write_attempt(run_dir: Path, instance_id: str):
+def _write_attempt(run_dir: Path, instance_id: str, *, consumed: dict | None = None):
     d = run_dir / "rows" / instance_id
     d.mkdir(parents=True, exist_ok=True)
-    (d / "attempt-1.json").write_text(json.dumps({
+    row = {
         "instance_id": instance_id,
         "selected_database": "alien",
         "submitted_sql": "SELECT 1",
@@ -21,7 +21,10 @@ def _write_attempt(run_dir: Path, instance_id: str):
         "predicted_row_count": 0,
         "sol_sql": ["SELECT gold"],
         "original_sol_sql": ["SELECT gold"],
-    }))
+    }
+    if consumed is not None:
+        row["consumed_edited_models"] = consumed
+    (d / "attempt-1.json").write_text(json.dumps(row))
 
 
 class _StubGrader:
@@ -83,3 +86,28 @@ def test_regrade_consumed_none_when_manifest_lacks_it(tmp_path, monkeypatch):
     )
     dest = tmp_path / "runs" / "mini-interact" / "alien" / "alien_1" / "r2.json"
     assert json.loads(dest.read_text())["consumed_edited_models"] is None
+
+
+def test_regrade_falls_back_to_attempt_data_when_manifest_lacks_it(tmp_path, monkeypatch):
+    """A local run has no manifest aggregate, but its attempt-N.json carries the
+    consumed record — regrade must preserve it rather than write None."""
+    from bird_interact_agents import paths as paths_mod
+    monkeypatch.setattr(paths_mod, "main_checkout_root", lambda: tmp_path)
+    from bird_interact_agents.eval.regrade import regrade_run
+
+    run_dir = tmp_path / "results" / "cloud" / "r3"
+    _write_attempt(run_dir, "alien_1", consumed={
+        "db": "alien", "instance_id": "alien_1", "store_fp": "fpLOCAL",
+    })
+    (run_dir / "manifest.json").write_text(json.dumps(
+        {"run_id": "r3", "framework": "claude_sdk"}  # no consumed aggregate
+    ))
+
+    regrade_run(
+        run_id="r3", benchmark="mini-interact", run_dir=run_dir,
+        instance_ids=None, grader=_StubGrader(), repo_root=tmp_path,
+    )
+    dest = tmp_path / "runs" / "mini-interact" / "alien" / "alien_1" / "r3.json"
+    assert json.loads(dest.read_text())["consumed_edited_models"] == {
+        "db": "alien", "instance_id": "alien_1", "store_fp": "fpLOCAL",
+    }

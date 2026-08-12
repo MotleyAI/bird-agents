@@ -294,7 +294,12 @@ def test_apply_fp_is_captured_pre_reanchor(tmp_path, checkout):
     )
     extract = tmp_path / "extract"
     with tarfile.open(archive, "r:gz") as tf:
-        tf.extractall(extract, filter="data")
+        # Mirror materialize_from_saved_store: filter="data" only exists on
+        # 3.11.4+/3.12+; fall back to the member-validating extractor otherwise.
+        if hasattr(tarfile, "data_filter"):
+            tf.extractall(extract, filter="data")
+        else:  # pragma: no cover - only on pre-3.11.4 interpreters
+            em._safe_extractall(tf, extract)
     assert out.store_fp == em.store_content_fingerprint(extract / "alien")
     assert em.store_content_fingerprint(Path(out.scratch)) != out.store_fp
 

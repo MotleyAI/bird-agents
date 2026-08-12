@@ -61,11 +61,16 @@ class RegradeReport(BaseModel):
 
 def _consumed_for_instance(
     manifest: Optional[dict], db: str, instance_id: str,
+    *, attempt_data: Optional[dict] = None,
 ) -> Optional[dict]:
-    """DEV-1778: the ``consumed_edited_models`` record for ``(db, instance_id)``
-    from the run manifest's per-db aggregate, or ``None`` when absent."""
+    """DEV-1778: the ``consumed_edited_models`` record for ``(db, instance_id)``.
+
+    Prefer the run manifest's per-db aggregate (written by cloud ``fetch``); fall
+    back to the attempt row's own record (both local + cloud ``attempt-N.json``
+    persist it) so a regrade of a run without the manifest aggregate — e.g. a
+    local run — never erases provenance the annotation already had."""
     records = (manifest or {}).get("consumed_edited_models") or []
-    return next(
+    hit = next(
         (
             r for r in records
             if isinstance(r, dict)
@@ -74,6 +79,11 @@ def _consumed_for_instance(
         ),
         None,
     )
+    if hit is None and isinstance(attempt_data, dict):
+        cand = attempt_data.get("consumed_edited_models")
+        if isinstance(cand, dict):
+            hit = cand
+    return hit
 
 
 def _attempt_rows_dir(run_dir: Path) -> Path:
@@ -344,6 +354,7 @@ def regrade_run(
             # (e.g. local runs, non-apply runs).
             consumed_edited_models=_consumed_for_instance(
                 _manifest, selected_database, instance_id,
+                attempt_data=attempt_data,
             ),
         )
 
