@@ -29,18 +29,28 @@ def _repoint_datasource_to_tmp(work: Path, db_name: str) -> None:
 
     The committed ``datasources/<db>.yaml`` bakes an absolute sqlite path from
     whatever machine exported it (e.g. ``/home/.../Dropbox/SLayer/mini-interact/
-    <db>/<db>.sqlite``). Opening the datasource connects to that path, so the
-    round-trip gate would fail on any machine whose dataset lives elsewhere.
-    This gate only validates that the YAML round-trips through ``YAMLStorage``
-    (datasource + models Pydantic-validate) — it does NOT query data — so we
-    repoint the connection at a per-run tmp sqlite (parent always exists →
-    sqlite creates it on connect), making the test machine-independent.
+    <db>/<db>.sqlite``). ``get_datasource`` never connects, but ``get_model``'s
+    on-load type refinement (``refine_dict_with_live_schema``) opens the
+    datasource to probe the live schema whenever a model has refineable
+    INT/DOUBLE columns (24 of the 27 DBs) and hard-fails when the path is
+    unreachable. Repointing at a per-run tmp sqlite keeps that connect
+    succeeding on any machine (sqlite creates an empty DB; the probe then
+    finds no table and leaves persisted types unchanged).
     """
     ds_yaml = work / "datasources" / f"{db_name}.yaml"
-    doc = yaml.safe_load(ds_yaml.read_text())
+    doc = yaml.safe_load(ds_yaml.read_text(encoding="utf-8"))
     if str(doc.get("type", "")).lower() == "sqlite":
+        committed = doc.get("connection_string")
+        assert isinstance(committed, str) and committed.startswith(
+            "sqlite:///"
+        ), (
+            f"{db_name}: committed connection_string {committed!r} "
+            f"is not a sqlite:/// URI"
+        )
         doc["connection_string"] = f"sqlite:///{work / f'{db_name}.sqlite'}"
-        ds_yaml.write_text(yaml.safe_dump(doc, sort_keys=False))
+        ds_yaml.write_text(
+            yaml.safe_dump(doc, sort_keys=False), encoding="utf-8"
+        )
 
 
 def _discover_dbs() -> list[str]:
