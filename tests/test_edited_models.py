@@ -227,12 +227,14 @@ def test_materialize_round_trip_preserves_agent_edits(tmp_path, checkout):
         )
     )
     assert out is not None
+    # DEV-1778: materialize returns AppliedStore(scratch, store_fp).
+    scratch = Path(out.scratch)
     # Agent-authored model + memories are preserved byte-for-byte (NOT
     # re-encoded from cache kb_rows — the clobber Codex #1 flagged).
-    assert (out / "models" / "alien" / "foo.yaml").read_text() == orig_model
-    assert (out / "memories" / "alien_kb_0.md").read_text() == orig_mem
+    assert (scratch / "models" / "alien" / "foo.yaml").read_text() == orig_model
+    assert (scratch / "memories" / "alien_kb_0.md").read_text() == orig_mem
     # And a fresh baseline is written so a no-op run is detected as unchanged.
-    assert em.scratch_changed(work2, out) is False
+    assert em.scratch_changed(work2, scratch) is False
 
 
 def test_materialize_reanchors_connection_string(tmp_path, checkout):
@@ -248,7 +250,9 @@ def test_materialize_reanchors_connection_string(tmp_path, checkout):
             mini_interact_root=db_root, db_root=db_root,
         )
     )
-    ds = yaml.safe_load((out / "datasources" / "alien.yaml").read_text())
+    ds = yaml.safe_load(
+        (Path(out.scratch) / "datasources" / "alien.yaml").read_text()
+    )
     # Stale foreign absolute path re-rooted at the current db_root.
     assert str(db_root) in ds["connection_string"]
     assert "/nonexistent/build/machine/" not in ds["connection_string"]

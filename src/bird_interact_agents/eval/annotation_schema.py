@@ -941,6 +941,19 @@ class AutopsyResult(BaseModel):
         return self
 
 
+class ConsumedEditedModels(BaseModel):
+    """DEV-1778: which saved edited-models store STATE a run consumed via
+    ``--apply-edited-models``. ``store_fp`` is the content fingerprint of the
+    applied ``edited_models.tar.gz`` (see ``slayer_otf.edited_models.
+    store_content_fingerprint``), so a graded result stays attributable after
+    the per-task store is overwritten (latest-wins)."""
+    model_config = ConfigDict(extra="forbid")
+
+    db: str
+    instance_id: str
+    store_fp: str
+
+
 class SubmissionAnnotation(BaseModel):
     """Per-(instance, run) annotation.
 
@@ -1025,3 +1038,10 @@ class SubmissionAnnotation(BaseModel):
     """The agent model that produced the submission, mirrored from the cloud
     manifest's ``agent_model`` (e.g. ``anthropic/claude-opus-4-7``). None on
     unstamped/legacy records; readers fall back to the manifest."""
+
+    # DEV-1778: which saved edited-models store STATE this run consumed via
+    # ``--apply-edited-models`` (db / instance_id / store_fp), so a graded
+    # result stays attributable after the per-task store is overwritten.
+    # Additive optional field — legacy records (no key) parse as None and
+    # ``schema_version`` stays 1; None for non-apply runs.
+    consumed_edited_models: Optional[ConsumedEditedModels] = None

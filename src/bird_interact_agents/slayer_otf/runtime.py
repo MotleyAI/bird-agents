@@ -133,7 +133,7 @@ async def resolve_otf_task_storage_dir(
             if applied is not None:
                 log_otf_event(
                     "otf.edited_models.applied",
-                    instance_id=instance_id, db=db_name, src=str(applied),
+                    instance_id=instance_id, db=db_name, src=applied.scratch,
                 )
                 task_data["_edited_models_applied_from"] = str(
                     run_edited_models_archive(
@@ -141,7 +141,11 @@ async def resolve_otf_task_storage_dir(
                         instance_id=instance_id,
                     )
                 )
-                return str(applied), deleted
+                # DEV-1778: stash the consumed-store fingerprint for the finalize
+                # hook to stamp onto the run's SubmissionAnnotation.
+                if applied.store_fp:
+                    task_data["_edited_models_consumed_store_fp"] = applied.store_fp
+                return applied.scratch, deleted
         with otf_timer(
             "prepare_task_storage", instance_id=instance_id, db=db_name,
         ):
