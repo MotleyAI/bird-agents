@@ -5,9 +5,12 @@ Covers three concerns:
    are byte-for-byte unchanged after the refactoring that imports constants
    from _shared_otf_prompts.
 2. That the shared constants render correctly with their format params.
-3. That the shared constants appear verbatim in both slayer and raw OTF
-   prompts (after implementation), and that raw prompts are free of
-   SLayer-specific vocabulary.
+3. That the mode-agnostic shared constants appear verbatim in both slayer
+   and raw OTF prompts (after implementation), and that raw prompts are
+   free of SLayer-specific vocabulary. (The DEV-1591
+   ``_COMPACT_SEARCH_DISCIPLINE`` constant is SLayer-only — it talks about
+   the SLayer ``search`` tool's ``compact`` / ``cypher_filter`` args — so
+   it lands only in the slayer prompts, never the raw ones.)
 """
 
 from __future__ import annotations
@@ -57,6 +60,16 @@ import pytest
 # main now HOLDS `search` / `inspect_model` directly, so both v1 prompts say to
 # call them directly (and read sample values via them) instead of routing every
 # introspection through `ask_discovery`.
+# Re-baselined for the DEV-1629 follow-up (merged via origin/main): the v1
+# slayer inventory line was reworded to list `search` (find) / `inspect_model`
+# (whole model) / `inspect` (a single known column's Description + Sample
+# values), moving these two digests.
+# DEV-1591 ∩ DEV-1629 merge note: the DEV-1591 search-vs-inspect compact
+# discipline reaches the v1 slayer MAIN loop through
+# `partition.build_main_workflow_note` (appended to these prompts at runtime,
+# see agent.py), NOT through the static `SLAYER_OTF_ONE_SHOT` /
+# `SLAYER_OTF_AINTERACT` constants hashed here — so the discipline splice does
+# not itself move these digests (the rewording above did).
 # Re-baselined for DEV-1646 (mode B, reference-before-define): a `DEFINE BEFORE
 # YOU REFERENCE` fragment (`_DEFINE_BEFORE_REFERENCE`) was spliced into the four
 # SLAYER OTF prompts after `ENCODE_HOST_GUIDANCE` — any name in a
@@ -66,8 +79,15 @@ import pytest
 # `QUERY_ROOT_GUIDANCE`), so the pre-encoded prompts — whose write tools are
 # stripped — are unchanged. Cuts the turn-waste where the agent filters on an
 # undefined nested-stage name and self-corrects.
-_ONE_SHOT_SHA256 = "64aa5fd4be4dc10148141aa65cc8e0d0ec61b46d2678be44a2be3c9d5055cc24"
-_AINTERACT_SHA256 = "fb142bf8cf8f1cf6b3b06d778c6b15e78681df5c98d0d1a1712de9bf7bbe1b35"
+# DEV-1668 re-baseline: the shared SLAYER-TOOLS onboarding line was re-pointed
+# from the removed `help` tool to
+# `inspect(reference="memory:help.intro", entity_type="memory", compact=False)`
+# (the only byte change vs the prior snapshot).
+_ONE_SHOT_SHA256 = "157efb9d19e961cbb1973e001e69516b799c495b01833ca4a90bc9f1d31e988d"
+# DEV-1668 (CodeRabbit): the a-interact_v1 template's redundant second "FIRST"
+# (ask_discovery) was reworded to "BEFORE building" to remove the double-first
+# ordering ambiguity vs the inspect(memory:help.intro) syntax-onboarding line.
+_AINTERACT_SHA256 = "15cba676c84ecff666397e15ce7e88962ded3d63eaa9bc8f68edee20e1c6cc45"
 
 
 def test_slayer_otf_one_shot_unchanged():
@@ -116,6 +136,7 @@ def test_shared_constants_all_nonempty():
         _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
         _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
         _COLUMN_NAMES_DONT_AFFECT_GRADING,
+        _COMPACT_SEARCH_DISCIPLINE,
         _SLAYER_SQL_ARTIFACT_CHECK,
         _PIVOT_AFTER_REPEATED_FAILURES,
         _USER_SIM_TRUST_CALIBRATION,
@@ -129,6 +150,7 @@ def test_shared_constants_all_nonempty():
         ("_PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT", _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT),
         ("_PRE_SUBMIT_MUTATION_CHECK_AINTERACT", _PRE_SUBMIT_MUTATION_CHECK_AINTERACT),
         ("_COLUMN_NAMES_DONT_AFFECT_GRADING", _COLUMN_NAMES_DONT_AFFECT_GRADING),
+        ("_COMPACT_SEARCH_DISCIPLINE", _COMPACT_SEARCH_DISCIPLINE),
         ("_SLAYER_SQL_ARTIFACT_CHECK", _SLAYER_SQL_ARTIFACT_CHECK),
         ("_PIVOT_AFTER_REPEATED_FAILURES", _PIVOT_AFTER_REPEATED_FAILURES),
         ("_USER_SIM_TRUST_CALIBRATION", _USER_SIM_TRUST_CALIBRATION),

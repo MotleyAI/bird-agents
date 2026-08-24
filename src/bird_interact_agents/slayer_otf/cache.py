@@ -73,6 +73,7 @@ from slayer.storage.yaml_storage import YAMLStorage
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
+from bird_interact_agents.memory_store_io import persist_memories
 from bird_interact_agents.slayer_otf.timing import log_otf_event, otf_timer
 from bird_interact_agents.slayer_pipeline.orchestrator import (
     _phase1_ingest,
@@ -256,24 +257,28 @@ def _impl_fingerprint_of(benchmark: object = None) -> str:
       models. (Mitigates DEV-1508 risk #1 — Codex review of the plan.)
     - active embedding model name (or ``"none"``) — search ranks would
       degrade silently if embeddings were built against a different model.
-    - postgres connection identity (host:port:user) when benchmark is postgres
-      — the persisted datasource YAML contains the connection URL; reusing a
-      cache built against a different server would point the MCP server at the
-      wrong host.
+
+    DEV-1685: the postgres connection identity (host:port:user) is NO LONGER a
+    fingerprint component. It used to be hashed here because the persisted
+    datasource YAML baked the connection URL, so reusing a cache built against
+    a different server would dial the wrong host. That is now handled the right
+    way — the connection is RUNTIME-supplied: ``prepare_task_storage`` (and the
+    other consumers) re-anchor the postgres URL from ``BIRD_PG_*`` at task prep
+    (``portable_connection.reanchor_postgres_connection_string``), and persisted
+    references are portabilised to canonical defaults. So the cache is
+    port/host-independent — a cache built on one port is reused verbatim on
+    another, and the local provisioner's auto-port (DEV-1685) never thrashes it.
+    ``benchmark`` is retained for signature stability / callers.
 
     Used by :func:`ensure_db_cache` on the reuse path: recompute, compare
     against the persisted ``_impl_fp.txt`` marker, and fall through to a
     full rebuild on mismatch.
     """
+    del benchmark  # no longer part of the fingerprint (see DEV-1685 note above)
     h = hashlib.sha256()
     h.update(f"slayer={_slayer_version()}\n".encode())
     h.update(f"embed={_active_embedding_model_or_none()}\n".encode())
     h.update(f"embed_builder={_EMBEDDING_BUILDER_VERSION}\n".encode())
-    if getattr(benchmark, "db_backend", "sqlite") == "postgres":
-        pg_host = os.environ.get("BIRD_PG_HOST", "localhost")
-        pg_port = os.environ.get("BIRD_PG_PORT", "5432")
-        pg_user = os.environ.get("BIRD_PG_USER", "bird_interact")
-        h.update(f"pg_conn={pg_host}:{pg_port}:{pg_user}\n".encode())
     return h.hexdigest()[:16]
 
 
@@ -572,12 +577,11 @@ async def _materialise_cache_memories(
     """
     import hashlib
 
-    import yaml
-
     mems = encode_kb_as_memories(db, kb_rows, deleted_kb_ids=set())
-    (build_dir / "memories.yaml").write_text(
-        yaml.safe_dump(mems, sort_keys=False)
-    )
+    # DEV-1668: persist through the slayer storage layer (per-id
+    # ``memories/<id>.md``) rather than hand-writing a flat ``memories.yaml``.
+    memories = [Memory.model_validate(d) for d in mems]
+    await persist_memories(build_dir, memories)
 
     if not _embeddings_available():
         # Channel disabled (no extra installed, or no API key for the
@@ -588,9 +592,7 @@ async def _materialise_cache_memories(
         return
 
     model_name = _embedding_current_model()
-    # Memory.model_validate is cheap; the encoder's round-trip test
-    # already proves all dicts are valid.
-    memories = [Memory.model_validate(d) for d in mems]
+    # ``memories`` was already validated + persisted above; reuse it.
     # DEV-1557 / Stage 2: hand the rendered memory text to slayer
     # verbatim. SLayer 0.7.4+ `embed_batch` token-truncates per text via
     # `truncate_text_for_model` (cap - 256 margin) and falls back to

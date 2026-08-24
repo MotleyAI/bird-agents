@@ -44,6 +44,28 @@ BUCKET_NAME = config.BUCKET_NAME
 BUCKET_REGION = config.REGION
 
 
+# ---------------------------------------------------------------------------
+# DEV-1653: resumable large-artifact upload tuning.
+#
+# The client-default per-blob timeout (~120s, single-shot) can't finish a
+# 355 MB pg_dump on a slow/flaky link — the whole upload aborts. These generous
+# defaults (per-blob request timeout + an overall retry deadline) give a large
+# blob room to stream, and `upload_dir_prefix` skips already-present blobs so a
+# retried submit resumes at file granularity instead of restarting the tree.
+# ---------------------------------------------------------------------------
+_UPLOAD_TIMEOUT_S = 900.0          # per-blob request timeout (streamed upload)
+_UPLOAD_RETRY_DEADLINE_S = 1800.0  # overall retry deadline per blob
+
+try:  # pragma: no cover - trivial guard, mirrors the NotFound import above
+    from google.cloud.storage.retry import DEFAULT_RETRY as _DEFAULT_RETRY
+
+    _UPLOAD_RETRY = _DEFAULT_RETRY.with_timeout(_UPLOAD_RETRY_DEADLINE_S)
+except ImportError:
+    # Cloud-free local install (no google-cloud-storage). Real uploads never
+    # run here; passing retry=None is harmless because no upload is issued.
+    _UPLOAD_RETRY = None
+
+
 def default_gcs_client():
     """Construct a real google-cloud-storage Client. Tests inject a fake
     via the `client` kwarg on every helper below."""
@@ -428,6 +450,8 @@ def upload_dir_prefix(
     max_workers: int = 32,
     client=None,
     exclude=None,
+    timeout: float = _UPLOAD_TIMEOUT_S,
+    retry=_UPLOAD_RETRY,
 ) -> None:
     """Upload every file under `local_dir` to `<prefix>/<relpath>`.
 
@@ -441,6 +465,26 @@ def upload_dir_prefix(
     each file's path RELATIVE to `local_dir`; matching files are skipped. Used
     by the benchmark-data upload to drop `.git/` so the GCS tree matches the
     content hash (both exclude VCS metadata).
+
+    DEV-1653 — resumable + generous timeout for large/flaky uploads:
+
+    * **Skip-existing.** The prefix is listed ONCE up front and any blob already
+      present with a matching byte size is skipped, so a retried upload resumes
+      at file granularity instead of re-sending the whole tree. Size-only is
+      exact here because both callers use immutable prefixes — benchmark-data is
+      content-hashed (`benchmark-data/<b>/<hash>/`) and slayer-setup is under a
+      unique `runs/<run-id>/`; same name+size ⟺ same content. The check is
+      best-effort (assumes an immutable prefix and a single writer); a
+      concurrent second writer would at worst re-send a byte-identical blob.
+    * **Streamed, tunable upload.** Files stream via `upload_from_filename`
+      (resumable for large blobs) with a generous per-blob `timeout` and a
+      `retry` carrying a long deadline — a 355 MB pg_dump can't finish inside
+      the client-default ~120s single-shot PUT on a slow link.
+
+    Content-type is left to the SDK's extension guess (objects here are only
+    ever consumed via `download_as_bytes`, so it is irrelevant); this is if
+    anything an improvement over the old single default that mislabeled binary
+    blobs.
     """
     client = client or default_gcs_client()
     bucket = client.bucket(BUCKET_NAME)
@@ -453,18 +497,34 @@ def upload_dir_prefix(
     if not files:
         return
 
+    # List the destination ONCE (before any upload): {blob_name: size} already
+    # present under this prefix. A list failure propagates here, aborting the
+    # upload before a single blob is sent (so a caller's completeness marker is
+    # never written on a failed attempt). The trailing slash scopes the listing
+    # to THIS base, not a sibling prefix sharing a name stem.
+    existing = {b.name: b.size for b in bucket.list_blobs(prefix=base + "/")}
+
     def _one(path: Path) -> None:
         rel = path.relative_to(local_dir).as_posix()
+        name = f"{base}/{rel}"
         try:
-            data = path.read_bytes()
+            size = path.stat().st_size
         except FileNotFoundError:
-            # The file vanished between the dir-walk and the read — e.g. a
-            # transient SQLite WAL sidecar removed when its DB closed. It is not
-            # real content; skip it rather than abort the whole upload. (The
-            # benchmark-data `exclude` already drops known sidecars; this is the
-            # belt for anything else that disappears under us.)
+            # The file vanished between the dir-walk and the stat — e.g. a
+            # transient SQLite WAL sidecar removed when its DB closed. Not real
+            # content; skip rather than abort the whole upload.
             return
-        bucket.blob(f"{base}/{rel}").upload_from_string(data)
+        if existing.get(name) == size:
+            # Already uploaded with a matching size — resumable skip.
+            return
+        try:
+            bucket.blob(name).upload_from_filename(
+                str(path), timeout=timeout, retry=retry,
+            )
+        except FileNotFoundError:
+            # Vanished between the stat and the streamed upload — same belt as
+            # above for anything that disappears under us mid-transfer.
+            return
 
     workers = max(1, min(max_workers, len(files)))
     with ThreadPoolExecutor(max_workers=workers) as pool:

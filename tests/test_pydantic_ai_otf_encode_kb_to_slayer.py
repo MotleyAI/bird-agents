@@ -23,12 +23,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from pydantic_ai import RunContext
 
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
+from bird_interact_agents.memory_store_io import write_memories_files
 
 
 DB = "tinydb"
@@ -52,9 +52,7 @@ def _kb(kb_id: int, **overrides: Any) -> dict[str, Any]:
 
 def _write_storage(tmp_path: Path, rows: list[dict]) -> Path:
     mems = encode_kb_as_memories(DB, rows, deleted_kb_ids=set())
-    (tmp_path / "memories.yaml").write_text(
-        yaml.safe_dump(mems, sort_keys=False),
-    )
+    write_memories_files(tmp_path, mems)
     return tmp_path
 
 
@@ -663,9 +661,7 @@ async def test_kb_to_slayer_dep_walk_uses_memory_entities_not_body(tmp_path):
         ],
         deleted_kb_ids={99},
     )
-    (tmp_path / "memories.yaml").write_text(
-        yaml.safe_dump(mems, sort_keys=False),
-    )
+    write_memories_files(tmp_path, mems)
     shared = _shared(tmp_path)
 
     invoked: list[int] = []
@@ -866,9 +862,7 @@ async def test_kb_to_slayer_returns_error_for_id_with_no_memory(
 
     # Only kb 3 has a memory; kb 4 was "deleted" (no memory row).
     mems = encode_kb_as_memories(DB, [_kb(3)], deleted_kb_ids=set())
-    (tmp_path / "memories.yaml").write_text(
-        yaml.safe_dump(mems, sort_keys=False),
-    )
+    write_memories_files(tmp_path, mems)
     shared = _shared(tmp_path)
 
     invoked: list[int] = []

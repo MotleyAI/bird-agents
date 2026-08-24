@@ -26,6 +26,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from bird_interact_agents.memory_store_io import write_memories_files
+
 # Load the script as a module (it lives in scripts/ which isn't a package).
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "verify_kb_coverage.py"
 spec = importlib.util.spec_from_file_location("verify_kb_coverage", SCRIPT)
@@ -89,9 +91,8 @@ def _write_storage(
     )
 
     if memories:
-        (base_dir / "memories.yaml").write_text(
-            yaml.safe_dump(memories), encoding="utf-8",
-        )
+        # DEV-1668: slayer 0.9.6 stores per-id ``memories/<id>.md``.
+        write_memories_files(base_dir, memories)
 
 
 def _write_kb_jsonl(path: Path, ids: list[int]) -> None:

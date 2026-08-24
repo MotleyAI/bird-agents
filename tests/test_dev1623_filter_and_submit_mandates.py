@@ -163,5 +163,8 @@ def test_otf_constant_formats_without_error(module_suffix: str, const_name: str)
 def test_discovery_prompt_still_builds(with_ask_user: bool):
     from bird_interact_agents.agents.claude_sdk.partition import build_discovery_prompt
 
-    prompt = build_discovery_prompt(with_ask_user=with_ask_user)
+    # DEV-1591 ∩ DEV-1623 merge: build_discovery_prompt now requires the
+    # `query_mode` kwarg (the compact-search / sample-value discipline is
+    # slayer-only), so pin the slayer mode where the DEV-1623 nudge applies.
+    prompt = build_discovery_prompt(with_ask_user=with_ask_user, query_mode="slayer")
     assert isinstance(prompt, str) and prompt.strip()

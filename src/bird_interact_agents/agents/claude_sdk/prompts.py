@@ -9,11 +9,20 @@ stdio and see SLayer's authentic tool descriptions. The prompt mandates
 they call `help` first to learn the query syntax.
 """
 
+# DEV-1591: search-vs-inspect discipline, shared single source (search is
+# discovery-only; targeted detail reads use the `inspect` point-lookup). The
+# constant is param-free and brace-free, so concatenating it into these
+# ``str.format``-consumed templates is safe.
+from bird_interact_agents.agents._shared_otf_prompts import (
+    _COMPACT_SEARCH_DISCIPLINE,
+)
+
 # ---------------------------------------------------------------------------
 # a-interact: agent has full exploration tools and decides what to do
 # ---------------------------------------------------------------------------
 
-SLAYER_A_INTERACT = """\
+SLAYER_A_INTERACT = (
+    """\
 You are a data analyst. You have access to a SLayer semantic-layer MCP
 server (which exposes its own tools — read their descriptions before use)
 and a small set of native tools (`ask_user`, `submit_query`). The
@@ -26,6 +35,10 @@ REQUIRED FIRST STEPS — do these before submitting anything:
    `*:count`) and the `source_model` / `dimensions` / `measures` /
    `filters` schema.
    
+"""
+    + _COMPACT_SEARCH_DISCIPLINE
+    + """
+
 2. Decompose the user's question into logical blocks, in particular
 each qualifier is a logical block, and the logical blocks between them
 MUST FULLY REPRESENT THE QUESTION. Every adjective
@@ -302,7 +315,7 @@ Specific traps to avoid:
   other multi-column derived value the user's qualifier implies.
 
 Budget: {budget} bird-coins. Each tool call costs bird-coins:
-- help / list_datasources / inspect_model / search: 0.5
+- help / list_datasources / inspect_model / inspect / search: 0.5
 - models_summary / query: 1
 - ask_user: 2
 - submit_query: 3
@@ -310,6 +323,7 @@ If your budget runs out you must submit immediately.
 
 User question: {user_query}
 """
+)
 
 RAW_A_INTERACT = """\
 You are a data analyst. A user will ask you a data question. You have access
@@ -368,7 +382,8 @@ Database: {db_name}
 User question: {user_query}
 """
 
-SLAYER_C_INTERACT = """\
+SLAYER_C_INTERACT = (
+    """\
 You are a data analyst. You have access to a SLayer semantic-layer MCP
 server (read its tool descriptions) plus `ask_user` and `submit_query`.
 
@@ -386,12 +401,13 @@ REQUIRED FIRST STEPS:
    labelled ambiguities; off-topic questions get refused.
 4. Call `submit_query` with your final SLayer query JSON.
 
-Budget: {budget} bird-coins. inspect_model and query cost 0.5-1, asking
-the user costs 2, submitting costs 3. If your first submission is wrong
-you may have one chance to debug it.
+"""
+    + _COMPACT_SEARCH_DISCIPLINE
+    + """
 
-# SLayer help (excerpt)
-{slayer_help}
+Budget: {budget} bird-coins. inspect_model, inspect and query cost 0.5-1,
+asking the user costs 2, submitting costs 3. If your first submission is
+wrong you may have one chance to debug it.
 
 # Available models
 {models_summary}
@@ -401,3 +417,4 @@ you may have one chance to debug it.
 
 User question: {user_query}
 """
+)

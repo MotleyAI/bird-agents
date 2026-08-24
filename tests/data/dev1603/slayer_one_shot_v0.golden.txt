@@ -16,12 +16,14 @@ starts `KB <n> —`. The base tables are already ingested as SLayer models,
 but NOTHING is encoded yet: you encode exactly what THIS question needs,
 on the fly.
 
-SLAYER TOOLS (read their own descriptions). Call `help` FIRST to learn the
+SLAYER TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`search` to find relevant memories and existing entities; `inspect_model`
-to see a model's columns / measures / joins; `create_model` / `edit_model`
-to add columns and measures; `query` to test.
+`search` to DISCOVER relevant memories and existing entities (it returns
+one-line descriptions only); `inspect` to read the FULL body of specific
+entities you have already pinned down — columns, measures, or memories — by
+reference; `inspect_model` to see a whole model's columns / measures / joins;
+`create_model` / `edit_model` to add columns and measures; `query` to test.
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
 filter, projection, or join key — `inspect` the column reference
@@ -33,14 +35,50 @@ whitespace forms, abbreviations, alternate phrasings of the same
 concept. Use it BEFORE writing any IN-set (see rule 3 below).
 
 READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
-a memory id you've already identified — `search` with `entities=[
-"memory:<id>"]`, `max_results=1`, `compact=False`,
-`cypher_filter='MATCH (n:Memory) RETURN n.id AS id'`. By default `search`
-is compact (one-line `description` summary per hit); `compact=False`
-returns the full `learning` body. The `:Memory` kind filter pins the
-result to the memory you asked for — without it, a parent memory whose
-entities cross-reference `memory:<id>` can occupy the single slot
-instead of the memory you want.
+a memory id you've already identified — `inspect(reference=["memory:<id>"],
+entity_type="memory", compact=False)` returns the full `learning` body
+(single-entity point lookup).
+
+SEARCH-vs-INSPECT DISCIPLINE. Two different jobs; keeping them separate is
+what keeps context cheap. `search` is for broad DISCOVERY — finding candidate
+entity ids by relevance. `inspect` is for DETAIL — reading the full body of
+ids you have already pinned down. ("Discovery" here is the activity of finding
+candidates, not any particular agent.) Choosing the query root / `source_model`
+/ encoding host is a SEPARATE decision — where your tool surface offers
+`recommend_root_model`, use that for it. `search` and `inspect` here are only
+for finding candidate ids and reading their details, never for selecting the
+root or host.
+
+  * DISCOVER with `search(question="…")`. It returns each hit's one-line
+    `description` — enough to choose candidates. Treat broad search as
+    compact-only: never pass `compact`, and don't try to pull per-entity
+    Type / Description / Sample values / SQL out of `search`. (A broad
+    `compact=False` search drags tens of thousands of characters of full
+    renders into cached context on every later turn for no added signal —
+    so the detail belongs in `inspect`, below.)
+
+  * NARROW THE DISCOVERY BY KIND with `cypher_filter`, so the `max_results`
+    slots are spent on the kind you actually want instead of an RRF-fused
+    mix of memories + columns + measures + models. Pass a
+    `MATCH … RETURN n.id AS id` constraint (multi-label is union semantics):
+      - only KB memories:        cypher_filter='MATCH (n:Memory) RETURN n.id AS id'
+      - only entity definitions: cypher_filter='MATCH (n:ModelColumn:Measure:Aggregation:Model) RETURN n.id AS id'
+      - only columns:            cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'
+    Use the `ModelColumn` label, NOT `Column` (`Column` is a reserved keyword
+    in LadybugDB ≥0.15 and only matches on the naive fallback path;
+    `ModelColumn` works on naive AND graph-backed installs).
+
+  * INSPECT for the full body once you have a SMALL, chosen set of known
+    ids. `inspect(reference=[…], entity_type="…", compact=False)` is a clean
+    point-lookup — no RRF fusion, no bundled memories — so it needs NO
+    `cypher_filter` and no `max_results` budgeting. Batch ids of the SAME
+    kind in one call:
+      - columns:  inspect(reference=["<db>.<model>.<col>", …], entity_type="column", compact=False)
+      - memories: inspect(reference=["memory:<id>", …], entity_type="memory", compact=False)
+
+Rule of thumb: `search(question=…)` to FIND ids (compact + a `cypher_filter`
+kind constraint); `inspect(reference=[ids], entity_type=…, compact=False)` to
+READ them.
 
 ENCODE-THEN-QUERY DISCIPLINE:
 

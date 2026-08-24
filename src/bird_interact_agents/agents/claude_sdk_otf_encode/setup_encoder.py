@@ -51,6 +51,10 @@ from bird_interact_agents.agents.claude_sdk.agent import (
 from bird_interact_agents.agents.claude_sdk.sdk_env import (
     hermetic_claude_sdk_session,
 )
+from bird_interact_agents.agents.claude_sdk_otf.agent import (
+    _SLAYER_SEARCH_TOOL,
+    _force_compact_search_hook,
+)
 from bird_interact_agents.agents.claude_sdk_otf_encode.prompts import (
     ENCODER_PROMPT,
 )
@@ -108,9 +112,13 @@ _NUDGE_TURN_BUDGET = 35
 
 # SLayer MCP tools the encoder may call. `save_memory` is REQUIRED (the agent
 # wires its own KB memory); `query_nested` lets it self-test a multi-stage DAG.
+# DEV-1668: `help` is gone from slayer 0.9.6 (help content is now
+# `inspect(reference="memory:help.intro", entity_type="memory")`); allow-listing
+# it would crash `derive_disallowed_slayer_tools`. The encoder is EXEMPT from the
+# lean surface reduction, so `models_summary` / `inspect_model` stay.
 SLAYER_MCP_TOOLS = [
     "create_model", "edit_model", "save_memory", "validate_models",
-    "help", "search", "models_summary", "inspect_model", "inspect",
+    "search", "models_summary", "inspect_model", "inspect",
     "recommend_root_model", "query", "query_nested",
 ]
 
@@ -305,10 +313,21 @@ def make_claude_sdk_build_encoder(
                 effort=reasoning_effort,
                 max_turns=_MAX_TURNS,
                 hooks={
-                    "PreToolUse": [HookMatcher(
-                        matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
-                        hooks=[_normalize_write_tool_filters_hook],
-                    )],
+                    "PreToolUse": [
+                        HookMatcher(
+                            matcher=_NORMALIZE_WRITE_FILTERS_MATCHER,
+                            hooks=[_normalize_write_tool_filters_hook],
+                        ),
+                        # DEV-1591: the build-time encoder does broad discovery
+                        # searches too — hardwire SLayer `search` to compact=True
+                        # so it never drags full per-entity renders into context
+                        # (parity with the on-the-fly task agents). Detail reads
+                        # go through `inspect`.
+                        HookMatcher(
+                            matcher=_SLAYER_SEARCH_TOOL,
+                            hooks=[_force_compact_search_hook],
+                        ),
+                    ],
                     # Fresh per-KB nudge state (build_options is invoked once per
                     # KB session, so the counter resets each KB).
                     "PostToolUse": [HookMatcher(

@@ -59,6 +59,7 @@ from bird_interact_agents.agents._pre_encoded import (
     strip_write_tool_names,
     validate_pre_encoded_source,
 )
+from bird_interact_agents.agents._slayer_tool_surface import filter_flag_drops
 from bird_interact_agents.agents._pre_encoded_prompts import (
     SLAYER_PRE_ENCODED_ONE_SHOT_V1 as SLAYER_PRE_ENCODED_ONE_SHOT,
 )
@@ -238,15 +239,21 @@ _MAIN_NATIVE_BARE = [
     "create_model",
     "edit_model",
     "validate_models",
-    "help",
+    # DEV-1668: `help` removed — the slayer 0.9.6 `help` tool is gone (help
+    # content is `inspect(reference="memory:help.intro", entity_type="memory")`),
+    # so the in-process native bridge cannot resolve its schema.
     "ask_discovery",
     *_KB_NATIVE_BARE,
 ]
 _DISCOVERY_NATIVE_BARE = [
     "search",
+    # DEV-1591: discovery owns the targeted point-lookup `inspect` (the
+    # prompts route all column / memory detail reads to it). `search` is
+    # discovery-only and hardwired-compact; `inspect` is how discovery
+    # reads full bodies.
+    "inspect",
     "models_summary",
     "inspect_model",
-    "inspect",
     "query",
     *_KB_NATIVE_BARE,
 ]
@@ -257,9 +264,37 @@ DISCOVERY_NATIVE_TOOL_NAMES = [
 ]
 
 
+def effective_main_tools(
+    *, lean_introspection: bool, readonly_mode: bool, pre_encoded_source
+) -> list[str]:
+    """DEV-1666: the MAIN client's in-process native tool names after the
+    pre-encoded write-strip AND the flag drops (lean drops inspect_model + the
+    3 KB natives; readonly drops the write tools). False/False + no pre-encoded
+    == ``MAIN_NATIVE_TOOL_NAMES``."""
+    base = (
+        strip_write_tool_names(MAIN_NATIVE_TOOL_NAMES)
+        if pre_encoded_source else list(MAIN_NATIVE_TOOL_NAMES)
+    )
+    return filter_flag_drops(
+        base, lean_introspection=lean_introspection, readonly_mode=readonly_mode
+    )
+
+
+def effective_discovery_tools(*, lean_introspection: bool) -> list[str]:
+    """DEV-1666/DEV-1668: the DISCOVERY client's native tool names after the lean
+    drop (inspect_model + models_summary + KB natives — models_summary now routes
+    through ``inspect(reference=None, entity_type="model")``). readonly is inert
+    here (discovery holds no write tools). False == ``DISCOVERY_NATIVE_TOOL_NAMES``."""
+    return filter_flag_drops(
+        DISCOVERY_NATIVE_TOOL_NAMES,
+        lean_introspection=lean_introspection, readonly_mode=False,
+    )
+
+
 def _build_prompt(
     eval_mode: str, task_data: dict, budget: float,
     pre_encoded_source: str | None = None,
+    *, lean_introspection: bool = True, readonly_mode: bool = False,
 ) -> str:
     if eval_mode != "one-shot":
         raise ValueError(
@@ -268,6 +303,11 @@ def _build_prompt(
         )
     user_query = task_data["amb_user_query"]
     db_name = task_data["selected_database"]
+    # DEV-1666: the v1 main-loop lean gating lives in
+    # ``build_main_workflow_note`` / ``build_discovery_prompt`` (appended at
+    # run_task time); the static v1 one-shot template's own inspect_model
+    # mentions are gated in a follow-up (the tool is dropped from the surface
+    # regardless).
     template = (
         SLAYER_PRE_ENCODED_ONE_SHOT if pre_encoded_source
         else SLAYER_OTF_ONE_SHOT
@@ -299,6 +339,8 @@ class ClaudeSDKOtfAgent:
         pre_encoded_source: str | None = None,
         save_edited_models: bool = False,
         apply_edited_models: bool = False,
+        lean_introspection: bool = True,
+        readonly_mode: bool = False,
     ) -> None:
         # DEV-1586: `pre_encoded_source` (None | "otf" | "custom") selects the
         # read-only pre-encoded mode; `slayer_setup` is derived upstream.
@@ -325,6 +367,15 @@ class ClaudeSDKOtfAgent:
         self.pre_encoded_source = pre_encoded_source
         self.save_edited_models = save_edited_models
         self.apply_edited_models = apply_edited_models
+        # DEV-1666: slayer-only tool-surface flags.
+        self.lean_introspection = lean_introspection
+        self.readonly_mode = readonly_mode
+        if readonly_mode and pre_encoded_source is None:
+            logger.warning(
+                "readonly_mode=True on an on-the-fly (build) run: the SLayer "
+                "WRITE tools are dropped, so model definitions will NOT be "
+                "persisted; the agent must work inline at query time."
+            )
 
     async def run_task(
         self,
@@ -484,16 +535,23 @@ class ClaudeSDKOtfAgent:
 
             prompt = _build_prompt(
                 eval_mode, task_data, budget, self.pre_encoded_source,
+                lean_introspection=self.lean_introspection,
+                readonly_mode=self.readonly_mode,
             )
 
             # DEV-1581 R2: two persistent in-process clients. DEV-1586
             # pre-encoded mode strips the SLayer WRITE tools from MAIN (the
             # agent only introspects); discovery is read-only already.
-            main_tools = (
-                strip_write_tool_names(MAIN_NATIVE_TOOL_NAMES)
-                if self.pre_encoded_source else list(MAIN_NATIVE_TOOL_NAMES)
+            # DEV-1666: lean drops inspect_model + KB natives from BOTH clients;
+            # readonly drops the write tools from MAIN.
+            main_tools = effective_main_tools(
+                lean_introspection=self.lean_introspection,
+                readonly_mode=self.readonly_mode,
+                pre_encoded_source=self.pre_encoded_source,
             )
-            discovery_tools = list(DISCOVERY_NATIVE_TOOL_NAMES)
+            discovery_tools = effective_discovery_tools(
+                lean_introspection=self.lean_introspection,
+            )
 
             main_mcp_servers = {
                 "bird-interact-tools": build_bird_interact_server(main_tools),
@@ -524,7 +582,10 @@ class ClaudeSDKOtfAgent:
             def _build_main_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
                 return ClaudeAgentOptions(
                     **_opt_kwargs,
-                    system_prompt=prompt + build_main_workflow_note(query_mode='slayer'),
+                    system_prompt=prompt + build_main_workflow_note(
+                        query_mode='slayer',
+                        lean_introspection=self.lean_introspection,
+                    ),
                     mcp_servers=main_mcp_servers,
                     allowed_tools=list(main_tools),
                     # No Claude Code built-ins: ask_discovery is an in-process
@@ -568,7 +629,10 @@ class ClaudeSDKOtfAgent:
             def _build_discovery_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
                 return ClaudeAgentOptions(
                     **_opt_kwargs,
-                    system_prompt=build_discovery_prompt(with_ask_user=False),
+                    system_prompt=build_discovery_prompt(
+                        with_ask_user=False, query_mode="slayer",
+                        lean_introspection=self.lean_introspection,
+                    ),
                     mcp_servers=discovery_mcp_servers,
                     allowed_tools=list(discovery_tools),
                     tools=[],

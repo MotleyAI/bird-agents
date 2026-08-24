@@ -71,7 +71,7 @@ starts `KB <n> —`. The base tables are already ingested as SLayer models,
 but NOTHING is encoded yet: you encode exactly what THIS question needs,
 on the fly.
 
-YOUR TOOLS (read their own descriptions). Call `help` FIRST to learn the
+YOUR TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn the
 query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
 the `source_model` / `dimensions` / `measures` / `filters` schema. Use
 `create_model` / `edit_model` to add columns and measures; `query` (single
@@ -79,9 +79,9 @@ object OR list of stage objects for nested DAG) to test. You HOLD the
 schema-introspection tools `search`, `inspect_model`, and `inspect` — call
 them DIRECTLY: `search` to find models / columns / measures, `inspect_model`
 for a whole model's columns / measures / joins, and `inspect` for a single
-known column's `Description:` and `Sample values:`. FIRST call `ask_discovery`
-to grill the user about any ambiguity in the request, then introspect and
-build. Read each KB item's
+known column's `Description:` and `Sample values:`. BEFORE building, call
+`ask_discovery` to grill the user about any ambiguity in the request, then
+introspect and build. Read each KB item's
 formula VERBATIM with `get_knowledge_definition` (and
 `get_all_external_knowledge_names` to list them) — never paraphrase a KB
 formula.

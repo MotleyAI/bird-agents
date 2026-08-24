@@ -2410,7 +2410,12 @@ def test_build_anthropic_client_prefers_oauth_token(monkeypatch):
     """OAuth subscription path: when CLAUDE_CODE_OAUTH_TOKEN is set, the
     SDK is constructed with `auth_token=...` so it sends `Authorization:
     Bearer ...` rather than `x-api-key` (the only auth scheme claude.ai
-    OAuth tokens accept)."""
+    OAuth tokens accept).
+
+    DEV-1670: even with an ambient ANTHROPIC_API_KEY present, the call must
+    pass ``api_key=""`` (NOT None) — otherwise the SDK loads the ambient key
+    and the request carries both headers, letting the server bill the API key
+    and bypass the subscription."""
     import anthropic
     from unittest.mock import patch
 
@@ -2423,7 +2428,7 @@ def test_build_anthropic_client_prefers_oauth_token(monkeypatch):
     with patch.object(anthropic, "AsyncAnthropic") as mock_cls:
         _build_anthropic_client()
     mock_cls.assert_called_once_with(
-        auth_token="sk-ant-oat01-fake", api_key=None,
+        auth_token="sk-ant-oat01-fake", api_key="",
         max_retries=_AUTOPSY_MAX_RETRIES,
     )
 

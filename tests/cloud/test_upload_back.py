@@ -305,11 +305,20 @@ def test_upload_otf_reference_delta_writes_sidecar_and_marker_last(
         def bucket(self, _name):
             return self
 
+        def list_blobs(self, *, prefix="", **_kw):
+            # DEV-1653: upload_dir_prefix lists the destination once for
+            # skip-existing. Nothing uploaded yet in this test → empty.
+            return []
+
         def blob(self, name):
             client_self = self
 
             class _B:
                 def upload_from_string(self, *a, **kw):
+                    upload_order.append(name)
+
+                def upload_from_filename(self, filename, *a, **kw):
+                    # DEV-1653: content files now stream via upload_from_filename.
                     upload_order.append(name)
             return _B()
 

@@ -39,21 +39,24 @@ if TYPE_CHECKING:  # avoid an import cycle (annotation_io imports this module)
 logger = logging.getLogger(__name__)
 
 
-# THIS checkout is clean origin/main, so its producers stamp v0/v1. Applied
-# ONLY at production (build_manifest at submit, _build_submission_annotation at
-# grade); downstream copies the literal, never re-derives.
+# THIS checkout IS the DEV-1591 modified-agent branch (the prompt-experiment
+# branch: search discovery-only + inspect for detail), so its producers stamp
+# v2/v3 — NOT the clean v0/v1. Applied ONLY at production (build_manifest at
+# submit, _build_submission_annotation at grade); downstream copies the
+# literal, never re-derives.
 #
 # ┌─ IMPORTANT ──────────────────────────────────────────────────────────┐
-# │ A modified-agent branch flips this to {"claude_sdk":"v2",             │
-# │ "claude_sdk_v1":"v3"} so its experimental runs don't override these   │
-# │ clean baselines (see the DEV-1591 prompt-experiment branch). On main  │
-# │ it MUST stay {"claude_sdk":"v0","claude_sdk_v1":"v1"} — or make it a  │
-# │ submit-time selection for the "support all 4 agent versions on one    │
-# │ branch" work. Leaving v2/v3 here would mis-tag every clean run.       │
+# │ This is the modified-agent branch, so the map is flipped to           │
+# │ {"claude_sdk":"v2","claude_sdk_v1":"v3"} so its experimental runs      │
+# │ don't override the clean baselines. When these modifications land on   │
+# │ main / are retired, RESET this to {"claude_sdk":"v0",                  │
+# │ "claude_sdk_v1":"v1"} (or make it a submit-time selection for the      │
+# │ "support all 4 agent versions on one branch" work) — leaving v2/v3     │
+# │ on main would mis-tag every clean run.                                 │
 # └──────────────────────────────────────────────────────────────────────┘
 VERSION_BY_FRAMEWORK = {
-    "claude_sdk": "v0",
-    "claude_sdk_v1": "v1",
+    "claude_sdk": "v2",
+    "claude_sdk_v1": "v3",
 }
 
 # Manifest key the producer records (``build_manifest``); copied by downstream

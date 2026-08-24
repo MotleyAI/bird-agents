@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 from bird_interact_agents import paths, provider_registry
+from bird_interact_agents.agents import _slayer_tool_surface
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.frameworks import is_otf_encode_framework
 # DEV-1604: imported by NAME (not module-qualified) so both the bridge call and
@@ -803,6 +804,8 @@ async def _run_one_task_async(
     pre_encoded_source: str | None = None,
     save_edited_models: bool = False,
     apply_edited_models: bool = False,
+    lean_introspection: bool = True,
+    readonly_mode: bool = False,
     cached_runner: Any = None,
 ) -> dict:
     # Defer the import so monkeypatching `bird_interact_agents.run.run_one_task`
@@ -835,6 +838,8 @@ async def _run_one_task_async(
         pre_encoded_source=pre_encoded_source,
         save_edited_models=save_edited_models,
         apply_edited_models=apply_edited_models,
+        lean_introspection=lean_introspection,
+        readonly_mode=readonly_mode,
     )
 
 
@@ -926,6 +931,8 @@ def _run_one_in_actor(
                                 pre_encoded_source=cfg.get("pre_encoded_source"),
                                 save_edited_models=cfg.get("save_edited_models", False),
                                 apply_edited_models=cfg.get("apply_edited_models", False),
+                                lean_introspection=cfg.get("lean_introspection", True),
+                                readonly_mode=cfg.get("readonly_mode", False),
                                 cached_runner=cached_runner,
                             )
                         )
@@ -994,6 +1001,16 @@ def _run_one_in_actor(
         strict=cfg.get("strict"),
         use_audited_gold_sql=cfg.get("use_audited_gold_sql"),
         prompt_cache=cfg.get("prompt_cache"),
+        # DEV-1666: resolved slayer flags (None on raw / exempt framework).
+        **dict(zip(
+            ("lean_introspection", "readonly_mode"),
+            _slayer_tool_surface.resolve_recorded_flags(
+                framework=cfg.get("framework") or "",
+                query_mode=cfg.get("query_mode") or "",
+                lean_introspection=cfg.get("lean_introspection", True),
+                readonly_mode=cfg.get("readonly_mode", False),
+            ),
+        )),
     )
     try:
         # Short-circuit BEFORE calling the real grader on a missing
@@ -1053,6 +1070,8 @@ def _run_one_in_actor(
             # agent_model so the cloud inline grader fires it (it never did
             # before — l6_llm_judge was 0 across the whole cohort).
             agent_model=cfg.get("agent_model"),
+            # DEV-1778: stamp the consumed edited-models store provenance.
+            consumed_edited_models=row.get("consumed_edited_models"),
         )
         store.write_submission_annotation(
             run_id, iid, json.loads(ann_path.read_text()),
@@ -1079,6 +1098,9 @@ def _run_one_in_actor(
                 n_agent_turns=_usage_dict.get("n_agent_turns"),
                 n_ask_user_calls=_usage_dict.get("n_ask_user_calls"),
                 config=_submission_config,
+                # DEV-1778: apply-success then grader-raise still stamps the
+                # consumed store onto the FAILED annotation.
+                consumed_edited_models=row.get("consumed_edited_models"),
             )
             store.write_submission_annotation(
                 run_id, iid, json.loads(failed_path.read_text()),
@@ -1306,6 +1328,8 @@ def _maybe_build_cached_runner(cfg: dict[str, Any]):
         slayer_storage_root=None,
         save_edited_models=cfg.get("save_edited_models", False),
         apply_edited_models=cfg.get("apply_edited_models", False),
+        lean_introspection=cfg.get("lean_introspection", True),
+        readonly_mode=cfg.get("readonly_mode", False),
     )
 
 
@@ -1560,6 +1584,8 @@ def run_pool(
     local_only: bool = False,
     actor_cls: Any = None,
     actor_env_vars: dict[str, str] | None = None,
+    lean_introspection: bool = True,
+    readonly_mode: bool = False,
 ) -> None:
     """Construct actors, dispatch all `instance_ids` via Ray's ActorPool,
     handle actor death, write heartbeat + rows.
@@ -1589,6 +1615,10 @@ def run_pool(
         "slayer_setup": slayer_setup,
         "pre_encoded_source": pre_encoded_source,
         "slayer_storage_root": slayer_storage_root,
+        # DEV-1666: raw flag values for the in-scope agents (only they consume
+        # them); the SubmissionConfig recording resolves None on raw/exempt.
+        "lean_introspection": lean_introspection,
+        "readonly_mode": readonly_mode,
         # DEV-1604: drives _maybe_ensure_bridge — recycled --subscription-auth
         # flag (True/default = z.ai per-token + Doubleword bridge).
         "no_subscription_auth": no_subscription_auth,
@@ -1990,6 +2020,11 @@ def main(argv: list[str] | None = None) -> int:
                    default=False, dest="subscription_auth")
     p.add_argument("--instance-ids", required=True,
                    help="comma-separated list")
+    # DEV-1666: slayer-only tool-surface flags (driver-fed on deviation only).
+    p.add_argument("--no-lean", action="store_false", dest="lean_introspection",
+                   default=True)
+    p.add_argument("--readonly-mode", action="store_true", dest="readonly_mode",
+                   default=False)
     p.add_argument(
         "--secrets-file", default=None,
         help="path (on the head, inside the container) to a JSON file of "
@@ -2045,6 +2080,8 @@ def main(argv: list[str] | None = None) -> int:
         no_subscription_auth=not args.subscription_auth,
         ray_job_id=args.ray_job_id,
         actor_env_vars=actor_env_vars,
+        lean_introspection=args.lean_introspection,
+        readonly_mode=args.readonly_mode,
     )
     return 0
 

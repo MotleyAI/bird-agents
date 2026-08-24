@@ -129,17 +129,18 @@ def test_export_with_no_memories_succeeds(tmp_path, monkeypatch):
     dest_dir = dest_root / "solar"
     assert (dest_dir / "datasources" / "solar.yaml").is_file()
     assert (dest_dir / "models" / "solar" / "m_s.yaml").is_file()
-    # memories.yaml should be absent (or empty) — verifier handles both.
-    mem_file = dest_dir / "memories.yaml"
-    if mem_file.exists():
-        assert mem_file.read_text().strip() in ("", "[]")
+    # DEV-1668: per-id ``memories/<id>.md``; none written when source has none.
+    mem_dir = dest_dir / "memories"
+    if mem_dir.exists():
+        assert list(mem_dir.glob("*.md")) == []
 
 
 def test_export_is_idempotent(tmp_path, monkeypatch):
-    """Re-exporting unchanged source memories produces a bit-identical
-    memories.yaml on the destination side. This guards against the
-    id/created_at-churn regression: ``save_memory`` would otherwise
-    allocate a fresh id and timestamp on every run.
+    """Re-exporting unchanged source memories produces bit-identical per-id
+    ``memories/<id>.md`` files on the destination side. This guards against the
+    id/created_at-churn regression: ``save_memory`` would otherwise allocate a
+    fresh id and timestamp on every run (the export uses ``_save_memory_row`` to
+    preserve both).
     """
     src_dir = tmp_path / "src"
     dest_root = tmp_path / "out"
@@ -147,13 +148,18 @@ def test_export_is_idempotent(tmp_path, monkeypatch):
     asyncio.run(_seed_source(src_dir))
     monkeypatch.setattr(export_slayer_models, "DEST_ROOT", dest_root)
 
-    rc = asyncio.run(export_slayer_models._export_async("households", str(src_dir)))
-    assert rc == 0
-    first = (dest_root / "households" / "memories.yaml").read_bytes()
+    def _mem_bytes() -> dict[str, bytes]:
+        mem_dir = dest_root / "households" / "memories"
+        return {fp.name: fp.read_bytes() for fp in sorted(mem_dir.glob("*.md"))}
 
     rc = asyncio.run(export_slayer_models._export_async("households", str(src_dir)))
     assert rc == 0
-    second = (dest_root / "households" / "memories.yaml").read_bytes()
+    first = _mem_bytes()
+    assert first, "export should have written per-id memory files"
+
+    rc = asyncio.run(export_slayer_models._export_async("households", str(src_dir)))
+    assert rc == 0
+    second = _mem_bytes()
 
     assert first == second, "re-export should be byte-identical"
 

@@ -71,8 +71,11 @@ def test_one_shot_allow_list_exact():
     an accidental grant is caught. Mirrors the encoder's exact-set pin."""
     from bird_interact_agents.agents.claude_sdk_otf.agent import SLAYER_MCP_TOOLS
 
+    # DEV-1668: `help` removed (slayer 0.9.6 dropped the tool). list_datasources
+    # / models_summary stay on the BASE allow-list (the legacy, lean=False
+    # surface); lean drops them via effective_slayer_allow.
     assert set(SLAYER_MCP_TOOLS) == {
-        "help", "list_datasources", "models_summary", "inspect_model",
+        "list_datasources", "models_summary", "inspect_model",
         "inspect", "search", "recommend_root_model", "create_model",
         "edit_model", "save_memory", "validate_models",
     }

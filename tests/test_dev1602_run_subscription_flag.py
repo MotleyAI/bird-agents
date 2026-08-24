@@ -14,6 +14,8 @@ claude_sdk-only, mirroring the cloud CLI policy.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from bird_interact_agents import run
@@ -32,7 +34,14 @@ def _err(msg: str):
 
 @pytest.fixture(autouse=True)
 def _clear_signal(monkeypatch):
+    # Clear before AND after: several tests call the production
+    # ``_apply_subscription_auth_env`` which sets BIRD_INTERACT_SUBSCRIPTION_AUTH
+    # directly via ``os.environ`` (not through monkeypatch), so without an
+    # explicit teardown the "1" leaks into every later test and hijacks their
+    # claude_sdk auth path.
     monkeypatch.delenv("BIRD_INTERACT_SUBSCRIPTION_AUTH", raising=False)
+    yield
+    os.environ.pop("BIRD_INTERACT_SUBSCRIPTION_AUTH", None)
 
 
 def test_subscription_on_sets_signal(monkeypatch):
@@ -114,7 +123,7 @@ def _find_add_argument(flag: str):
     import ast
     import inspect
 
-    src = inspect.getsource(run.main)
+    src = inspect.getsource(run.build_arg_parser)
     tree = ast.parse(src)
     for node in ast.walk(tree):
         if (
@@ -255,14 +264,15 @@ def test_main_mode_optional_defaults_per_benchmark():
 
 
 def test_main_value_defaults_aligned_with_cloud():
-    """Local CLI alignment of value-defaults with bird-interact-cloud:
-    --patience=250, --user-sim-model=claude-sonnet-4-6,
-    --use-audited-gold-sql default True via BooleanOptionalAction."""
+    """Local CLI value-defaults vs bird-interact-cloud:
+    --user-sim-model=claude-sonnet-4-6, --use-audited-gold-sql default True via
+    BooleanOptionalAction. NOTE: --patience INTENTIONALLY diverges — local
+    defaults to 500 (the value local sweeps run at); cloud keeps 250."""
     import ast
 
     pat = _find_add_argument("--patience")
     pkw = {k.arg: k.value for k in pat.keywords}
-    assert isinstance(pkw["default"], ast.Constant) and pkw["default"].value == 250
+    assert isinstance(pkw["default"], ast.Constant) and pkw["default"].value == 500
 
     usm = _find_add_argument("--user-sim-model")
     ukw = {k.arg: k.value for k in usm.keywords}

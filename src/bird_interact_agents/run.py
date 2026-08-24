@@ -16,6 +16,7 @@ import sqlite3 as _sqlite3
 from typing import Any as _Any
 
 from bird_interact_agents import paths
+from bird_interact_agents.agents import _slayer_tool_surface
 # DEV-1638: the local postgres bootstrap + annotation sync + dotenv loader moved
 # into the package so this installed console script can compose them. Imported
 # at module top level so tests monkeypatch `run.<name>`.
@@ -140,6 +141,19 @@ def _validate_slayer_setup(
         derive_slayer_setup,
         validate_pre_encoded_source,
     )
+
+    # --save-edited-models and --apply-edited-models are MUTUALLY EXCLUSIVE:
+    # ``apply`` reuses the task's previously-saved store as the starting point,
+    # while ``save`` overwrites it with THIS run's edits — combining them would
+    # silently clobber the store you asked to reuse. This guard is the single
+    # choke point (the CLI also declares an argparse mutually-exclusive group,
+    # but this catches programmatic / cloud-cfg callers too).
+    if save_edited_models and apply_edited_models:
+        raise ValueError(
+            "--save-edited-models and --apply-edited-models are mutually "
+            "exclusive: apply reuses a prior saved store, save overwrites it. "
+            "Pick one."
+        )
 
     # DEV-1649: --save-edited-models / --apply-edited-models persist and reuse
     # the agent's edited on-the-fly SLayer store. They only make sense for an
@@ -409,6 +423,8 @@ def make_runner(
     pre_encoded_source: str | None = None,
     save_edited_models: bool = False,
     apply_edited_models: bool = False,
+    lean_introspection: bool = True,
+    readonly_mode: bool = False,
 ):
     """Public alias for `_make_runner`. The cloud actor (and other
     throughput-sensitive callers) call this once at startup and reuse the
@@ -446,6 +462,8 @@ def make_runner(
         pre_encoded_source=pre_encoded_source,
         save_edited_models=save_edited_models,
         apply_edited_models=apply_edited_models,
+        lean_introspection=lean_introspection,
+        readonly_mode=readonly_mode,
     )
 
 
@@ -609,6 +627,8 @@ def _make_runner(
     pre_encoded_source: str | None = None,
     save_edited_models: bool = False,
     apply_edited_models: bool = False,
+    lean_introspection: bool = True,
+    readonly_mode: bool = False,
 ):
     """Construct the per-task runner closure for the given config.
 
@@ -661,6 +681,8 @@ def _make_runner(
                 reasoning_effort=reasoning_effort,
                 save_edited_models=save_edited_models,
                 apply_edited_models=apply_edited_models,
+                lean_introspection=lean_introspection,
+                readonly_mode=readonly_mode,
             )
         elif not b.one_shot and query_mode == "slayer":
             from bird_interact_agents.agents.claude_sdk_otf_ainteract import (
@@ -674,6 +696,8 @@ def _make_runner(
                 reasoning_effort=reasoning_effort,
                 save_edited_models=save_edited_models,
                 apply_edited_models=apply_edited_models,
+                lean_introspection=lean_introspection,
+                readonly_mode=readonly_mode,
             )
         elif b.one_shot and query_mode == "raw":
             from bird_interact_agents.agents.claude_sdk_otf_raw import ClaudeSDKOtfRawAgent
@@ -716,6 +740,8 @@ def _make_runner(
             reasoning_effort=reasoning_effort,
             save_edited_models=save_edited_models,
             apply_edited_models=apply_edited_models,
+            lean_introspection=lean_introspection,
+            readonly_mode=readonly_mode,
         )
 
         async def run_one(td: dict, data_dir: str, patience: int,
@@ -746,6 +772,8 @@ def _make_runner(
             reasoning_effort=reasoning_effort,
             save_edited_models=save_edited_models,
             apply_edited_models=apply_edited_models,
+            lean_introspection=lean_introspection,
+            readonly_mode=readonly_mode,
         )
 
         async def run_one(td: dict, data_dir: str, patience: int,
@@ -825,6 +853,8 @@ def _make_runner(
                 reasoning_effort=reasoning_effort,
                 save_edited_models=save_edited_models,
                 apply_edited_models=apply_edited_models,
+                lean_introspection=lean_introspection,
+                readonly_mode=readonly_mode,
             )
         elif not b.one_shot and query_mode == "slayer":
             from bird_interact_agents.agents.claude_sdk_otf_ainteract_v1 import (
@@ -838,6 +868,8 @@ def _make_runner(
                 reasoning_effort=reasoning_effort,
                 save_edited_models=save_edited_models,
                 apply_edited_models=apply_edited_models,
+                lean_introspection=lean_introspection,
+                readonly_mode=readonly_mode,
             )
         elif b.one_shot and query_mode == "raw":
             from bird_interact_agents.agents.claude_sdk_otf_raw_v1 import (
@@ -882,6 +914,8 @@ def _make_runner(
             reasoning_effort=reasoning_effort,
             save_edited_models=save_edited_models,
             apply_edited_models=apply_edited_models,
+            lean_introspection=lean_introspection,
+            readonly_mode=readonly_mode,
         )
 
         async def run_one(td: dict, data_dir: str, patience: int,
@@ -912,6 +946,8 @@ def _make_runner(
             reasoning_effort=reasoning_effort,
             save_edited_models=save_edited_models,
             apply_edited_models=apply_edited_models,
+            lean_introspection=lean_introspection,
+            readonly_mode=readonly_mode,
         )
 
         async def run_one(td: dict, data_dir: str, patience: int,
@@ -1159,6 +1195,8 @@ async def run_one_task(
     pre_encoded_source: str | None = None,
     save_edited_models: bool = False,
     apply_edited_models: bool = False,
+    lean_introspection: bool = True,
+    readonly_mode: bool = False,
 ) -> dict:
     """Run a single per-task evaluation and return a `_persist`-consumable dict.
 
@@ -1208,6 +1246,8 @@ async def run_one_task(
         pre_encoded_source=pre_encoded_source,
         save_edited_models=save_edited_models,
         apply_edited_models=apply_edited_models,
+        lean_introspection=lean_introspection,
+        readonly_mode=readonly_mode,
     )
     instance_id = str(task_data.get("instance_id") or "")
     t_start = time.perf_counter()
@@ -1384,6 +1424,8 @@ async def _run_process_pool_and_collate(
     slayer_storage_root: str | None,
     save_edited_models: bool = False,
     apply_edited_models: bool = False,
+    lean_introspection: bool = True,
+    readonly_mode: bool = False,
 ) -> dict:
     """DEV-1640 default local path: run each task in its own spawned worker
     process (real isolation), then assemble ``results.db`` + ``eval.json``
@@ -1420,7 +1462,16 @@ async def _run_process_pool_and_collate(
         # lacks the keys (workers read them with .get(..., False)).
         "save_edited_models": save_edited_models,
         "apply_edited_models": apply_edited_models,
+        # DEV-1666: raw flag values (True/False) for the agent — the worker
+        # threads them into run_one_task; only in-scope agents consume them.
+        "lean_introspection": lean_introspection,
+        "readonly_mode": readonly_mode,
     }
+    # DEV-1666: resolved (None on raw / exempt framework) for the manifest.
+    _rec_lean, _rec_readonly = _slayer_tool_surface.resolve_recorded_flags(
+        framework=framework, query_mode=query_mode,
+        lean_introspection=lean_introspection, readonly_mode=readonly_mode,
+    )
 
     manifest = {
         "run_id": run_id,
@@ -1439,6 +1490,8 @@ async def _run_process_pool_and_collate(
         "strict": strict,
         "use_audited_gold_sql": use_audited_gold_sql,
         "prompt_cache": prompt_cache,
+        "lean_introspection": _rec_lean,
+        "readonly_mode": _rec_readonly,
     }
 
     # Dispatch each task to its own spawned worker process. Called
@@ -1520,6 +1573,8 @@ async def run_evaluation(
     pre_encoded_source: str | None = None,
     save_edited_models: bool = False,
     apply_edited_models: bool = False,
+    lean_introspection: bool = True,
+    readonly_mode: bool = False,
 ) -> dict:
     """Run full evaluation across all tasks."""
     from bird_interact_agents.agents._pre_encoded import derive_slayer_setup
@@ -1602,6 +1657,11 @@ async def run_evaluation(
     # DEV-1535 design choice (B3 = both run_metadata AND annotation). The
     # config is identical across tasks in a single run, so one instance
     # is shared.
+    # DEV-1666: record the resolved slayer flags (None on raw / exempt framework).
+    _rec_lean, _rec_readonly = _slayer_tool_surface.resolve_recorded_flags(
+        framework=framework, query_mode=query_mode,
+        lean_introspection=lean_introspection, readonly_mode=readonly_mode,
+    )
     submission_config = SubmissionConfig(
         framework=framework,
         mode=mode,
@@ -1617,6 +1677,8 @@ async def run_evaluation(
         strict=strict,
         use_audited_gold_sql=use_audited_gold_sql,
         prompt_cache=prompt_cache,
+        lean_introspection=_rec_lean,
+        readonly_mode=_rec_readonly,
     )
 
     # DEV-1640: the DEFAULT local path runs each task in its own spawned
@@ -1653,6 +1715,8 @@ async def run_evaluation(
             slayer_storage_root=slayer_storage_root,
             save_edited_models=save_edited_models,
             apply_edited_models=apply_edited_models,
+            lean_introspection=lean_introspection,
+            readonly_mode=readonly_mode,
         )
 
     if concurrency >= 2:
@@ -1682,6 +1746,8 @@ async def run_evaluation(
         pre_encoded_source=pre_encoded_source,
         save_edited_models=save_edited_models,
         apply_edited_models=apply_edited_models,
+        lean_introspection=lean_introspection,
+        readonly_mode=readonly_mode,
     )
 
     # Open the per-run results.db (lives next to eval.json) and write
@@ -1823,6 +1889,9 @@ async def run_evaluation(
             n_ask_user_calls=usage_blob.get("n_ask_user_calls"),
             predicted_row_count=r.get("predicted_row_count"),
             config=submission_config,
+            # DEV-1778: apply-success then no-SQL/grader-raise still stamps the
+            # consumed store onto the FAILED annotation.
+            consumed_edited_models=r.get("consumed_edited_models"),
         )
         if not submitted_sql or not selected_database:
             write_failed_submission_annotation(
@@ -1871,6 +1940,8 @@ async def run_evaluation(
                 # DEV-1613: build the N5 insufficient-task judge from the
                 # run's agent_model so the cascade can fire it inline.
                 agent_model=agent_model,
+                # DEV-1778: stamp the consumed edited-models store provenance.
+                consumed_edited_models=r.get("consumed_edited_models"),
             )
         except Exception as exc:  # noqa: BLE001 — keep the loop alive
             logger.exception(
@@ -2281,7 +2352,9 @@ def _maybe_sync_annotations(args, effective_ids) -> None:
         )
 
 
-def main() -> None:
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Construct the ``bird-interact`` CLI parser (extracted from ``main`` so the
+    argument wiring is unit-testable — mirrors ``cloud.cli.parse_args``)."""
     parser = argparse.ArgumentParser(
         description="BIRD-Interact benchmark runner with pluggable agents"
     )
@@ -2373,11 +2446,11 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None, help="Max tasks to run")
     parser.add_argument("--concurrency", type=int, default=3)
     parser.add_argument(
-        "--patience", type=int, default=250,
+        "--patience", type=int, default=500,
         help=(
-            "User patience budget (aligned with bird-interact-cloud's default "
-            "of 250; the old local default of 3 was too low and skewed eval "
-            "results)."
+            "User patience budget. Local default is 500 (the value we run "
+            "local sweeps at); bird-interact-cloud keeps 250. The old local "
+            "default of 3 was too low and skewed eval results."
         ),
     )
     parser.add_argument(
@@ -2582,7 +2655,10 @@ def main() -> None:
         ),
     )
     # DEV-1649: persist / reuse the agent's edited on-the-fly SLayer store.
-    parser.add_argument(
+    # MUTUALLY EXCLUSIVE — apply reuses a saved store, save overwrites it;
+    # passing both would clobber the store you asked to reuse.
+    _edited_models_group = parser.add_mutually_exclusive_group()
+    _edited_models_group.add_argument(
         "--save-edited-models",
         action="store_true",
         help=(
@@ -2590,10 +2666,11 @@ def main() -> None:
             "agent's edited per-task SLayer store as "
             "runs/<benchmark>/<db>/<iid>/edited_models.tar.gz (latest-wins). "
             "Only valid with --query-mode slayer on an on-the-fly interact "
-            "framework (not raw / --pre-encoded-models / *_otf_encode)."
+            "framework (not raw / --pre-encoded-models / *_otf_encode). "
+            "Mutually exclusive with --apply-edited-models."
         ),
     )
-    parser.add_argument(
+    _edited_models_group.add_argument(
         "--apply-edited-models",
         action="store_true",
         help=(
@@ -2601,7 +2678,7 @@ def main() -> None:
             "previously-saved edited store (if present + still valid), instead "
             "of the bare deterministic cache. Falls back to the cache when no "
             "snapshot exists. Same framework/mode restrictions as "
-            "--save-edited-models."
+            "--save-edited-models. Mutually exclusive with --save-edited-models."
         ),
     )
     # DEV-1638: unify the local entrypoint — fold the postgres bootstrap the
@@ -2635,7 +2712,50 @@ def main() -> None:
             "instead of degrading to the implicit N1 annotation."
         ),
     )
+    # DEV-1666: slayer-only tool-surface flags. Single deviation flags (no
+    # `--no-lean-introspection` / `--no-readonly-mode` pairs): pass a flag only
+    # to deviate from the default (lean on / readonly off).
+    parser.add_argument(
+        "--no-lean",
+        action="store_false",
+        dest="lean_introspection",
+        default=True,
+        help=(
+            "DEV-1666: disable lean_introspection (slayer-only). By default the "
+            "SLayer query agents drop tools redundant with search/inspect "
+            "(inspect_model, the 3 knowledge tools, list_datasources); pass "
+            "--no-lean to restore the full introspection surface. Ignored (with a "
+            "warning) in raw mode and for exempt frameworks (e.g. "
+            "claude_sdk_otf_encode)."
+        ),
+    )
+    parser.add_argument(
+        "--readonly-mode",
+        action="store_true",
+        dest="readonly_mode",
+        default=False,
+        help=(
+            "DEV-1666: drop the SLayer WRITE tools (create_model / edit_model / "
+            "save_memory / validate_models), slayer-only. Use when querying "
+            "pre-built/applied models; on an on-the-fly build run it warns that "
+            "models won't be persisted (the agent works inline via query). "
+            "Ignored (with a warning) in raw mode and for exempt frameworks."
+        ),
+    )
+    return parser
+
+
+def main() -> None:
+    parser = build_arg_parser()
     args = parser.parse_args()
+    # DEV-1666: warn when an explicit deviation flag was set on a run that will
+    # not apply it (raw OR an exempt slayer framework).
+    _slayer_tool_surface.maybe_warn_ignored_flags(
+        framework=args.framework,
+        query_mode=args.query_mode,
+        lean_introspection=args.lean_introspection,
+        readonly_mode=args.readonly_mode,
+    )
     # DEV-1638: load the auth dotenv FIRST, before any auth resolution reads the
     # env. Best-effort — a missing/None path is a no-op.
     if args.env_file:
@@ -2809,6 +2929,8 @@ def main() -> None:
             pre_encoded_source=args.pre_encoded_source,
             save_edited_models=args.save_edited_models,
             apply_edited_models=args.apply_edited_models,
+            lean_introspection=args.lean_introspection,
+            readonly_mode=args.readonly_mode,
         )
     )
 

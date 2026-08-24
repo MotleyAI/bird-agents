@@ -65,6 +65,7 @@ from bird_interact_agents.agents._pre_encoded import (
     strip_write_tool_names,
     validate_pre_encoded_source,
 )
+from bird_interact_agents.agents._slayer_tool_surface import filter_flag_drops
 from bird_interact_agents.agents._pre_encoded_prompts import (
     SLAYER_PRE_ENCODED_AINTERACT_V1 as SLAYER_PRE_ENCODED_AINTERACT,
 )
@@ -192,6 +193,7 @@ DISCOVERY_NATIVE_TOOL_NAMES = [*_ONE_SHOT_DISCOVERY_TOOL_NAMES, _ASK_USER_TOOL]
 def _build_prompt(
     eval_mode: str, task_data: dict, budget: float,
     pre_encoded_source: str | None = None,
+    *, lean_introspection: bool = True, readonly_mode: bool = False,
 ) -> str:
     if eval_mode != "a-interact":
         raise ValueError(
@@ -200,6 +202,9 @@ def _build_prompt(
         )
     user_query = task_data["amb_user_query"]
     db_name = task_data["selected_database"]
+    # DEV-1666: the v1 main-loop lean gating lives in build_main_workflow_note /
+    # build_discovery_prompt (appended at run_task time); the static a-interact
+    # template's own inspect_model mentions are gated in a follow-up.
     template = (
         SLAYER_PRE_ENCODED_AINTERACT if pre_encoded_source
         else SLAYER_OTF_AINTERACT
@@ -229,6 +234,8 @@ class ClaudeSDKOtfAInteractAgent:
         pre_encoded_source: str | None = None,
         save_edited_models: bool = False,
         apply_edited_models: bool = False,
+        lean_introspection: bool = True,
+        readonly_mode: bool = False,
     ) -> None:
         # DEV-1586: `pre_encoded_source` (None | "otf" | "custom") selects the
         # read-only pre-encoded mode; `slayer_setup` is derived upstream.
@@ -255,6 +262,15 @@ class ClaudeSDKOtfAInteractAgent:
         self.pre_encoded_source = pre_encoded_source
         self.save_edited_models = save_edited_models
         self.apply_edited_models = apply_edited_models
+        # DEV-1666: slayer-only tool-surface flags.
+        self.lean_introspection = lean_introspection
+        self.readonly_mode = readonly_mode
+        if readonly_mode and pre_encoded_source is None:
+            logger.warning(
+                "readonly_mode=True on an on-the-fly (build) run: the SLayer "
+                "WRITE tools are dropped, so model definitions will NOT be "
+                "persisted; the agent must work inline at query time."
+            )
 
     async def run_task(
         self,
@@ -408,17 +424,27 @@ class ClaudeSDKOtfAInteractAgent:
 
             prompt = _build_prompt(
                 eval_mode, task_data, budget, self.pre_encoded_source,
+                lean_introspection=self.lean_introspection,
+                readonly_mode=self.readonly_mode,
             )
 
             # DEV-1581 R2: two persistent in-process clients. DEV-1586
-            # pre-encoded mode strips the SLayer WRITE tools from MAIN (the
-            # agent only introspects); ask_user + discovery tools are
-            # unaffected.
-            main_tools = (
+            # pre-encoded mode strips the SLayer WRITE tools from MAIN.
+            # DEV-1666: lean drops inspect_model + KB natives from BOTH clients;
+            # readonly drops the write tools from MAIN.
+            _main_base = (
                 strip_write_tool_names(MAIN_NATIVE_TOOL_NAMES)
                 if self.pre_encoded_source else list(MAIN_NATIVE_TOOL_NAMES)
             )
-            discovery_tools = list(DISCOVERY_NATIVE_TOOL_NAMES)
+            main_tools = filter_flag_drops(
+                _main_base,
+                lean_introspection=self.lean_introspection,
+                readonly_mode=self.readonly_mode,
+            )
+            discovery_tools = filter_flag_drops(
+                list(DISCOVERY_NATIVE_TOOL_NAMES),
+                lean_introspection=self.lean_introspection, readonly_mode=False,
+            )
 
             with otf_timer(
                 "run_task.create_sdk_mcp_server", instance_id=instance_id,
@@ -453,7 +479,10 @@ class ClaudeSDKOtfAInteractAgent:
             def _build_main_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
                 return ClaudeAgentOptions(
                     **_opt_kwargs,
-                    system_prompt=prompt + build_main_workflow_note(query_mode='slayer'),
+                    system_prompt=prompt + build_main_workflow_note(
+                        query_mode='slayer',
+                        lean_introspection=self.lean_introspection,
+                    ),
                     mcp_servers=main_mcp_servers,
                     allowed_tools=list(main_tools),
                     tools=[],
@@ -496,7 +525,10 @@ class ClaudeSDKOtfAInteractAgent:
             def _build_discovery_options(_opt_kwargs: dict) -> ClaudeAgentOptions:
                 return ClaudeAgentOptions(
                     **_opt_kwargs,
-                    system_prompt=build_discovery_prompt(with_ask_user=True),
+                    system_prompt=build_discovery_prompt(
+                        with_ask_user=True, query_mode="slayer",
+                        lean_introspection=self.lean_introspection,
+                    ),
                     mcp_servers=discovery_mcp_servers,
                     allowed_tools=list(discovery_tools),
                     tools=[],

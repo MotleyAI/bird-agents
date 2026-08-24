@@ -24,12 +24,15 @@ import sys
 from bird_interact_agents.benchmark import get_benchmark
 from bird_interact_agents.local_postgres import (
     DEFAULT_PORT,
+    _port_change_note,
     ensure_cluster,
     ensure_roles,
     env_exports,
     load_databases,
     resolve_bindir,
     resolve_dbs_for,
+    resolve_port,
+    running_cluster_port,
     start_cluster,
     stop_cluster,
     write_env,
@@ -71,18 +74,32 @@ def main(argv: list[str] | None = None) -> int:
     ids = (None if args.instance_ids is None
            else [s.strip() for s in args.instance_ids.split(",") if s.strip()])
     dbs = resolve_dbs_for(bm.name, ids)
-    print(f"provisioning {len(dbs)} DB(s) for {bm.name} on port {args.port}",
+
+    # DEV-1685: auto-select a free port. Resolve AFTER ensure_cluster so a
+    # --recreate (which stops + wipes the old cluster) doesn't adopt the port
+    # of a cluster we're about to destroy — after a wipe running_cluster_port
+    # is None, so the requested port is honoured (bumped off a busy / reserved
+    # :5432 target). Without --recreate, an already-running singleton is
+    # adopted. The RESOLVED port flows into every lifecycle call + env_exports
+    # so the harness connects where the cluster actually listens.
+    ensure_cluster(bindir, recreate=args.recreate)
+    running = running_cluster_port(bindir)
+    port = resolve_port(args.port, running)
+    note = _port_change_note(args.port, port, running)
+    if note:
+        print(note, file=sys.stderr)
+
+    print(f"provisioning {len(dbs)} DB(s) for {bm.name} on port {port}",
           file=sys.stderr)
 
-    ensure_cluster(bindir, recreate=args.recreate)
-    start_cluster(bindir, args.port)
-    ensure_roles(bindir, args.port)
-    load_databases(bindir, args.port, bm.name, dbs)
-    env_path = write_env(args.port)
+    start_cluster(bindir, port)
+    ensure_roles(bindir, port)
+    load_databases(bindir, port, bm.name, dbs)
+    env_path = write_env(port)
     print(f"env written to {env_path}", file=sys.stderr)
 
     # stdout = shell-evalable exports so callers can `eval "$(... )"`.
-    for k, v in env_exports(args.port).items():
+    for k, v in env_exports(port).items():
         print(f'export {k}="{v}"')
     return 0
 

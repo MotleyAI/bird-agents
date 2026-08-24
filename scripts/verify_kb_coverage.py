@@ -141,13 +141,16 @@ async def load_documented_ids(
     contain at least one ref starting with ``<db>.``.
 
     The DB-prefix check is defensive: ``db_dir`` already scopes
-    YAMLStorage to one DB's ``memories.yaml``, but the contract on
+    YAMLStorage to one DB's memory store, but the contract on
     deferred-KB memories requires the linked-entities attribution
     independent of where the memory file physically lives.
     """
-    if not (db_dir / "memories.yaml").exists():
-        return set()
+    # DEV-1668: slayer 0.9.6 stores per-id ``memories/<id>.md`` (no flat
+    # ``memories.yaml``); ask the storage layer whether any memory exists rather
+    # than probing a specific file layout.
     storage = YAMLStorage(base_dir=str(db_dir))
+    if not await storage.list_memories():
+        return set()
     service = SearchService(storage=storage)
     documented: set[int] = set()
     db_prefix = f"{db}."

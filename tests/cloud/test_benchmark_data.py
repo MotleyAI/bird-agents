@@ -218,6 +218,97 @@ def test_ensure_uploaded_includes_gated_gold_in_hash_and_upload(tmp_path, monkey
     assert (prefix + bd._MARKER) in client.store
 
 
+# --- DEV-1653: resumable upload (skip-existing) + marker-LAST invariant ----
+
+def test_ensure_uploaded_writes_no_marker_when_upload_fails(tmp_path, monkeypatch):
+    """If the data upload raises (e.g. a per-blob timeout on a flaky link),
+    ensure_uploaded must propagate and leave NO completeness marker — so a
+    retried submit sees an incomplete prefix and resumes, never trusting a
+    partial upload (marker-LAST invariant)."""
+    root = tmp_path / "ds"
+    _make_dataset(root)
+    client = _FakeClient()
+    monkeypatch.setattr(bd.paths, "gated_gold_root", _no_gated_gold(tmp_path))
+
+    def _boom(*a, **k):
+        raise TimeoutError("The write operation timed out")
+
+    monkeypatch.setattr(gcs, "upload_dir_prefix", _boom)
+    with pytest.raises(TimeoutError):
+        bd.ensure_uploaded("livesqlbench-base-lite-sqlite", root=root, client=client)
+
+    # No marker anywhere: the prefix is (correctly) not stamped complete.
+    assert not any(k.endswith(bd._MARKER) for k in client.store)
+
+
+def test_ensure_uploaded_no_marker_when_gated_gold_upload_fails(tmp_path, monkeypatch):
+    """ensure_uploaded uploads the dataset THEN the gated gold THEN the marker.
+    If the gated-gold upload (the second call) fails, the marker must still be
+    absent — a partial prefix is never stamped complete (marker-LAST holds
+    across BOTH uploads, not just the first)."""
+    root = tmp_path / "ds"
+    _make_dataset(root)
+    gated_root = tmp_path / "gated" / "livesqlbench-base-lite-sqlite"
+    gated_root.mkdir(parents=True)
+    (gated_root / "gt_kg.jsonl").write_text('{"id": 1}\n')
+    monkeypatch.setattr(bd.paths, "gated_gold_root", lambda **_kw: gated_root)
+
+    client = _FakeClient()
+    calls: list = []
+
+    def _flaky_upload(local_dir, prefix, **kw):
+        calls.append(prefix)
+        if len(calls) == 2:  # the gated-gold upload
+            raise TimeoutError("The write operation timed out")
+
+    monkeypatch.setattr(gcs, "upload_dir_prefix", _flaky_upload)
+    with pytest.raises(TimeoutError):
+        bd.ensure_uploaded("livesqlbench-base-lite-sqlite", root=root, client=client)
+
+    assert len(calls) == 2  # dataset upload ran, gated-gold upload raised
+    assert not any(k.endswith(bd._MARKER) for k in client.store)
+
+
+def test_ensure_uploaded_resumes_skipping_present_blobs(
+    tmp_path, monkeypatch, fake_gcs_bucket,
+):
+    """A retried ensure_uploaded (after a partial upload) re-sends ONLY the
+    blobs not already present, then writes the marker LAST. Drives the REAL
+    upload_dir_prefix so the skip-existing logic is exercised through the
+    caller."""
+    root = tmp_path / "ds"
+    _make_dataset(root)
+    # Add a "big" file that stands in for a large pg_dump the first attempt
+    # never finished.
+    (root / "alien" / "big.sql").write_bytes(b"BIG" * 100)
+    monkeypatch.setattr(bd.paths, "gated_gold_root", _no_gated_gold(tmp_path))
+
+    client, store = fake_gcs_bucket
+    bucket = client.bucket(gcs.BUCKET_NAME)
+
+    chash = bd.content_hash(root)
+    prefix = bd.benchmark_data_prefix("livesqlbench-base-lite-sqlite", chash)
+    base = prefix.rstrip("/")
+    # Simulate a prior partial upload: every file EXCEPT big.sql already landed
+    # (byte-identical → size match → must be skipped). No marker (upload never
+    # completed).
+    already = ["alien/alien.sqlite", _LSB_DATA_FILE]
+    for rel in already:
+        store[f"{base}/{rel}"] = (root / rel).read_bytes()
+
+    out = bd.ensure_uploaded(
+        "livesqlbench-base-lite-sqlite", root=root, client=client,
+    )
+    assert out == prefix
+
+    sent = {name for (name, _t, _r) in bucket.upload_calls}
+    assert sent == {f"{base}/alien/big.sql"}, "resume re-sent already-present blobs"
+    # Marker written LAST with the correct content hash.
+    assert store.get(prefix + bd._MARKER) == chash.encode()
+    # The remainder actually landed.
+    assert store[f"{base}/alien/big.sql"] == b"BIG" * 100
+
+
 # --- ensure_downloaded -----------------------------------------------------
 
 def test_ensure_downloaded_downloads_then_marks(tmp_path, monkeypatch):

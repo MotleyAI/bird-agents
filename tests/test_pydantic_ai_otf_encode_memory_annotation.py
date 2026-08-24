@@ -23,6 +23,7 @@ from slayer.storage.yaml_storage import YAMLStorage
 from bird_interact_agents.slayer_otf.kb_memory_encoder import (
     encode_kb_as_memories,
 )
+from bird_interact_agents.memory_store_io import write_memories_files
 
 
 DB = "tinydb"
@@ -51,9 +52,8 @@ async def _seed(tmp_path, kb_rows, *, with_encoded_col_for=None):
     await storage.save_model(SlayerModel(
         name="households", data_source=DB, sql_table="households", columns=cols,
     ))
-    import yaml
     mems = encode_kb_as_memories(DB, kb_rows, deleted_kb_ids=set())
-    (tmp_path / "memories.yaml").write_text(yaml.safe_dump(mems, sort_keys=False))
+    write_memories_files(tmp_path, mems)
     return storage
 
 

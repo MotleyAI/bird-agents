@@ -11,7 +11,10 @@ reference (db_environment/server.py:368-385 — `json.dumps(visible, indent=2)`)
 
 import json
 
-from slayer.help import render_help
+# DEV-1668: slayer 0.9.6 removed the `slayer.help` module (help content is now
+# `inspect(reference="memory:help.intro", entity_type="memory")`). This shared
+# c-interact builder only needs the models summary; the injected help excerpt is
+# dropped (these non-OTF frameworks are out of DEV-1668's behavioural scope).
 from slayer.storage.yaml_storage import YAMLStorage
 
 from bird_interact_agents.agents.claude_sdk.prompts import (
@@ -108,7 +111,6 @@ async def build_slayer_c_interact_prompt(
     return SLAYER_C_INTERACT.format(
         budget=budget,
         user_query=user_query,
-        slayer_help=render_help(),
         models_summary="\n".join(lines),
         knowledge=_format_knowledge(db_name, task_data),
     )

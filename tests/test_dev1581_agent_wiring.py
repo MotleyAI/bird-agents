@@ -73,7 +73,7 @@ _SPECS = {
     "claude_sdk_otf_v1": {
         "introspection_exclusive": _SLAYER_DISCOVERY_ONLY,
         "main_required": ({"query", "submit_query", "create_model", "edit_model",
-                           "validate_models", "help", "ask_discovery"}
+                           "validate_models", "ask_discovery"}
                           | _SLAYER_MAIN_INTROSPECTION | _KB),
         "discovery_required": _SLAYER_INTROSPECTION | _KB,
         "discovery_forbidden": {"ask_discovery"} | _SLAYER_WRITE_SUBMIT,
@@ -82,7 +82,7 @@ _SPECS = {
     "claude_sdk_otf_ainteract_v1": {
         "introspection_exclusive": _SLAYER_DISCOVERY_ONLY,
         "main_required": ({"query", "submit_query", "create_model", "edit_model",
-                           "validate_models", "help", "ask_discovery",
+                           "validate_models", "ask_discovery",
                            "ask_user"} | _SLAYER_MAIN_INTROSPECTION | _KB),
         "discovery_required": _SLAYER_INTROSPECTION | _KB | {"ask_user"},
         "discovery_forbidden": {"ask_discovery"} | _SLAYER_WRITE_SUBMIT,
