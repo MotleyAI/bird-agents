@@ -627,3 +627,53 @@ graceful skip), the per-agent `CLAUDE_CONFIG_DIR` assertions in
 `tests/test_dev1555_stage2_sdk_env.py`, and the real-CLI isolation smoke
 `tests/test_dev1579_hermetic_integration.py` (`@pytest.mark.integration`,
 needs `ANTHROPIC_API_KEY`).
+
+## Running cube mode LOCALLY — the Cube.js benchmark arm (DEV-1822)
+
+`--query-mode cube` benchmarks the claude_sdk agent through the open-source
+Cube.js REST API instead of slayer/raw. It is **postgres-only, local-only, v0
+one-shot only** in v1 (the cloud runner and `claude_sdk_v1` reject `cube`).
+
+At task prep a cube run auto-provisions (after the DEV-1638 postgres
+bootstrap): it deterministically generates one Cube model per DB (one cube per
+table, every column a typed dimension, JSON-leaf dimensions from
+`<db>_column_meaning_base.json` via `slayer_pipeline.jsonb`'s null-safe casts,
+`sum/avg/min/max` on every numeric dimension, FK joins), starts ONE multitenant
+`cubejs/cube` container (dev mode, adopt-if-running, tenant chosen by a JWT
+`securityContext.db`), and exports `BIRD_CUBE_URL` / `BIRD_CUBE_API_SECRET`.
+
+```bash
+env -u SSH_AUTH_SOCK uv run bird-interact \
+  --dataset livesqlbench-base-lite \
+  --instance-id <iid1,iid2,...> \
+  --env-file <your-auth-dotenv> \
+  --framework claude_sdk --query-mode cube --mode one-shot \
+  --agent-model anthropic/claude-opus-4-8 --subscription-auth \
+  --use-audited-gold-sql --concurrency 1
+```
+
+Notes / gotchas:
+
+- **Docker required** at run time; image pinned to `cubejs/cube:v1.7.26`
+  (`BIRD_CUBE_IMAGE` overrides). The container is per-benchmark
+  (`bird-cube-local-<benchmark>`), `--network host`, port `4008`
+  (`BIRD_CUBE_PORT`, auto-bumps), never auto-stopped (reused across runs).
+- **Dev mode, NOT production**: dev mode bundles Cube Store (→ one container)
+  and hot-reloads regenerated models without a restart. The conf dir is mounted
+  READ-WRITE (the embedded Cube Store writes `.cubestore/` under it; `:ro`
+  panics it). Dev/prod do not change `/v1/load` or `/v1/sql`, so no benchmark
+  contamination. Model integrity is guarded by `_model_fp.txt`, not the mount.
+- **The agent submits a Cube query**; `submit_cube_query` compiles it to SQL via
+  `/v1/sql`, materializes the `$N` params into a standalone statement, and grades
+  it through the SAME `submit_sql` → postgres result-match path (so regrades never
+  need Cube). The original Cube query JSON is stored in `submitted_query`. Only
+  regular query shapes are accepted; `total`/`compareDateRange`/blending/member
+  expressions are refused at submit time.
+- **Bring-your-own cube**: set `BIRD_CUBE_URL` (+ `BIRD_CUBE_API_SECRET`) to skip
+  provisioning (parity with the `BIRD_PG_HOST` gate for postgres). Gitignored
+  artefacts live under `<main_checkout>/cube_local/<benchmark>/`
+  (`paths.cube_local_root`; `BIRD_CUBE_LOCAL_ROOT` overrides).
+- Manage the container directly: `scripts/setup_local_cube.py --benchmark X`
+  (`--stop` / `--recreate` / `--regenerate-models`). Contract pinned by
+  `tests/test_dev1822_cube_*.py`; docker round-trip in
+  `tests/integration/test_dev1822_cube_integration.py` (`-m integration`).

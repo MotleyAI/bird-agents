@@ -289,6 +289,39 @@ def _validate_framework_mode(
         )
 
 
+def _validate_cube_mode(
+    *, framework: str, query_mode: str, mode: str, dataset: str,
+) -> None:
+    """DEV-1822: gate ``--query-mode cube`` to its supported surface.
+
+    Cube mode is claude_sdk v0, one-shot, postgres, local only. No-op for
+    non-cube query modes.
+    """
+    if query_mode != "cube":
+        return
+    if framework not in ("claude_sdk", "claude_sdk_otf_cube"):
+        raise ValueError(
+            f"--query-mode cube is only supported by --framework claude_sdk; "
+            f"got {framework!r} (the claude_sdk_v1 family and non-claude_sdk "
+            "frameworks do not implement cube mode)."
+        )
+    if mode != "one-shot":
+        raise ValueError(
+            f"--query-mode cube requires --mode one-shot; got {mode!r}."
+        )
+    b = get_benchmark(dataset)
+    if not b.one_shot:
+        raise ValueError(
+            f"--query-mode cube requires a one-shot benchmark; "
+            f"{b.name!r} is interactive."
+        )
+    if b.db_backend != "postgres":
+        raise ValueError(
+            f"--query-mode cube is postgres-only in v1; --dataset {dataset!r} "
+            f"is a {b.db_backend} benchmark (sqlite cube support is deferred)."
+        )
+
+
 def _maybe_force_wipe_otf(
     *, otf_rebuild: bool, framework: str, dbs,
     benchmark: str,
@@ -705,6 +738,18 @@ def _make_runner(
                 model=agent_model,
                 reasoning_effort=reasoning_effort,
             )
+        elif b.one_shot and query_mode == "cube":
+            # DEV-1822: cube mode is v0 one-shot only (interact×cube rejected).
+            from bird_interact_agents.agents.claude_sdk_otf_cube import ClaudeSDKOtfCubeAgent
+            _agent = ClaudeSDKOtfCubeAgent(
+                model=agent_model,
+                reasoning_effort=reasoning_effort,
+            )
+        elif query_mode == "cube":
+            raise ValueError(
+                "--query-mode cube requires a one-shot benchmark and "
+                "--mode one-shot (interactive cube mode is not implemented)."
+            )
         else:  # not one_shot, raw
             from bird_interact_agents.agents.claude_sdk_otf_ainteract_raw import (
                 ClaudeSDKOtfAInteractRawAgent,
@@ -828,6 +873,25 @@ def _make_runner(
                           user_sim_model: str) -> dict:
             budget = calculate_budget(td, patience, mode=mode)
             return await agent_csoar.run_task(
+                td, data_dir, budget, query_mode,
+                eval_mode=mode,
+                user_sim_model=user_sim_model,
+                user_sim_prompt_version=_v,
+            )
+        return run_one
+    if framework == "claude_sdk_otf_cube":
+        # DEV-1822: direct token (programmatic / tests). Cube mode, one-shot.
+        from bird_interact_agents.agents.claude_sdk_otf_cube import ClaudeSDKOtfCubeAgent
+
+        agent_csoc = ClaudeSDKOtfCubeAgent(
+            model=agent_model,
+            reasoning_effort=reasoning_effort,
+        )
+
+        async def run_one(td: dict, data_dir: str, patience: int,
+                          user_sim_model: str) -> dict:
+            budget = calculate_budget(td, patience, mode=mode)
+            return await agent_csoc.run_task(
                 td, data_dir, budget, query_mode,
                 eval_mode=mode,
                 user_sim_model=user_sim_model,
@@ -1582,6 +1646,9 @@ async def run_evaluation(
         slayer_setup = derive_slayer_setup(pre_encoded_source)
     _validate_dataset_mode(dataset=dataset, mode=mode)
     _validate_framework_mode(framework=framework, dataset=dataset, mode=mode)
+    _validate_cube_mode(
+        framework=framework, query_mode=query_mode, mode=mode, dataset=dataset,
+    )
     _validate_slayer_setup(
         slayer_setup=slayer_setup, framework=framework,
         query_mode=query_mode, mode=mode,
@@ -2324,6 +2391,35 @@ def _maybe_bootstrap_local_postgres(args, effective_ids) -> None:
     os.environ.update(exports)
 
 
+def _maybe_bootstrap_local_cube(args, effective_ids) -> None:
+    """DEV-1822: for a cube-mode run, generate per-DB Cube models and ensure the
+    local Cube container is up, then export ``BIRD_CUBE_URL`` /
+    ``BIRD_CUBE_API_SECRET``. Gated on ``--query-mode cube``; skipped when
+    ``BIRD_CUBE_URL`` is already set (bring-your-own cube). Runs AFTER the
+    postgres bootstrap so ``BIRD_PG_*`` are populated."""
+    if getattr(args, "query_mode", None) != "cube":
+        return
+    if "BIRD_CUBE_URL" in os.environ:
+        return  # caller brought their own cube deployment
+    if effective_ids is not None and not effective_ids:
+        return
+    from bird_interact_agents import local_postgres
+    from bird_interact_agents.cube_local import deploy as cube_deploy
+    from bird_interact_agents.cube_local import model_gen as cube_model_gen
+
+    pg_env = {
+        k: os.environ[k]
+        for k in ("BIRD_PG_HOST", "BIRD_PG_PORT", "BIRD_PG_USER", "BIRD_PG_PASSWORD")
+        if k in os.environ
+    }
+    dbs = sorted(set(local_postgres.resolve_dbs_for(args.dataset, effective_ids)))
+    cube_model_gen.ensure_models(args.dataset, dbs, pg_env)
+    info = cube_deploy.ensure_cube_running(args.dataset, pg_env)
+    cube_deploy.poll_models_ready(info, dbs)
+    os.environ["BIRD_CUBE_URL"] = info.base_url
+    os.environ["BIRD_CUBE_API_SECRET"] = info.api_secret
+
+
 def _maybe_sync_annotations(args, effective_ids) -> None:
     """DEV-1638: best-effort pull of the authoritative task annotations from GCS
     into the local store (all backends), so the tolerant grader has the real
@@ -2408,11 +2504,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--query-mode",
-        choices=["slayer", "raw"],
+        choices=["slayer", "raw", "cube"],
         required=True,
         help=(
             "REQUIRED (aligned with bird-interact-cloud: no default). "
-            "Query mode: slayer (semantic layer) or raw (direct SQL)"
+            "Query mode: slayer (semantic layer), raw (direct SQL), or cube "
+            "(Cube.js REST API; DEV-1822, local postgres one-shot only)"
         ),
     )
     parser.add_argument(
@@ -2827,6 +2924,10 @@ def main() -> None:
         _validate_framework_mode(
             framework=args.framework, dataset=args.dataset, mode=args.mode,
         )
+        _validate_cube_mode(
+            framework=args.framework, query_mode=args.query_mode,
+            mode=args.mode, dataset=args.dataset,
+        )
         _validate_slayer_setup(
             slayer_setup=args.slayer_setup,
             framework=args.framework,
@@ -2899,6 +3000,7 @@ def main() -> None:
     # For a postgres benchmark with no pre-set BIRD_PG_*, spin up + load a
     # private local cluster and export BIRD_PG_* BEFORE the run connects.
     _maybe_bootstrap_local_postgres(args, effective_ids)
+    _maybe_bootstrap_local_cube(args, effective_ids)
     # Best-effort pull of the authoritative task annotations (all backends).
     _maybe_sync_annotations(args, effective_ids)
 

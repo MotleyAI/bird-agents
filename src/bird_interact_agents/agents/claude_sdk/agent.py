@@ -35,6 +35,11 @@ from bird_interact_agents.agents._submit import (
     ask_user_impl,
     submit_raw_sql,
     submit_slayer_query,
+    SUBMIT_TOOL_BY_QUERY_MODE,
+)
+from bird_interact_agents.cube_local.submission import (
+    CubeQueryRefused,
+    cube_query_to_sql,
 )
 from bird_interact_agents.agents._tool_specs import (
     BIRD_INTERACT_TOOLS,
@@ -45,6 +50,7 @@ from bird_interact_agents.slayer_pipeline.filter_normalization import (
 )
 from bird_interact_agents.harness import (
     ACTION_COSTS,
+    MAX_RESULT_LENGTH,
     SampleStatus,
     execute_env_action,
     update_budget,
@@ -294,7 +300,7 @@ def _gate(action_name: str, status: SampleStatus) -> str | None:
     """
     if action_name.startswith("submit_"):
         return None
-    submit_tool = "submit_query" if _ctx.get("query_mode") == "slayer" else "submit_sql"
+    submit_tool = SUBMIT_TOOL_BY_QUERY_MODE.get(_ctx.get("query_mode"), "submit_sql")
     submit_cost = ACTION_COSTS[submit_tool]
     cost = ACTION_COSTS.get(action_name, 0)
     if status.force_submit or status.remaining_budget < cost + submit_cost:
@@ -482,6 +488,110 @@ async def submit_sql(args: dict) -> dict:
     # to the contextvar dict, so persist it explicitly. Budget + budget-note
     # are owned by `submit_raw_sql`.
     _ctx["result"] = {**state.result, "observation": observation}
+    return _text(observation)
+
+
+# ---------------------------------------------------------------------------
+# Cube-mode tools (DEV-1822) — the agent reaches the Cube.js REST API through a
+# per-task `CubeClient` on the contextvar. Querying goes through Cube; there is
+# no execute_sql. `submit_cube_query` compiles the final Cube query to SQL via
+# /v1/sql and submits it through the raw-SQL grading path.
+# ---------------------------------------------------------------------------
+
+def _cube_client():
+    client = _ctx.get("cube")
+    if client is None:
+        raise RuntimeError("cube-mode client is not initialised on the task context")
+    return client
+
+
+@tool(
+    "cube_meta",
+    "Return the Cube semantic-layer catalog (/v1/meta): the cubes available "
+    "for this database with their dimensions, measures, and segments. Call "
+    "this first to discover queryable members.",
+    {},
+)
+async def cube_meta(args: dict) -> dict:
+    import json as _json
+    status: SampleStatus = _ctx["status"]
+    err = _gate("cube_meta", status)
+    if err is not None:
+        return _text(err)
+    try:
+        meta = _cube_client().meta()
+    except Exception as e:  # noqa: BLE001
+        return _text(f"cube_meta error: {e}")
+    update_budget(status, "cube_meta")
+    return _text(_json.dumps(meta) + _budget_note(status))
+
+
+@tool(
+    "cube_load",
+    "Run a Cube query (POST /v1/load) and return the result rows. `query` is a "
+    "Cube query object, e.g. {\"measures\": [\"orders.count\"], \"dimensions\": "
+    "[\"customers.region\"]}. Set \"ungrouped\": true for row-level results.",
+    {"type": "object", "properties": {"query": {"type": "object"}}, "required": ["query"]},
+)
+async def cube_load(args: dict) -> dict:
+    import json as _json
+    status: SampleStatus = _ctx["status"]
+    err = _gate("cube_load", status)
+    if err is not None:
+        return _text(err)
+    try:
+        data = _cube_client().load(args["query"])
+    except Exception as e:  # noqa: BLE001
+        return _text(f"cube_load error: {e}")
+    update_budget(status, "cube_load")
+    text = _json.dumps(data)
+    if len(text.split()) > MAX_RESULT_LENGTH:  # same word cap as raw execute_sql
+        text = " ".join(text.split()[:MAX_RESULT_LENGTH]) + "..."
+    return _text(text + _budget_note(status))
+
+
+@tool(
+    "cube_sql",
+    "Return the SQL that Cube would generate for a query (GET /v1/sql) WITHOUT "
+    "running it — useful to check how a Cube query maps to SQL.",
+    {"type": "object", "properties": {"query": {"type": "object"}}, "required": ["query"]},
+)
+async def cube_sql(args: dict) -> dict:
+    status: SampleStatus = _ctx["status"]
+    err = _gate("cube_sql", status)
+    if err is not None:
+        return _text(err)
+    try:
+        text, params = _cube_client().sql(args["query"])
+    except Exception as e:  # noqa: BLE001
+        return _text(f"cube_sql error: {e}")
+    update_budget(status, "cube_sql")
+    return _text(f"{text}\nparams: {params}" + _budget_note(status))
+
+
+@tool(
+    "submit_cube_query",
+    "Submit your final Cube query for evaluation. `query` is a Cube query "
+    "object; it is compiled to SQL (via /v1/sql) and graded against the gold "
+    "answer. Only submit when confident — submission ends the task.",
+    {"type": "object", "properties": {"query": {"type": "object"}}, "required": ["query"]},
+)
+async def submit_cube_query(args: dict) -> dict:
+    import json as _json
+    query = args["query"]
+    try:
+        sql = cube_query_to_sql(query, _cube_client())
+    except CubeQueryRefused as e:
+        return _text(f"submit_cube_query refused: {e.reason}")
+    except Exception as e:  # noqa: BLE001
+        return _text(f"submit_cube_query error: {e}")
+    state = _state_view()
+    observation = submit_raw_sql(state, sql, cost_action="submit_cube_query")
+    _ctx["result"] = {
+        **state.result,
+        "submitted_query": _json.dumps(query),
+        "observation": observation,
+    }
     return _text(observation)
 
 
@@ -981,6 +1091,11 @@ _STATIC_NATIVE_TOOLS: dict = {
     "query": query,
     "query_nested": query_nested,
     "ask_discovery": ask_discovery,
+    # DEV-1822 cube-mode tools
+    "cube_meta": cube_meta,
+    "cube_load": cube_load,
+    "cube_sql": cube_sql,
+    "submit_cube_query": submit_cube_query,
 }
 
 #: Full ``mcp__bird-interact-tools__*`` prefix every in-process native carries.
