@@ -68,6 +68,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "openai",   # used by SAR-audit tests' OpenAI-not-instantiated guard
+    "gdown>=5.0",  # fetch the livesqlbench pg-dump zips for scripts/download_pg_dumps.py
 ]
 # Notebook tooling for the analysis notebooks under `notebooks/` (e.g.
 # query_syntax_rejections.ipynb). Kept out of `all` so cloud/runtime installs

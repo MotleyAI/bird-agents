@@ -222,6 +222,26 @@ def test_fingerprint_changes_on_version_bump(monkeypatch):
 
 # --- YAML rendering ---------------------------------------------------------
 
+def test_descriptions_collapsed_to_single_line():
+    """Cube's YAML parser reads multi-line/folded descriptions as null (which
+    fails the dimension schema), so descriptions must be single-line."""
+    tables = [mg.TableInfo(schema_name="public", table_name="t", columns=[
+        mg.ColumnInfo(name="id", pg_type="integer", is_pk=True),
+        mg.ColumnInfo(name="notes", pg_type="text"),
+    ])]
+    meanings = {"db|t|notes": "JSONB. A long note.\nExample:\n  {a: b}.  extra   spaces"}
+    defs = mg.build_cube_defs(tables, meanings)
+    desc = _by_name(defs[0].dimensions)["notes"].description
+    assert "\n" not in desc
+    # braces neutralised ({/} trip Cube's template compiler); whitespace collapsed
+    assert "{" not in desc and "}" not in desc
+    assert desc == "JSONB. A long note. Example: (a: b). extra spaces"
+    # round-trips through the rendered YAML with no embedded newline (no wrap)
+    doc = yaml.safe_load(mg.render_model_files(defs)["t.yml"])
+    rendered = next(d for d in doc["cubes"][0]["dimensions"] if d["name"] == "notes")
+    assert rendered["description"] == desc
+
+
 def test_render_model_files_valid_yaml():
     files = mg.render_model_files(mg.build_cube_defs(_tables(), _meanings()))
     assert "customers.yml" in files and "orders.yml" in files

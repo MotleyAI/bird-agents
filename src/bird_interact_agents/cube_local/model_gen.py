@@ -31,7 +31,7 @@ from bird_interact_agents.slayer_pipeline.jsonb import (
 )
 
 # Bump to force regeneration of every cached model when the generator changes.
-MODEL_GEN_VERSION = 2
+MODEL_GEN_VERSION = 4
 
 
 # --- introspected schema (inputs) ------------------------------------------
@@ -170,6 +170,22 @@ def _compute_cube_names(tables: Sequence[TableInfo]) -> dict[tuple[str, str], st
 
 # --- meanings ---------------------------------------------------------------
 
+def _clean_desc(desc: Optional[str]) -> Optional[str]:
+    """Make a description safe for Cube's model compiler.
+
+    Two Cube quirks (both verified live against v1.7.26): a multi-line/folded
+    scalar description is read as null (fails the dimension schema), and a `{`/`}`
+    is treated as a template delimiter (also fails compile — JSON examples like
+    `{"a": 1}` are common in these meanings). So collapse to one line and
+    neutralise braces. Only descriptions are touched; join SQL keeps `{CUBE}`.
+    """
+    if not desc:
+        return None
+    cleaned = re.sub(r"\s+", " ", desc).strip()
+    cleaned = cleaned.replace("{", "(").replace("}", ")")
+    return cleaned or None
+
+
 def _plain_desc_map(meanings: dict) -> dict[tuple[str, str], str]:
     """`(table_lower, col_lower) -> description` for plain (non-jsonb) columns."""
     out: dict[tuple[str, str], str] = {}
@@ -211,7 +227,8 @@ def build_cube_defs(
                 taken.add(dim_name)
                 dims.append(DimDef(
                     name=dim_name, sql=sql, type=cube_type, primary_key=col.is_pk,
-                    description=desc_map.get((t.table_name.lower(), col.name.lower())),
+                    description=_clean_desc(
+                        desc_map.get((t.table_name.lower(), col.name.lower()))),
                 ))
                 if cube_type == "number":
                     number_dims.append((dim_name, sql))
@@ -243,7 +260,7 @@ def build_cube_defs(
                 cube_type = _DATATYPE_TO_CUBE.get(leaf.type, "string")
                 desc = leaf.description + (f" [{leaf.warning}]" if leaf.warning else "")
                 dims.append(DimDef(name=dim_name, sql=leaf.sql, type=cube_type,
-                                   description=desc))
+                                   description=_clean_desc(desc)))
                 if cube_type == "number":
                     number_dims.append((dim_name, leaf.sql))
 
@@ -299,8 +316,13 @@ def _cube_to_dict(c: CubeDef) -> dict:
 
 def render_model_files(cube_defs: Sequence[CubeDef]) -> dict[str, str]:
     """Return ``{"<cube>.yml": yaml_text}`` for each cube."""
+    # width very large: never wrap a scalar across lines (Cube mishandles
+    # multi-line/folded descriptions — see _clean_desc).
     return {
-        f"{c.name}.yml": yaml.safe_dump({"cubes": [_cube_to_dict(c)]}, sort_keys=False)
+        f"{c.name}.yml": yaml.safe_dump(
+            {"cubes": [_cube_to_dict(c)]}, sort_keys=False,
+            width=10 ** 9, allow_unicode=True,
+        )
         for c in cube_defs
     }
 
