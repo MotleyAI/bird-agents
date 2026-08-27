@@ -498,6 +498,39 @@ Never analyse a single run ID in isolation — re-runs, partial recoveries,
 and grader fixes all sit in newer timestamp files for the same instance,
 and a per-run-ID analysis silently misses them.
 
+### First-submission analysis
+
+The cascade / N1 pass rate scores each run's **final** answer (agents get a
+multi-submit budget and retry until match or budget exhaustion). To ask a
+different question — *did the agent's very first `submit` already give the
+correct answer, before any retry?* — use `scripts/scan_first_submission.py`.
+
+It applies the same latest-non-`eval_failed`-per-`(db, iid, mode)` selection
+as the cascade, then opens each selected run's **session log**
+(`results/<cloud_run_id>/<trajectory_path>`) and reads the harness signal on
+the first submission: raw's `submit_sql` and slayer's `submit_query` both
+report `Result match: True/False` (slayer additionally reports `Result: SQL
+execution error` when the generated SQL failed — a wrong first submission).
+Both trajectory encodings (the older `repr`-string form and the newer
+structured-dict form) are handled.
+
+```bash
+# raw vs slayer, opus, restricted to tasks that ran in BOTH modes
+env -u SSH_AUTH_SOCK uv run python scripts/scan_first_submission.py \
+  --benchmark livesqlbench-large --agent-model opus --paired
+
+# one mode, machine-readable
+env -u SSH_AUTH_SOCK uv run python scripts/scan_first_submission.py \
+  --benchmark livesqlbench-large --mode slayer --json
+```
+
+Per mode it reports: tasks selected, how many have a recovered session log
+(`no_log` = selected run whose log was never written / not recovered — excluded
+from the first-submission denominator), the first-submit `correct` / `wrong` /
+`error` / `nosubmit` split, and the final N1 pass rate for contrast. With
+`--paired` it also prints the first-correct count over the subset logged on
+**both** sides, so raw vs slayer is compared on an identical task set.
+
 ## 3-way comparison (original ↔ raw ↔ slayer)
 
 `scripts/run_three_way.sh` runs the upstream BIRD-Interact harness, our raw-SQL flavour, and our SLayer flavour on the same `instance_id` slice and emits a side-by-side `comparison.json`.
@@ -627,6 +660,70 @@ All roots live under the main checkout (worktree-safe via
 helper overrides the parent for all benchmarks: `BIRD_OTF_CACHE_ROOT`
 and `BIRD_SLAYER_MODELS_OTF_ROOT`. `--otf-rebuild` purges only the
 run's benchmark roots — never the other benchmark's.
+
+## LiveSQLBench-Large (postgres, local, sudo-free) — DEV-1638
+
+`livesqlbench-large` is postgres-backed (`db_backend == "postgres"`).
+`bird-interact` provisions everything locally with **no sudo**: on first run it
+`initdb`s a private cluster under `<main_checkout>/.local_pg/` on port `5544`
+(never collides with a system postgres on `:5432`), loads the benchmark DBs
+from the dataset's `pg_dumps/`, best-effort syncs the authoritative task
+annotations from GCS, then runs. See CLAUDE.md → *"Running a postgres benchmark
+LOCALLY"* for the full gotcha list.
+
+### One-time prerequisites
+
+1. **PostgreSQL server binaries** (the only piece needing sudo — `initdb` /
+   `pg_ctl` live under `/usr/lib/postgresql/<ver>/bin`, which
+   `local_postgres.resolve_bindir()` auto-discovers; override with `PG_BINDIR`):
+
+   ```bash
+   sudo apt install -y postgresql-16      # any recent server version is fine
+   ```
+
+2. **Dataset + dumps** as a sibling checkout — `../livesqlbench-large/` with
+   `livesqlbench_large.jsonl` and `pg_dumps/<db>/<db>.sql` (one combined dump
+   per DB). If a DB shows implausibly few tables, re-stage with
+   `uv run python scripts/download_pg_dumps.py --force`.
+
+3. **Gated gold sidecar** under `gated_gold/livesqlbench-large/` (already
+   present in this checkout) for `--use-audited-gold-sql`.
+
+4. **Auth dotenv** carrying `CLAUDE_CODE_OAUTH_TOKEN` (subscription auth) or
+   `ANTHROPIC_API_KEY` (API-key auth) — passed via `--env-file` (no path is
+   baked in). Same token the cloud `submit` reads.
+
+### Run (both modes)
+
+```bash
+# raw mode
+env -u SSH_AUTH_SOCK uv run bird-interact \
+  --dataset livesqlbench-large \
+  --instance-id solar_panel_6,fake_account_15 \
+  --env-file <your-auth-dotenv> \
+  --framework claude_sdk --query-mode raw --mode one-shot \
+  --agent-model anthropic/claude-opus-4-8 --subscription-auth \
+  --use-audited-gold-sql --concurrency 1
+
+# slayer mode — same command, --query-mode slayer (KB encoded on the fly)
+env -u SSH_AUTH_SOCK uv run bird-interact \
+  --dataset livesqlbench-large \
+  --instance-id solar_panel_6,fake_account_15 \
+  --env-file <your-auth-dotenv> \
+  --framework claude_sdk --query-mode slayer --mode one-shot \
+  --agent-model anthropic/claude-opus-4-8 --subscription-auth \
+  --use-audited-gold-sql --concurrency 1
+```
+
+Results land in `runs/livesqlbench-large/<db>/<iid>/` (run record + trajectory
+stub) and `results/<run_id>/` (full session log). Compare against the recovered
+opus baseline with `scripts/scan_first_submission.py` (above) and the cascade.
+
+> **Must run from a plain terminal, not inside Claude Code** — `claude_sdk`
+> spawns the `claude` CLI, which collides with an active Claude Code session's
+> stdio. The cluster is left running for reuse; manage it directly with
+> `scripts/setup_local_postgres.py --benchmark livesqlbench-large`
+> (`--stop` / `--recreate`).
 
 ## Query Modes
 

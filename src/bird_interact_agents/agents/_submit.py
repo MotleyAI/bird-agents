@@ -319,6 +319,15 @@ def _budget_note(state: Any) -> str:
     )
 
 
+# DEV-1822: the submit tool per query mode. `cube` compiles a Cube query to SQL
+# and submits it through the raw-SQL path, so its submit tool is distinct.
+SUBMIT_TOOL_BY_QUERY_MODE = {
+    "slayer": "submit_query",
+    "raw": "submit_sql",
+    "cube": "submit_cube_query",
+}
+
+
 def gate_or_none(state: Any, action_name: str, query_mode: str) -> str | None:
     """Return a "you must submit" message if the call should be rejected,
     or None if it should proceed.
@@ -329,7 +338,7 @@ def gate_or_none(state: Any, action_name: str, query_mode: str) -> str | None:
     """
     if action_name.startswith("submit_"):
         return None
-    submit_tool = "submit_query" if query_mode == "slayer" else "submit_sql"
+    submit_tool = SUBMIT_TOOL_BY_QUERY_MODE.get(query_mode, "submit_sql")
     submit_cost = ACTION_COSTS[submit_tool]
     cost = ACTION_COSTS.get(action_name, 0)
     if state.status.force_submit or state.status.remaining_budget < cost + submit_cost:
@@ -693,12 +702,13 @@ def _dry_run_error_message(error: str) -> str:
     )
 
 
-def submit_raw_sql(state: Any, sql: str) -> str:
+def submit_raw_sql(state: Any, sql: str, cost_action: str = "submit_sql") -> str:
     """Submit a raw SQL query and record the submission on `state.result`.
 
     `submit_sql` is exempt from gate rejection — it's the way out of
     force_submit — but it still calls update_budget so subsequent reward
-    accounting matches the upstream harness.
+    accounting matches the upstream harness. `cost_action` names the budget
+    line to charge (DEV-1822: `submit_cube_query` reuses this path).
     """
     pre_phase = getattr(state.status, "current_phase", 1)
 
@@ -766,7 +776,7 @@ def submit_raw_sql(state: Any, sql: str) -> str:
         observation = f"Error processing submission: {e}"
         reward, p1, p2, finished = 0.0, False, False, False
         infra_failed = True
-    update_budget(state.status, "submit_sql")
+    update_budget(state.status, cost_action)
     diag = _diagnostic_payload(
         submitted_sql=sql,
         sample_status=state.status,

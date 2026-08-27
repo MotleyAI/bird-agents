@@ -41,3 +41,6 @@ dev1603_prompt_audit/
 # Private, sudo-free local PostgreSQL cluster for local postgres-benchmark runs
 # (scripts/setup_local_postgres.py). Generated data, never committed.
 /.local_pg/
+
+# DEV-1822: local Cube.js sidecar (models, conf, cubestore scratch, secret)
+/cube_local/

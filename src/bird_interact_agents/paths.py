@@ -279,6 +279,21 @@ def slayer_models_otf_root(*, benchmark: str) -> Path:
     return main_checkout_root() / "slayer_models_otf" / benchmark
 
 
+def cube_local_root(*, benchmark: str) -> Path:
+    """DEV-1822: per-benchmark root for the local Cube.js sidecar (gitignored).
+
+    Holds the rendered ``conf/`` (cube.js + per-DB ``model/<db>/`` dirs), the
+    ``.cubestore/`` scratch dir, and ``.api_secret``. Mirrors
+    ``slayer_otf_cache_root``: pure resolver (no mkdir — deploy/conf create
+    dirs); ``BIRD_CUBE_LOCAL_ROOT`` overrides the parent for ALL benchmarks.
+    """
+    _validate_benchmark(benchmark)
+    parent_override = os.environ.get("BIRD_CUBE_LOCAL_ROOT")
+    if parent_override:
+        return Path(parent_override).expanduser() / benchmark
+    return main_checkout_root() / "cube_local" / benchmark
+
+
 def gated_gold_root(*, benchmark: str | None) -> Path:
     """Canonical location for gated gold sidecar files (gitignored).
 

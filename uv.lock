@@ -503,6 +503,7 @@ cloud = [
     { name = "ray", extra = ["default"] },
 ]
 dev = [
+    { name = "gdown" },
     { name = "openai" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -540,6 +541,7 @@ requires-dist = [
     { name = "asyncpg", marker = "extra == 'slayer'", specifier = ">=0.30" },
     { name = "claude-agent-sdk", marker = "extra == 'all'", specifier = ">=0.1.68" },
     { name = "claude-agent-sdk", marker = "extra == 'claude-sdk'", specifier = ">=0.1.68" },
+    { name = "gdown", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "google-cloud-storage", marker = "extra == 'all'", specifier = ">=2.18" },
     { name = "google-cloud-storage", marker = "extra == 'cloud'", specifier = ">=2.18" },
     { name = "httpx", extras = ["socks"], marker = "extra == 'pydantic-ai'" },
@@ -869,14 +871,14 @@ name = "cohere"
 version = "6.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "fastavro", marker = "sys_platform != 'emscripten'" },
-    { name = "httpx", marker = "sys_platform != 'emscripten'" },
-    { name = "pydantic", marker = "sys_platform != 'emscripten'" },
-    { name = "pydantic-core", marker = "sys_platform != 'emscripten'" },
-    { name = "requests", marker = "sys_platform != 'emscripten'" },
-    { name = "tokenizers", marker = "sys_platform != 'emscripten'" },
-    { name = "types-requests", marker = "sys_platform != 'emscripten'" },
-    { name = "typing-extensions", marker = "sys_platform != 'emscripten'" },
+    { name = "fastavro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "requests" },
+    { name = "tokenizers" },
+    { name = "types-requests" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d0/67/7aff8a870889ee931aa19e1deb138691e3cc909ee61e1daea86f3475a818/cohere-6.1.0.tar.gz", hash = "sha256:6a52bb459b71b5e79735412ee1a8e87028c5b3afba050c39815fe03c083249b3", size = 207302, upload-time = "2026-04-10T19:44:43.103Z" }
 wheels = [
@@ -1629,6 +1631,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e1/cf/b50ddf667c15276a9ab15a70ef5f257564de271957933ffea49d2cdbcdfb/fsspec-2026.3.0.tar.gz", hash = "sha256:1ee6a0e28677557f8c2f994e3eea77db6392b4de9cd1f5d7a9e87a0ae9d01b41", size = 313547, upload-time = "2026-03-27T19:11:14.892Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d5/1f/5f4a3cd9e4440e9d9bc78ad0a91a1c8d46b4d429d5239ebe6793c9fe5c41/fsspec-2026.3.0-py3-none-any.whl", hash = "sha256:d2ceafaad1b3457968ed14efa28798162f1638dbb5d2a6868a2db002a5ee39a4", size = 202595, upload-time = "2026-03-27T19:11:13.595Z" },
+]
+
+[[package]]
+name = "gdown"
+version = "6.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "filelock" },
+    { name = "requests", extra = ["socks"] },
+    { name = "tqdm" },
+    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6a/b5/a45f62f20664031bf74a6aeb6f8d8cd5910e411bf90d756bd6b09bdc6c35/gdown-6.1.0.tar.gz", hash = "sha256:361c6e04c6ca335df50b9d71f40bcfe9ab70fb26a1b0e890a427267781389553", size = 269670, upload-time = "2026-05-30T11:56:21.322Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/56/a99f0f159cce5b26d267317d436afee184f45fc7911938757d7cbbd2d10c/gdown-6.1.0-py3-none-any.whl", hash = "sha256:38a36a94275b8272f684db469bbd73b4d1f64cbbc1751bcb993a1b2be8f013c8", size = 19216, upload-time = "2026-05-30T11:56:20.016Z" },
 ]
 
 [[package]]
@@ -4069,7 +4087,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "ptyprocess" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
@@ -4809,6 +4827,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pysocks"
+version = "1.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/11/293dd436aea955d45fc4e8a35b6ae7270f5b8e00b53cf6c024c83b657a11/PySocks-1.7.1.tar.gz", hash = "sha256:3f8804571ebe159c380ac6de37643bb4685970655d3bba243530d6558b799aa0", size = 284429, upload-time = "2019-09-20T02:07:35.714Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/59/b4572118e098ac8e46e399a1dd0f2d85403ce8bbaad9ec79373ed6badaf9/PySocks-1.7.1-py3-none-any.whl", hash = "sha256:2725bd0a9925919b9b51739eea5f9e2bae91e83288108a9ad338b2e3a4435ee5", size = 16725, upload-time = "2019-09-20T02:06:22.938Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -5244,6 +5271,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/8e/7540e8a2036f79a125c1d2ebadf69ed7901608859186c856fa0388ef4197/requests-2.33.1-py3-none-any.whl", hash = "sha256:4e6d1ef462f3626a1f0a0a9c42dd93c63bad33f9f1c1937509b8c5c8718ab56a", size = 64947, upload-time = "2026-03-30T16:09:13.83Z" },
 ]
 
+[package.optional-dependencies]
+socks = [
+    { name = "pysocks" },
+]
+
 [[package]]
 name = "rfc3339-validator"
 version = "0.1.4"
@@ -5597,8 +5629,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "jeepney", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "cryptography" },
+    { name = "jeepney" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -6071,7 +6103,7 @@ name = "types-requests"
 version = "2.33.0.20260408"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "urllib3", marker = "sys_platform != 'emscripten'" },
+    { name = "urllib3" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/69/6a/749dc53a54a3f35842c1f8197b3ca6b54af6d7458a1bfc75f6629b6da666/types_requests-2.33.0.20260408.tar.gz", hash = "sha256:95b9a86376807a216b2fb412b47617b202091c3ea7c078f47cc358d5528ccb7b", size = 23882, upload-time = "2026-04-08T04:34:49.33Z" }
 wheels = [

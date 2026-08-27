@@ -365,6 +365,12 @@ ACTION_COSTS = {
     "ask_user": 2,
     "submit_sql": 3,
     "submit_query": 3,
+    # DEV-1822 cube tools (priced to mirror their raw counterparts: cube_load
+    # ≈ execute_sql, cube_meta/cube_sql ≈ introspection, submit ≈ submit_sql).
+    "cube_meta": 1,
+    "cube_load": 1,
+    "cube_sql": 0.5,
+    "submit_cube_query": 3,
     # SLayer tools
     "help": 0.5,
     "list_datasources": 0.5,

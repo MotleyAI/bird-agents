@@ -56,7 +56,7 @@ logger = logging.getLogger("cascade_for_combo")
 # ``<ts>_<framework>_<mode>.json`` / ``local_<ts>_<framework>_<mode>.json``).
 # Anchor on a leading ``-``/``_`` and a trailing ``-``/``_``/``.`` or end so the
 # trailing-slug local form is matched too (the old ``-(raw|slayer)-`` missed it).
-_FILE_MODE_RE = re.compile(r"[-_](raw|slayer)(?=[-_.]|$)")
+_FILE_MODE_RE = re.compile(r"[-_](raw|slayer|cube)(?=[-_.]|$)")
 
 
 def mode_from_filename(name: str) -> Optional[str]:
@@ -348,7 +348,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Benchmark canonical name (default: mini-interact).",
     )
     parser.add_argument(
-        "--mode", required=True, choices=("raw", "slayer"),
+        "--mode", required=True, choices=("raw", "slayer", "cube"),
         help="Query mode of the runs to include.",
     )
     parser.add_argument(
