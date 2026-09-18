@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: facility_metrics
 source_queries:
-- version: 3
+- version: 4
   name: fac_stage
   source_model: facilities
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: fackey
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: asr_per_fac
   source_model: assessmentsymptomsandrisk
   measures:
@@ -24,7 +26,9 @@ source_queries:
   - name: facid
     model: encounters
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: asd_per_fac
   source_model: assessmentsocialanddiagnosis
   measures:
@@ -36,7 +40,9 @@ source_queries:
   - name: facid
     model: encounters
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: tb_per_fac
   source_model: treatmentbasics
   measures:
@@ -48,7 +54,9 @@ source_queries:
   - name: facid
     model: encounters
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: tox_per_fac
   source_model: treatmentoutcomes
   measures:
@@ -62,7 +70,9 @@ source_queries:
   - name: facid
     model: treatmentbasics.encounters
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: enc_per_fac
   source_model: encounters
   measures:
@@ -71,7 +81,9 @@ source_queries:
   dimensions:
   - name: facid
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: fac_stage
     joins:
@@ -79,22 +91,27 @@ source_queries:
       join_pairs:
       - - fackey
         - encounters__facid
+      join_type: left
     - target_model: asd_per_fac
       join_pairs:
       - - fackey
         - encounters__facid
+      join_type: left
     - target_model: tb_per_fac
       join_pairs:
       - - fackey
         - encounters__facid
+      join_type: left
     - target_model: tox_per_fac
       join_pairs:
       - - fackey
         - treatmentbasics__encounters__facid
+      join_type: left
     - target_model: enc_per_fac
       join_pairs:
       - - fackey
         - facid
+      join_type: left
   dimensions:
   - name: fackey
   - name: frai
@@ -121,6 +138,8 @@ source_queries:
   - name: mar
     model: enc_per_fac
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"fac_stage.fackey\" AS fackey, \"fac_stage.frai\" AS frai,\
   \ \"fac_stage.asr_per_fac.apsf\" AS asr_per_fac__apsf, \"fac_stage.asr_per_fac.agsf\"\
@@ -273,11 +292,13 @@ columns:
   sql: fackey
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: frai
   sql: frai
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Numeric community-resource score: Comprehensive=3, Adequate=2, Limited=1.'
   hidden: false
   format:
@@ -286,6 +307,7 @@ columns:
   sql: asr_per_fac__apsf
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -293,6 +315,7 @@ columns:
   sql: asr_per_fac__agsf
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -300,6 +323,7 @@ columns:
   sql: asr_per_fac__srp
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -307,6 +331,7 @@ columns:
   sql: asd_per_fac__pfis
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -314,6 +339,7 @@ columns:
   sql: asd_per_fac__sse_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -321,6 +347,7 @@ columns:
   sql: tb_per_fac__tes
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -328,6 +355,7 @@ columns:
   sql: tb_per_fac__cif
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -335,6 +363,7 @@ columns:
   sql: tox_per_fac__tar
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -342,6 +371,7 @@ columns:
   sql: tox_per_fac__theralliance_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -349,6 +379,7 @@ columns:
   sql: tox_per_fac__funcimpv_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -356,287 +387,11 @@ columns:
   sql: enc_per_fac__mar
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
-measures:
-- formula: (asr_per_fac__apsf:avg + asr_per_fac__agsf:avg) / 2.0
-  name: ssi
-  label: Symptom Severity Index (SSI)
-  description: "Symptom Severity Index (SSI) per facility = (APSF + AGSF) / 2. KB\
-    \ #30 (per-facility instance; bare measure on assessmentsymptomsandrisk also carries\
-    \ kb_id 30).\n\n[kb=30]\nSSI = \\frac{APSF + AGSF}{2}, \\text{using Average PHQ-9\
-    \ Score (APSF) and Average GAD-7 Score (AGSF)} \u2014 Calculates a combined average\
-    \ symptom severity score for a facility, based on depression and anxiety.\n[/kb=30]"
-  meta:
-    kb_id: 30
-- formula: (tb_per_fac__tes:avg + tox_per_fac__tar:avg * 3) / 2.0
-  name: eas
-  label: Engagement-Adherence Score (EAS)
-  description: "Engagement-Adherence Score (EAS) per facility = (TES + TAR*3) / 2.\
-    \ KB #31.\n\n[kb=31]\nEAS = \\frac{TES + (TAR \\times 3)}{2}, \\text{normalizing\
-    \ Treatment Adherence Rate (TAR) to the Therapy Engagement Score (TES) scale (0-3)}\
-    \ \u2014 Computes a composite score reflecting patient participation and adherence\
-    \ to treatment plans at a facility.\n[/kb=31]"
-  meta:
-    kb_id: 31
-- formula: (asr_per_fac__srp:avg / 100.0) * 5 + asd_per_fac__pfis:avg
-  name: frpi
-  label: Facility Risk Profile Index (FRPI)
-  description: "Facility Risk Profile Index (FRPI) = (SRP/100)*5 + PFIS. KB #32.\n\
-    \n[kb=32]\nFRPI = (\\frac{SRP}{100} \\times 5) + PFIS, \\text{weighting Suicide\
-    \ Risk Prevalence (SRP) and combining with Patient Functional Impairment Score\
-    \ (PFIS)} \u2014 Generates an index indicating the overall risk level associated\
-    \ with the patient population at a facility.\n[/kb=32]"
-  meta:
-    kb_id: 32
-- formula: 1.0 / (1 + tb_per_fac__cif:avg + enc_per_fac__mar:avg)
-  name: psm
-  label: Patient Stability Metric (PSM)
-  description: "Patient Stability Metric (PSM) = 1 / (1 + CIF + MAR) per facility.\
-    \ KB #33.\n\n[kb=33]\nPSM = \\frac{1}{1 + CIF + MAR}, \\text{where higher values\
-    \ indicate greater stability based on Crisis Intervention Frequency (CIF) and\
-    \ Missed Appointment Rate (MAR)} \u2014 Calculates an index reflecting patient\
-    \ stability, inversely related to crisis frequency and missed appointments.\n\
-    [/kb=33]"
-  meta:
-    kb_id: 33
-- formula: asd_per_fac__pfis:avg - frai:avg
-  name: rdd
-  label: Resource-Demand Differential (RDD)
-  description: "Resource-Demand Differential (RDD) = PFIS - FRAI per facility. KB\
-    \ #34.\n\n[kb=34]\nRDD = PFIS - FRAI, \\text{comparing Patient Functional Impairment\
-    \ Score (PFIS) to Facility Resource Adequacy Index (FRAI)} \u2014 Measures the\
-    \ potential gap between average patient functional needs and available facility\
-    \ resources.\n[/kb=34]"
-  meta:
-    kb_id: 34
-- formula: (asd_per_fac__sse_avg:avg + frai:avg) / 2.0
-  name: sesi
-  label: Socio-Environmental Support Index (SESI)
-  description: "Socio-Environmental Support Index (SESI) = (avg(SSE) + FRAI) / 2 per\
-    \ facility. KB #35.\n\n[kb=35]\nSESI = \\frac{SSE_{avg} + FRAI}{2}, \\text{combining\
-    \ average Social Support Effectiveness (SSE) across patients with Facility Resource\
-    \ Adequacy Index (FRAI)} \u2014 Computes a composite index reflecting the quality\
-    \ of the patient's social environment and the facility's resource context.\n[/kb=35]"
-  meta:
-    kb_id: 35
-- formula: tox_per_fac__tar:avg / asd_per_fac__pfis:avg
-  name: aer
-  label: Adherence Effectiveness Ratio (AER)
-  description: "Adherence Effectiveness Ratio (AER) = TAR / PFIS per facility. KB\
-    \ #36.\n\n[kb=36]\nAER = \\frac{TAR}{PFIS}, \\text{using Treatment Adherence Rate\
-    \ (TAR) and Patient Functional Impairment Score (PFIS) (handle PFIS=0)} \u2014\
-    \ Calculates a ratio comparing treatment adherence rate to the average functional\
-    \ impairment, suggesting potential treatment impact relative to need.\n[/kb=36]"
-  meta:
-    kb_id: 36
-- formula: (3 - tb_per_fac__tes:avg) * (1 + enc_per_fac__mar:avg)
-  name: edi
-  label: Engagement Deficit Index (EDI)
-  description: "Engagement Deficit Index (EDI) = (3 - TES) * (1 + MAR) per facility.\
-    \ KB #37.\n\n[kb=37]\nEDI = (3 - TES) \\times (1 + MAR), \\text{calculating the\
-    \ gap from maximum Therapy Engagement Score (TES) weighted by Missed Appointment\
-    \ Rate (MAR)} \u2014 Quantifies the degree of patient disengagement, considering\
-    \ both therapy engagement scores and appointment attendance.\n[/kb=37]"
-  meta:
-    kb_id: 37
-- formula: (asr_per_fac__apsf:avg / 27.0) + (asr_per_fac__srp:avg / 100.0) + (asd_per_fac__pfis:avg
-    / 3.0)
-  name: cfrs
-  label: Comprehensive Facility Risk Score (CFRS)
-  description: "Comprehensive Facility Risk Score (CFRS) = APSF/27 + SRP/100 + PFIS/3.\
-    \ KB #38.\n\n[kb=38]\nCFRS = \\frac{APSF}{27} + \\frac{SRP}{100} + \\frac{PFIS}{3},\
-    \ \\text{normalizing Average PHQ-9 Score (APSF), Suicide Risk Prevalence (SRP),\
-    \ and Patient Functional Impairment Score (PFIS) to a 0-1 scale and summing} \u2014\
-    \ A normalized index assessing overall facility risk based on combined depression\
-    \ severity, suicide risk prevalence, and functional impairment.\n[/kb=38]"
-  meta:
-    kb_id: 38
-- formula: tb_per_fac__cif:avg / (asd_per_fac__sse_avg:avg + 1)
-  name: sspi
-  label: Support System Pressure Index (SSPI)
-  description: "Support System Pressure Index (SSPI) = CIF / (avg(SSE) + 1). KB #39.\n\
-    \n[kb=39]\nSSPI = \\frac{CIF}{SSE_{avg} + 1}, \\text{calculating Crisis Intervention\
-    \ Frequency (CIF) relative to average Social Support Effectiveness (SSE) (adding\
-    \ 1 to avoid division by zero)} \u2014 Index assessing the pressure on support\
-    \ systems based on crisis frequency relative to social support effectiveness.\n\
-    [/kb=39]"
-  meta:
-    kb_id: 39
-- formula: eas / (ssi + 1)
-  name: cipi
-  label: Clinical Improvement Potential Index (CIPI)
-  description: "Clinical Improvement Potential Index (CIPI) = EAS / (SSI + 1). KB\
-    \ #50.\n\n[kb=50]\nCIPI = \\frac{EAS}{SSI + 1}, \\text{using Engagement-Adherence\
-    \ Score (EAS) and Symptom Severity Index (SSI). Higher values suggest higher engagement\
-    \ relative to current symptom burden.} \u2014 Calculates a ratio comparing patient\
-    \ engagement/adherence to overall symptom severity at a facility, suggesting potential\
-    \ responsiveness to intervention.\n[/kb=50]"
-  meta:
-    kb_id: 50
-- formula: psm * frai:avg
-  name: fei
-  label: Facility Efficiency Index (FEI)
-  description: "Facility Efficiency Index (FEI) = PSM * FRAI per facility. KB #51.\n\
-    \n[kb=51]\nFEI = PSM \\times FRAI, \\text{multiplying Patient Stability Metric\
-    \ (PSM) by Facility Resource Adequacy Index (FRAI). Higher scores suggest better\
-    \ stability achieved per resource level.} \u2014 Estimates facility efficiency\
-    \ by relating the achieved patient stability metric to the available facility\
-    \ resource adequacy.\n[/kb=51]"
-  meta:
-    kb_id: 51
-- formula: (tox_per_fac__theralliance_avg:avg + tb_per_fac__tes:avg) / 2.0
-  name: taes
-  label: Therapeutic Alliance & Engagement Score (TAES)
-  description: "Therapeutic Alliance & Engagement Score (TAES) = (avg(theralliance_score)\
-    \ + TES) / 2. KB #52.\n\n[kb=52]\nTAES = \\frac{Average(theralliance\\_score)\
-    \ + TES}{2}, \\text{where } theralliance\\_score = \\begin{cases} 3 & \\text{if\
-    \ } theralliance = Strong \\\\ 2 & \\text{if } theralliance = Moderate \\\\ 1\
-    \ & \\text{if } theralliance = Weak \\\\ 0 & \\text{if } theralliance = Poor \\\
-    end{cases}, \\text{averaged across treatmentoutcomes, combined with Therapy Engagement\
-    \ Score (TES)}. \u2014 Computes a combined score reflecting both the average clinician-reported\
-    \ therapeutic alliance and the calculated therapy engagement score for a facility.\n\
-    [/kb=52]"
-  meta:
-    kb_id: 52
-- formula: tox_per_fac__funcimpv_avg:avg * tox_per_fac__tar:avg
-  name: rti
-  label: Recovery Trajectory Index (RTI)
-  description: "Recovery Trajectory Index (RTI) = avg(funcimpv_score) * TAR per facility.\
-    \ KB #53.\n\n[kb=53]\nRTI = \\frac{\\sum_{i \\in treatmentoutcomes} (funcimpv\\\
-    _score_i)}{|treatmentoutcomes|} \\times TAR, \\text{where } funcimpv\\_score =\
-    \ \\begin{cases} 3 & \\text{if } funcimpv = Significant \\\\ 2 & \\text{if } funcimpv\
-    \ = Moderate \\\\ 1 & \\text{if } funcimpv = Minimal \\end{cases} \u2014 Estimates\
-    \ the effectiveness of treatment adherence in achieving functional improvement\
-    \ at a facility.\n[/kb=53]"
-  meta:
-    kb_id: 53
-- formula: tb_per_fac__cif:avg / (tox_per_fac__tar:avg + 0.01)
-  name: car
-  label: Crisis Adherence Ratio (CAR)
-  description: "Crisis Adherence Ratio (CAR) = CIF / (TAR + 0.01). KB #54.\n\n[kb=54]\n\
-    CAR = \\frac{CIF}{TAR + 0.01}, \\text{dividing Crisis Intervention Frequency (CIF)\
-    \ by Treatment Adherence Rate (TAR) (adjusted to prevent division by zero). Higher\
-    \ values indicate more crises relative to adherence levels.} \u2014 Calculates\
-    \ the ratio of crisis intervention frequency to the treatment adherence rate,\
-    \ indicating crises occurring per unit of adherence.\n[/kb=54]"
-  meta:
-    kb_id: 54
-- formula: frai:corr(other=tox_per_fac__tar)
-  name: craa
-  label: Correlation Between Resource Adequacy and Adherence (CRAA)
-  description: "Correlation between Resource Adequacy and Adherence (CRAA) = CORR(resource_score,\
-    \ TAR) across facilities. KB #60.\n\n[kb=60]\nCRAA = \\text{CORR}(resource\\_score,\
-    \ tar), \\text{where } resource\\_score \\text{ is the facility's resource adequacy\
-    \ score, and } tar \\text{ is the treatment adherence rate for the facility.}\
-    \ \u2014 Measures the correlation between individual facility resource adequacy\
-    \ scores and treatment adherence rates.\n[/kb=60]"
-  meta:
-    kb_id: 60
-- formula: ((asr_per_fac__srp:avg / 100.0) * 5 + asd_per_fac__pfis:avg) > 4.5 AND
-    frai:avg < 1.5
-  name: is_high_need_under_resourced
-  label: High-Need, Under-Resourced Facility
-  description: "High-Need, Under-Resourced Facility (KB #40): FRPI > 4.5 AND FRAI\
-    \ < 1.5.\n\n[kb=40]\nA facility where FRPI > 4.5 and FRAI < 1.5, \\text{indicating\
-    \ high Facility Risk Profile Index (FRPI) and low Facility Resource Adequacy Index\
-    \ (FRAI)} \u2014 Identifies facilities facing significant aggregate patient risk\
-    \ without adequate community resources.\n[/kb=40]"
-  meta:
-    kb_id: 40
-- formula: ((tb_per_fac__tes:avg + tox_per_fac__tar:avg * 3) / 2.0) > 2.0 AND asd_per_fac__pfis:avg
-    > 2.0
-  name: is_engaged_high_impairment
-  label: Facility with Engaged but High-Impairment Population
-  description: "Facility with Engaged but High-Impairment Population (KB #41): EAS\
-    \ > 2.0 AND PFIS > 2.0.\n\n[kb=41]\nA facility where EAS > 2.0 and PFIS > 2.0,\
-    \ \\text{showing high Engagement-Adherence Score (EAS) alongside high Patient\
-    \ Functional Impairment Score (PFIS)} \u2014 Identifies facilities where the patient\
-    \ population is generally engaged and adherent but continues to struggle with\
-    \ high functional impairment.\n[/kb=41]"
-  meta:
-    kb_id: 41
-- formula: ((tb_per_fac__tes:avg + tox_per_fac__tar:avg * 3) / 2.0) < 1.5 AND enc_per_fac__mar:avg
-    > 2.5
-  name: is_attrition_risk
-  label: Facility Attrition Risk Indicator
-  description: "Facility Attrition Risk Indicator (KB #43): EAS < 1.5 AND MAR > 2.5.\n\
-    \n[kb=43]\nA facility where EAS < 1.5 and MAR > 2.5, \\text{based on low Engagement-Adherence\
-    \ Score (EAS) and high Missed Appointment Rate (MAR)} \u2014 Identifies facilities\
-    \ potentially experiencing high patient dropout, characterized by low engagement/adherence\
-    \ and high missed appointment rates.\n[/kb=43]"
-  meta:
-    kb_id: 43
-- formula: frai:avg >= 2.0 AND asd_per_fac__sse_avg:avg >= 4.5
-  name: is_well_resourced_high_support
-  label: Well-Resourced High-Support Environment
-  description: "Well-Resourced High-Support Environment (KB #44): FRAI >= 2.0 AND\
-    \ avg(SSE) >= 4.5.\n\n[kb=44]\nA facility where FRAI \\geq 2.0 and the average\
-    \ SSE \\geq 4.5, \\text{indicating high Facility Resource Adequacy Index (FRAI)\
-    \ and high average Social Support Effectiveness (SSE)} \u2014 Identifies facilities\
-    \ that are well-resourced and serve a patient population with generally high levels\
-    \ of social support effectiveness.\n[/kb=44]"
-  meta:
-    kb_id: 44
-- formula: tb_per_fac__tes:avg > 2.2 AND tox_per_fac__tar:avg < 0.6
-  name: is_treatment_inertia
-  label: Facility with Potential Treatment Inertia
-  description: "Facility with Potential Treatment Inertia (KB #46): TES > 2.2 AND\
-    \ TAR < 0.6.\n\n[kb=46]\nA facility where TES > 2.2 and TAR < 0.6, \\text{based\
-    \ on Therapy Engagement Score (TES) and Treatment Adherence Rate (TAR)} \u2014\
-    \ Identifies facilities where patients seem engaged in therapy (high TES) but\
-    \ struggle with overall treatment adherence (low TAR), suggesting potential systemic\
-    \ barriers or resistance.\n[/kb=46]"
-  meta:
-    kb_id: 46
-- formula: tox_per_fac__tar:avg > 0.75 AND enc_per_fac__mar:avg < 1.0
-  name: is_strong_retention
-  label: Facility Demonstrating Strong Patient Retention
-  description: "Facility Demonstrating Strong Patient Retention (KB #48): TAR > 0.75\
-    \ AND MAR < 1.0.\n\n[kb=48]\nA facility where TAR > 0.75 and MAR < 1.0, \\text{based\
-    \ on Treatment Adherence Rate (TAR) and Missed Appointment Rate (MAR)} \u2014\
-    \ Identifies facilities showing positive performance indicators related to high\
-    \ patient adherence and low missed appointment rates.\n[/kb=48]"
-  meta:
-    kb_id: 48
-- formula: ((tb_per_fac__tes:avg + tox_per_fac__tar:avg * 3) / 2.0) > 2.5 AND ((asr_per_fac__apsf:avg
-    + asr_per_fac__agsf:avg) / 2.0) > 15
-  name: is_high_clinical_leverage
-  label: Facility with High Clinical Leverage Potential
-  description: "Facility with High Clinical Leverage Potential (KB #55): EAS > 2.5\
-    \ AND SSI > 15.\n\n[kb=55]\nA facility where EAS > 2.5 AND SSI > 15, \\text{indicating\
-    \ high Engagement-Adherence Score (EAS) alongside a high Symptom Severity Index\
-    \ (SSI).} \u2014 Identifies facilities with a highly engaged and adherent patient\
-    \ population that still experiences significant symptom severity, suggesting readiness\
-    \ for potentially more intensive or alternative interventions.\n[/kb=55]"
-  meta:
-    kb_id: 55
-- formula: tb_per_fac__tes:avg > 2.0 AND (tox_per_fac__funcimpv_avg:avg * tox_per_fac__tar:avg)
-    < 0.8
-  name: is_engagement_outcome_disconnect
-  label: Facility with Potential Engagement-Outcome Disconnect
-  description: "Facility with Potential Engagement-Outcome Disconnect (KB #58): TES\
-    \ > 2.0 AND RTI < 0.8.\n\n[kb=58]\nA facility where TES > 2.0 AND RTI < 0.8, \\\
-    text{indicating high Therapy Engagement Score (TES) but a low Recovery Trajectory\
-    \ Index (RTI).} \u2014 Identifies facilities where high therapy engagement scores\
-    \ do not seem to translate into expected functional improvements or recovery progression.\n\
-    [/kb=58]"
-  meta:
-    kb_id: 58
-- formula: (asd_per_fac__pfis:avg - frai:avg) > 1.0 AND (((tb_per_fac__tes:avg + tox_per_fac__tar:avg
-    * 3) / 2.0) < 1.5 AND enc_per_fac__mar:avg > 2.5)
-  name: is_systemically_stressed
-  label: Systemically Stressed Facility Environment
-  description: "Systemically Stressed Facility Environment (KB #59): RDD > 1.0 AND\
-    \ Facility Attrition Risk Indicator (KB #43).\n\n[kb=59]\nA facility where RDD\
-    \ > 1.0 AND meeting criteria for Facility Attrition Risk Indicator. \\text{Combines\
-    \ a high Resource-Demand Differential (RDD) with indicators of high attrition\
-    \ risk.} \u2014 Identifies facilities potentially facing overwhelming systemic\
-    \ stress, characterized by a significant gap between patient needs and resources,\
-    \ compounded by high patient attrition risk.\n[/kb=59]"
-  meta:
-    kb_id: 59
+measures: []
 aggregations: []
 joins: []
 filters: []

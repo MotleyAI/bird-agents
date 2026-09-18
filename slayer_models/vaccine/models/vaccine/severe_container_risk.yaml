@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: severe_container_risk
 source_queries:
-- version: 3
+- version: 4
   name: cei_cri_per_container_scr
   source_model: sensordata
   measures:
@@ -12,28 +12,39 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vaccinedetails
+    columns:
+    - name: ces
+      sql: ser * cei_cri_per_container_scr.cei * (1 - cei_cri_per_container_scr.cri)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: is_severe_container_risk
+      sql: CASE WHEN (ser * cei_cri_per_container_scr.cei * (1 - cei_cri_per_container_scr.cri))
+        < 0.3 AND cei_cri_per_container_scr.cei < 0.5 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: cei_cri_per_container_scr
       join_pairs:
       - - containvac
         - containlink
-    columns:
-    - name: ces
-      type: DOUBLE
-      sql: ser * cei_cri_per_container_scr.cei * (1 - cei_cri_per_container_scr.cri)
-    - name: is_severe_container_risk
-      type: BOOLEAN
-      sql: CASE WHEN (ser * cei_cri_per_container_scr.cei * (1 - cei_cri_per_container_scr.cri))
-        < 0.3 AND cei_cri_per_container_scr.cei < 0.5 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: vacregistry
   - name: containvac
   - name: ces
   - name: is_severe_container_risk
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
   \ AS containvac, \"vaccinedetails.ces\" AS ces, \"vaccinedetails.is_severe_container_risk\"\
@@ -69,6 +80,7 @@ columns:
   sql: vacregistry
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -76,16 +88,19 @@ columns:
   sql: containvac
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ces
   sql: ces
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_severe_container_risk
   sql: is_severe_container_risk
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

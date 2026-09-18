@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: wage_growth_rate
 source_queries:
-- version: 3
+- version: 4
   name: year_wage
   source_model:
     source_name: case_worksite
@@ -9,29 +9,42 @@ source_queries:
     - name: recv_year
       sql: CAST(SUBSTR(cases.recvday, 1, 4) AS INTEGER)
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: offered_wage_annual:avg
     name: avg_offered_wage
   dimensions:
   - name: recv_year
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: year_wage
     columns:
     - name: prev_year_avg
       sql: LAG(avg_offered_wage, 1) OVER (ORDER BY recv_year)
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: wage_growth_rate
       sql: (avg_offered_wage - LAG(avg_offered_wage, 1) OVER (ORDER BY recv_year))
         * 100.0 / NULLIF(LAG(avg_offered_wage, 1) OVER (ORDER BY recv_year), 0)
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: recv_year
   - name: avg_offered_wage
   - name: prev_year_avg
   - name: wage_growth_rate
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"year_wage.recv_year\" AS recv_year, \"year_wage.avg_offered_wage\"\
   \ AS avg_offered_wage, \"year_wage.prev_year_avg\" AS prev_year_avg, \"year_wage.wage_growth_rate\"\
@@ -59,11 +72,13 @@ columns:
   sql: recv_year
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: avg_offered_wage
   sql: avg_offered_wage
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Offered wage annualized for this case_worksite, denormalized via prevailing_wage
     join. Used for KB #28 / KB #31 industry-wage analyses.'
   hidden: false
@@ -73,11 +88,13 @@ columns:
   sql: prev_year_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: wage_growth_rate
   sql: wage_growth_rate
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

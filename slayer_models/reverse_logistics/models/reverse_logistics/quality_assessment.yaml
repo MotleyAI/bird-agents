@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: quality_assessment
 sql_table: quality_assessment
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: inspectref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: assessment_summary
   sql: assessment_summary
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: item_condition
   sql: TRIM(json_extract(assessment_summary, '$.condition.item_condition'), '"')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Item Condition States \u2014 'New', 'Like New', 'Used', or 'Damaged'.\n\
     \n[kb=22]\nThere are 4 different states: 'New', 'Like New', 'Used' and 'Damaged'.\
     \ \u2014 Standardised terms describing physical state of returned merchandise.\n\

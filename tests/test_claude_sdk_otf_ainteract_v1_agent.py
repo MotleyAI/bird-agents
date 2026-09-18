@@ -667,7 +667,7 @@ async def test_run_task_passes_disallowed_slayer_tools_to_sdk(
     got = set(captured["options"].disallowed_tools)
     assert got.isdisjoint(allow)
     for leak in (
-        "mcp__slayer__query", "mcp__slayer__query_nested",
+        "mcp__slayer__query",
         "mcp__slayer__describe_datasource", "mcp__slayer__edit_datasource",
         "mcp__slayer__delete_model",
     ):

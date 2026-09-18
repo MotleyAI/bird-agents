@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: hla_info
 sql_table: hla_info
 query_variables: {}
@@ -8,12 +8,14 @@ columns:
   sql: immu_don_registry
   type: TEXT
   primary_key: true
+  unique: false
   description: FK to demographics.contrib_registry.
   hidden: false
 - name: hla_a_val
   sql: hla_a_val
   type: INT
   primary_key: false
+  unique: false
   description: "Donor HLA-A antigen typing value. KB HLA Typing.\n\n[kb=22]\nA genetic\
     \ test that identifies a person's unique HLA markers. A closer HLA match between\
     \ a donor and recipient reduces the risk of the recipient's immune system attacking,\
@@ -30,6 +32,7 @@ columns:
   sql: hla_b_val
   type: INT
   primary_key: false
+  unique: false
   description: Donor HLA-B antigen typing value.
   hidden: false
   format:
@@ -38,6 +41,7 @@ columns:
   sql: hla_dr_val
   type: INT
   primary_key: false
+  unique: false
   description: Donor HLA-DR antigen typing value.
   hidden: false
   format:
@@ -46,18 +50,14 @@ columns:
   sql: hla_dq_val
   type: INT
   primary_key: false
+  unique: false
   description: Donor HLA-DQ antigen typing value.
   hidden: false
   format:
     type: integer
 measures: []
 aggregations: []
-joins:
-- target_model: demographics
-  join_pairs:
-  - - immu_don_registry
-    - contrib_registry
-  join_type: left
+joins: []
 filters: []
 description: Donor HLA typing values for immunological compatibility (A, B, DR, DQ
   loci). KB HLA Typing.

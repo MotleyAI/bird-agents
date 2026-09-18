@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: employment_and_income
 sql_table: employment_and_income
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: emplcoreref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: emplstat
   sql: emplstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: empllen
   sql: empllen
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -25,21 +28,25 @@ columns:
   sql: joblabel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: indsector
   sql: indsector
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: employerref
   sql: employerref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: annlincome
   sql: annlincome
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -47,6 +54,7 @@ columns:
   sql: mthincome
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -54,11 +62,13 @@ columns:
   sql: incverify
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: incstabscore
   sql: incstabscore
   type: INT
   primary_key: false
+  unique: false
   description: "Income Stability Score. Ranges 0-10. Below 3 indicates highly variable\
     \ income, 3-6 moderate stability, above 6 highly stable income sources.\n\n[kb=21]\n\
     Income stability (incstabscore) ranges from 0-10. Scores below 3 indicate highly\
@@ -75,6 +85,7 @@ columns:
   sql: addincome
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -82,11 +93,13 @@ columns:
   sql: addincomesrc
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: hshincome
   sql: hshincome
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -94,6 +107,7 @@ columns:
   sql: emplstable
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -101,36 +115,43 @@ columns:
   sql: indrisklvl
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: occrisklvl
   sql: occrisklvl
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: incsrcrisk
   sql: incsrcrisk
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: georisk
   sql: georisk
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: demrisk
   sql: demrisk
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: edulevel
   sql: edulevel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: debincratio
   sql: debincratio
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Debt-to-Income Ratio (DTI). Stored directly in this column.\n\n[kb=0]\n\
     DTI = \\frac{\\text{Total Monthly Debt Payments}}{\\text{Monthly Income}} = debincratio\
     \ \u2014 Calculates the proportion of a customer's monthly income that goes toward\
@@ -146,6 +167,7 @@ columns:
     'Good' WHEN debincratio < 0.50 THEN 'Concerning' ELSE 'Risky' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "DTI interpretation band derived from debincratio.\n\n[kb=22]\nDebt-to-Income\
     \ ratio (debincratio) ranges from 0-1 (or above). Below 0.36 is typically considered\
     \ excellent, 0.36-0.43 is good, 0.43-0.50 is concerning, and above 0.50 is risky\

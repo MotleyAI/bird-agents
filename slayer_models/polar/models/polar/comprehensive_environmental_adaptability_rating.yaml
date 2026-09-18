@@ -1,7 +1,7 @@
-version: 7
+version: 10
 name: comprehensive_environmental_adaptability_rating
 source_queries:
-- version: 3
+- version: 4
   name: ecac_cear
   source_model: extreme_climate_adaptation_coefficient
   measures:
@@ -12,14 +12,18 @@ source_queries:
   dimensions:
   - name: operationmaintenance__opmainteqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: insul_cear
   source_model: thermalsolarwindandgrid
   dimensions:
   - name: thermaleqref
   - name: insulationstatus
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: joined_cear
   source_model:
     source_name: ecac_cear
@@ -28,6 +32,7 @@ source_queries:
       join_pairs:
       - - operationmaintenance__opmainteqref
         - thermaleqref
+      join_type: left
   measures:
   - formula: ecac:avg
     name: ecac_v
@@ -38,20 +43,27 @@ source_queries:
   - name: insulationstatus
     model: insul_cear
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: joined_cear
     columns:
     - name: cear_level
-      type: TEXT
       sql: CASE WHEN ecac_v > 0.85 AND ssf_v > 0.8 AND insul_cear__insulationstatus
         = 'Good' THEN 'Excellent Adaptability' WHEN ecac_v > 0.7 AND ssf_v > 0.65
         AND insul_cear__insulationstatus != 'Poor' THEN 'Good Adaptability' ELSE 'Limited
         Adaptability' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: operationmaintenance__opmainteqref
   - name: cear_level
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"joined_cear.operationmaintenance__opmainteqref\" AS operationmaintenance__opmainteqref,\
   \ \"joined_cear.cear_level\" AS cear_level FROM (SELECT\n  joined_cear.operationmaintenance__opmainteqref\
@@ -151,11 +163,13 @@ columns:
   sql: operationmaintenance__opmainteqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cear_level
   sql: cear_level
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

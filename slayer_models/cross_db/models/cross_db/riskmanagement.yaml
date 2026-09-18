@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: riskmanagement
 sql_table: riskmanagement
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: risktrace
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,16 +16,19 @@ columns:
   sql: flowlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: recordregistry
   sql: recordregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: riskassess
   sql: riskassess
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Assessed risk score (0\u2013100). KB #21: >80 indicates high risk;\
     \ <20 suggests minimal risk.\n\n[kb=21]\nRanges from 0 to 100. A RiskAssess >\
     \ 80 indicates high risk, while <20 suggests minimal risk, from RiskManagement.\
@@ -39,26 +43,31 @@ columns:
   sql: riskmitstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: secureaction
   sql: secureaction
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: breachnotify
   sql: breachnotify
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: incidentplan
   sql: incidentplan
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: incidentcount
   sql: incidentcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -66,6 +75,7 @@ columns:
   sql: breachcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -73,6 +83,7 @@ columns:
   sql: nearmissnum
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -80,6 +91,7 @@ columns:
   sql: avgresolhrs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -87,6 +99,7 @@ columns:
   sql: slapct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -94,6 +107,7 @@ columns:
   sql: costusd
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -101,6 +115,7 @@ columns:
   sql: penusd
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -108,16 +123,19 @@ columns:
   sql: coveragestate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: residrisklevel
   sql: residrisklevel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ctrleff
   sql: ctrleff
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Effectiveness of risk controls (0\u2013100). KB #28: 90% = strong\
     \ controls; <50% indicates weaknesses.\n\n[kb=28]\nRanges from 0 to 100. A CtrlEff\
     \ of 90% shows strong controls, while <50% indicates weaknesses, from RiskManagement.\
@@ -132,6 +150,7 @@ columns:
   sql: compscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -139,21 +158,25 @@ columns:
   sql: maturitylevel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: nextrevdate
   sql: nextrevdate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: planstate
   sql: planstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: res
   sql: riskassess * 1.0 / NULLIF(ctrleff, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Risk Exposure Score (RES) \u2014 KB #2: RiskAssess \xD7 CtrlEff^(-1)\
     \ (i.e. RiskAssess / CtrlEff).\n\n[kb=2]\nRES = \\text{RiskAssess} \\times \\\
     text{CtrlEff}^{-1} \u2014 Calculates the overall risk exposure by combining risk\
@@ -166,6 +189,7 @@ columns:
   sql: costusd * 1.0 / (penusd + 1)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Compliance Cost Ratio (CCR) \u2014 KB #3: CostUSD / (PenUSD + 1).\n\
     \n[kb=3]\nCCR = \\frac{\\text{CostUSD}}{\\text{PenUSD} + 1} \u2014 Evaluates the\
     \ cost of compliance relative to potential penalties.\n[/kb=3]"
@@ -177,6 +201,7 @@ columns:
   sql: slapct * 1.0 / (avgresolhrs + 1)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Incident Resolution Efficiency (IRE) \u2014 KB #48: SLApct / (AvgResolHrs\
     \ + 1).\n\n[kb=48]\nIRE = \\text{SLApct} / (\\text{AvgResolHrs} + 1), \\text{where\
     \ SLApct and AvgResolHrs are from RiskManagement, adding 1 to avoid division by\
@@ -191,6 +216,7 @@ columns:
     dataflow.destnation THEN 2 ELSE 1 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Cross-Border Risk Factor (CBRF) \u2014 KB #9: RES \xD7 2 if cross-border\
     \ else 1.\n\n[kb=9]\nCBRF = \\text{RES} \\times \\begin{cases} 2 & \\text{if OrigNation\
     \ \\neq DestNation} \\\\ 1 & \\text{otherwise} \\end{cases} \u2014 Evaluates risk\
@@ -204,6 +230,7 @@ columns:
     + 1)))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Incident Impact Factor (IIF) \u2014 KB #55: RES \xD7 (1 \u2212 IRE).\n\
     \n[kb=55]\nIIF = \\text{RES} \\times (1 - \\text{IRE}) \u2014 Measures the potential\
     \ impact of incidents based on risk exposure and resolution efficiency.\n[/kb=55]"
@@ -217,6 +244,7 @@ columns:
     + 1)))) < 0.5
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Critical Data Flow Risk (KB #39): RES > 0.7 AND DFRS < 0.5.\n\n[kb=39]\n\
     A data flow where RES > 0.7 and DFRS < 0.5 \u2014 Identifies data flows with both\
     \ high risk exposure and poor reliability.\n[/kb=39]"
@@ -232,6 +260,7 @@ columns:
     + 1)))) < 0.5)
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Unstable High-Risk Flow (KB #60): DFSI < 0.5 AND Critical Data Flow\
     \ Risk.\n\n[kb=60]\nA data flow where DFSI < 0.5 and Critical Data Flow Risk exists\
     \ \u2014 Identifies high-risk data flows with poor stability.\n[/kb=60]"

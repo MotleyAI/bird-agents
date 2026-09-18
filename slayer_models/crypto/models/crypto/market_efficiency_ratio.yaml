@@ -1,14 +1,17 @@
-version: 6
+version: 10
 name: market_efficiency_ratio
 source_queries:
-- version: 3
+- version: 4
   name: latest_slipratio_v
   source_model:
     source_name: systemmonitoring
     columns:
     - name: join_key
-      type: DOUBLE
       sql: '1'
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: slipratio
   - name: join_key
@@ -18,24 +21,32 @@ source_queries:
     direction: desc
   limit: 1
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: slippage_impact
     columns:
     - name: join_key
-      type: DOUBLE
       sql: '1'
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: latest_slipratio_v
       join_pairs:
       - - join_key
         - join_key
+      join_type: left
   measures:
   - formula: slippage_impact:max / latest_slipratio_v.slipratio:max
     name: mer_value
   dimensions:
   - name: recordvault
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"slippage_impact.recordvault\" AS recordvault, \"slippage_impact.slippage_impact_max\"\
   \ AS slippage_impact_max, \"slippage_impact.mer_value\" AS mer_value, \"slippage_impact.latest_slipratio_v.slipratio_max\"\
@@ -80,16 +91,19 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: slippage_impact_max
   sql: slippage_impact_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: mer_value
   sql: mer_value
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -97,6 +111,7 @@ columns:
   sql: latest_slipratio_v__slipratio_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

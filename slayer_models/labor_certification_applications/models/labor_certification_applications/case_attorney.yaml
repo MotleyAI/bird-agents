@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: case_attorney
 sql_table: case_attorney
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: docketkey
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: counselmail
   sql: counselmail
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: counselfor
   sql: counselfor
   type: TEXT
   primary_key: false
+  unique: false
   description: "Attorney Representation Status (KB #9). 'Yes' indicates the employer\
     \ has retained legal counsel for the visa application; otherwise self-represented.\n\
     \n[kb=9]\nAttorney representation status indicates whether an employer has legal\
@@ -35,6 +38,7 @@ columns:
   sql: CASE WHEN LOWER(TRIM(cases.statustag)) = 'certified' THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "1 if joined case is certified, else 0. Resolved via the cases join.\
     \ KB #24.\n\n[kb=24]\nASR = (Number of Certified Applications by Attorney / Total\
     \ Applications by Attorney) \xD7 100%. Attorney assignment and application status\
@@ -48,12 +52,14 @@ columns:
   sql: cases.visacls
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Visa class for the case (KB #1) via cases join, denormalized.'
   hidden: false
 - name: acl_case_helper
   sql: docketkey
   type: TEXT
   primary_key: false
+  unique: false
   description: "Helper for Attorney Case Load (ACL, KB #14). The ACL measure (attorney_case_load,\
     \ formula docketkey:count_distinct) counts distinct cases per attorney; group\
     \ by counselmail.\n\n[kb=14]\nACL is the total number of cases handled by each\
@@ -67,6 +73,7 @@ columns:
   sql: cases.visacls
   type: TEXT
   primary_key: false
+  unique: false
   description: "Helper for Attorney Specialization Index (ASI, KB #34). ASI = 1 -\
     \ (distinct visa classes handled / total visa classes); see attorney_specialization_index\
     \ measure. Group by counselmail.\n\n[kb=34]\nASI = 1 - (Number of Different Visa\

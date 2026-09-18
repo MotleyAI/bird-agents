@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: drivers
 sql_table: drivers
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: drv_main
   type: INT
   primary_key: true
+  unique: false
   description: Unique driver identifier.
   hidden: false
   format:
@@ -16,6 +17,7 @@ columns:
   sql: driver_identity
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSONB column. Consolidates driver identity, nationality, and references:\
     \ code (3-letter), name.{first_name,surname}, info_link, reference, birth_date,\
     \ nationality, racing_number. Per KB #5, NULL code or racing_number means not\
@@ -32,6 +34,7 @@ columns:
   sql: json_extract(driver_identity, '$.code')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Three-letter driver code (extracted). NULL = no FIA code assigned
     (KB #5).'
   hidden: false
@@ -39,42 +42,49 @@ columns:
   sql: json_extract(driver_identity, '$.racing_number')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Permanent racing number (extracted). NULL = not assigned (KB #5).'
   hidden: false
 - name: first_name
   sql: json_extract(driver_identity, '$.name.first_name')
   type: TEXT
   primary_key: false
+  unique: false
   description: Driver first name (extracted).
   hidden: false
 - name: surname
   sql: json_extract(driver_identity, '$.name.surname')
   type: TEXT
   primary_key: false
+  unique: false
   description: Driver surname (extracted).
   hidden: false
 - name: reference
   sql: json_extract(driver_identity, '$.reference')
   type: TEXT
   primary_key: false
+  unique: false
   description: Driver reference code (extracted).
   hidden: false
 - name: birth_date
   sql: json_extract(driver_identity, '$.birth_date')
   type: DATE
   primary_key: false
+  unique: false
   description: Driver date of birth, ISO format (extracted).
   hidden: false
 - name: nationality
   sql: json_extract(driver_identity, '$.nationality')
   type: TEXT
   primary_key: false
+  unique: false
   description: Driver nationality (extracted).
   hidden: false
 - name: info_link
   sql: json_extract(driver_identity, '$.info_link')
   type: TEXT
   primary_key: false
+  unique: false
   description: Driver info page link (extracted).
   hidden: false
 - name: driver_age
@@ -82,6 +92,7 @@ columns:
     / 365.25 AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Driver Age (KB #20): floor((today - birth_date) / 365.25). Returns\
     \ NULL when birth_date is missing.\n\n[kb=20]\nAge = \\lfloor \\frac{Date_{current}\
     \ - Date_{birth}}{365.25} \\rfloor \u2014 Calculates the current age of a driver\
@@ -95,6 +106,7 @@ columns:
     / 365.25 AS INTEGER) >= 35
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: 'Helper: TRUE iff driver_age >= 35 (Veteran threshold from KB #49).'
   hidden: false
 measures: []

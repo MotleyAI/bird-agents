@@ -1,33 +1,41 @@
-version: 7
+version: 10
 name: signal_aidp
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
+    columns:
+    - name: aidp
+      sql: (((signaldecoding.compressratio * signalclassification.complexidx * signalclassification.entropyval)
+        / 10.0) * (signalprobabilities.techsigprob * (1 - signalprobabilities.natsrcprob)
+        * signalprobabilities.sigunique * (0.5 + signalprobabilities.anomscore / 10.0)))
+        / (1 + signalprobabilities.natsrcprob)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: signaldecoding
       join_pairs:
       - - signalregistry
         - signalref
+      join_type: left
     - target_model: signalclassification
       join_pairs:
       - - signalregistry
         - signalref
+      join_type: left
     - target_model: signalprobabilities
       join_pairs:
       - - signalregistry
         - signalref
-    columns:
-    - name: aidp
-      type: DOUBLE
-      sql: (((signaldecoding.compressratio * signalclassification.complexidx * signalclassification.entropyval)
-        / 10.0) * (signalprobabilities.techsigprob * (1 - signalprobabilities.natsrcprob)
-        * signalprobabilities.sigunique * (0.5 + signalprobabilities.anomscore / 10.0)))
-        / (1 + signalprobabilities.natsrcprob)
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: aidp
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.aidp\"\
   \ AS aidp FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\",\n\
@@ -47,11 +55,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: aidp
   sql: aidp
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

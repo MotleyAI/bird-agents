@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: vaccine_safety_index
 source_queries:
-- version: 3
+- version: 4
   name: agg_per_container_vsi
   source_model: sensordata
   measures:
@@ -14,19 +14,25 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vaccinedetails
+    columns:
+    - name: vsi
+      sql: ((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_vsi.tss)
+        / 365.0 * agg_per_container_vsi.cei * (1 - agg_per_container_vsi.trs)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: agg_per_container_vsi
       join_pairs:
       - - containvac
         - containlink
-    columns:
-    - name: vsi
-      type: DOUBLE
-      sql: ((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_vsi.tss)
-        / 365.0 * agg_per_container_vsi.cei * (1 - agg_per_container_vsi.trs)
+      join_type: left
   dimensions:
   - name: vacregistry
   - name: containvac
@@ -38,6 +44,8 @@ source_queries:
     model: agg_per_container_vsi
   - name: vsi
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
   \ AS containvac, \"vaccinedetails.agg_per_container_vsi.tss\" AS agg_per_container_vsi__tss,\
@@ -84,6 +92,7 @@ columns:
   sql: vacregistry
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -91,11 +100,13 @@ columns:
   sql: containvac
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: agg_per_container_vsi__tss
   sql: agg_per_container_vsi__tss
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -103,6 +114,7 @@ columns:
   sql: agg_per_container_vsi__cei
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -110,6 +122,7 @@ columns:
   sql: agg_per_container_vsi__trs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -117,6 +130,7 @@ columns:
   sql: vsi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

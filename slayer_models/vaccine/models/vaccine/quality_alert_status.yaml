@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: quality_alert_status
 source_queries:
-- version: 3
+- version: 4
   name: mcs_per_shipment_qas
   source_model: regulatoryandmaintenance
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: shipgov
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: agg_per_container_qas
   source_model: sensordata
   measures:
@@ -29,35 +31,48 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vaccinedetails
-    joins:
-    - target_model: agg_per_container_qas
-      join_pairs:
-      - - containvac
-        - containlink
-    - target_model: mcs_per_shipment_qas
-      join_pairs:
-      - - shipinject
-        - shipgov
     columns:
     - name: qmi
-      type: DOUBLE
       sql: mcs_per_shipment_qas.mcs * (((JULIANDAY(expireday) - JULIANDAY('now'))
         * agg_per_container_qas.tss) / 365.0 * agg_per_container_qas.hqi * (1 - agg_per_container_qas.cri))
         * (1 - agg_per_container_qas.tbs / 10.0)
-    - name: vsi
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: vsi
       sql: ((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_qas.tss)
         / 365.0 * agg_per_container_qas.cei * (1 - agg_per_container_qas.trs)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: is_quality_alert_status
-      type: BOOLEAN
       sql: CASE WHEN (mcs_per_shipment_qas.mcs * (((JULIANDAY(expireday) - JULIANDAY('now'))
         * agg_per_container_qas.tss) / 365.0 * agg_per_container_qas.hqi * (1 - agg_per_container_qas.cri))
         * (1 - agg_per_container_qas.tbs / 10.0)) < 0.3 AND (((JULIANDAY(expireday)
         - JULIANDAY('now')) * agg_per_container_qas.tss) / 365.0 * agg_per_container_qas.cei
         * (1 - agg_per_container_qas.trs)) < 0.5 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: agg_per_container_qas
+      join_pairs:
+      - - containvac
+        - containlink
+      join_type: left
+    - target_model: mcs_per_shipment_qas
+      join_pairs:
+      - - shipinject
+        - shipgov
+      join_type: left
   dimensions:
   - name: vacregistry
   - name: containvac
@@ -66,6 +81,8 @@ source_queries:
   - name: vsi
   - name: is_quality_alert_status
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
   \ AS containvac, \"vaccinedetails.shipinject\" AS shipinject, \"vaccinedetails.qmi\"\
@@ -141,6 +158,7 @@ columns:
   sql: vacregistry
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -148,26 +166,31 @@ columns:
   sql: containvac
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: shipinject
   sql: shipinject
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: qmi
   sql: qmi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: vsi
   sql: vsi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_quality_alert_status
   sql: is_quality_alert_status
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

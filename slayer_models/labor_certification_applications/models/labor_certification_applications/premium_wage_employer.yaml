@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: premium_wage_employer
 source_queries:
-- version: 3
+- version: 4
   name: emp_avg_wdr
   source_model: case_worksite
   measures:
@@ -9,18 +9,25 @@ source_queries:
   dimensions:
   - name: homefirm
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: emp_avg_wdr
     columns:
     - name: is_premium_wage_employer
-      type: BOOLEAN
       sql: wage_differential_rate_avg > 15
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: homefirm
   - name: wage_differential_rate_avg
   - name: is_premium_wage_employer
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"emp_avg_wdr.homefirm\" AS homefirm, \"emp_avg_wdr.wage_differential_rate_avg\"\
   \ AS wage_differential_rate_avg, \"emp_avg_wdr.is_premium_wage_employer\" AS is_premium_wage_employer\
@@ -59,12 +66,14 @@ columns:
   sql: homefirm
   type: TEXT
   primary_key: false
+  unique: false
   description: Employer (homefirm) for the case, denormalized via cases join.
   hidden: false
 - name: wage_differential_rate_avg
   sql: wage_differential_rate_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'WDR for this case_worksite, denormalized via prevailing_wage join.
     Used for KB #31 (Industry Wage Differential).'
   hidden: false
@@ -74,6 +83,7 @@ columns:
   sql: is_premium_wage_employer
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

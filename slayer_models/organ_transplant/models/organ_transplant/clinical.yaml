@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: clinical
 sql_table: clinical
 query_variables: {}
@@ -8,18 +8,21 @@ columns:
   sql: clin_recip_registry
   type: TEXT
   primary_key: true
+  unique: false
   description: FK to recipients_demographics.recip_registry.
   hidden: false
 - name: diag_detail
   sql: diag_detail
   type: TEXT
   primary_key: false
+  unique: false
   description: Primary diagnosis prose.
   hidden: false
 - name: wait_time
   sql: wait_time
   type: TEXT
   primary_key: false
+  unique: false
   description: Waiting list duration text, e.g. '104 days'. See wait_days. KB Recipient
     Wait Time Ratio.
   hidden: false
@@ -27,6 +30,7 @@ columns:
   sql: med_urgency
   type: TEXT
   primary_key: false
+  unique: false
   description: "Medical urgency tier raw text. Values: 'Status 1A', 'Status 1B', 'Status\
     \ 2', 'Status 3', or noisy '2'/'3'. See med_urgency_normalized for cleaned text\
     \ and med_urgency_value for KB 25 numeric mapping. KB Medical Urgency Tiers (KB\
@@ -45,24 +49,28 @@ columns:
   sql: prev_tx_count
   type: TEXT
   primary_key: false
+  unique: false
   description: Previous transplants prose. See prev_tx_n.
   hidden: false
 - name: dial_status
   sql: dial_status
   type: TEXT
   primary_key: false
+  unique: false
   description: Dialysis status text. NULL when not on dialysis.
   hidden: false
 - name: dial_duration
   sql: dial_duration
   type: TEXT
   primary_key: false
+  unique: false
   description: Dialysis duration text, e.g. '45 months'.
   hidden: false
 - name: comorbid_detail
   sql: comorbid_detail
   type: TEXT
   primary_key: false
+  unique: false
   description: "Comma-separated comorbidity list. KB Comorbidity. Use comorbidity_count\
     \ for the cardinal count.\n\n[kb=33]\nIn transplantation, a recipient's pre-existing\
     \ conditions (e.g., diabetes, heart disease) are considered comorbidities. They\
@@ -77,12 +85,14 @@ columns:
   sql: CAST(substr(wait_time, 1, instr(wait_time, ' ') - 1) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Wait time on the list in days (parsed).
   hidden: false
 - name: wait_time_ratio
   sql: CAST(substr(wait_time, 1, instr(wait_time, ' ') - 1) AS REAL) / 365.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Recipient Wait Time Ratio = wait_days / 365.0 (KB Recipient Wait Time\
     \ Ratio).\n\n[kb=5]\nThe recipient's wait time in days converted to years. Formula:\
     \ $R_{wait} = \\frac{T_{recipient_wait_days}}{365.0}$ \u2014 Calculates the ratio\
@@ -98,6 +108,7 @@ columns:
     2' WHEN med_urgency IN ('Status 3', '3') THEN 'Status 3' ELSE med_urgency END
   type: TEXT
   primary_key: false
+  unique: false
   description: "med_urgency with the noisy '2'/'3' values folded back to 'Status 2'/'Status\
     \ 3'.\n\n[kb=25]\nA tiered system that reflects how critically ill a patient is.\
     \ For calculation purposes, statuses are mapped to numerical values: Status 1A\
@@ -115,6 +126,7 @@ columns:
     '3') THEN 2 ELSE 1 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric mapping per KB Medical Urgency Status: 1A=5, 1B=4, 2=3, 3=2,\
     \ else 1.\n\n[kb=25]\nA tiered system that reflects how critically ill a patient\
     \ is. For calculation purposes, statuses are mapped to numerical values: Status\
@@ -130,12 +142,14 @@ columns:
   sql: CAST(substr(prev_tx_count, 1, instr(prev_tx_count, ' ') - 1) AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Number of previous transplants (parsed leading int).
   hidden: false
 - name: dial_months
   sql: CAST(substr(dial_duration, 1, instr(dial_duration, ' ') - 1) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Dialysis duration in months (parsed).
   hidden: false
 - name: comorbidity_count
@@ -143,6 +157,7 @@ columns:
     - length(replace(comorbid_detail, ',', '')) + 1) END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Number of comma-delimited comorbidities listed (KB Comorbidity).\n\
     \n[kb=33]\nIn transplantation, a recipient's pre-existing conditions (e.g., diabetes,\
     \ heart disease) are considered comorbidities. They can increase the complexity\
@@ -159,6 +174,7 @@ columns:
     ' ') - 1) AS REAL) / 365.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Patient Urgency Score = 0.7 * Status_medical + 0.3 * R_wait (KB Patient\
     \ Urgency Score).\n\n[kb=14]\nA composite score based on the recipient's medical\
     \ urgency status and their Recipient Wait Time Ratio. Formula: $S_{urgency} =\

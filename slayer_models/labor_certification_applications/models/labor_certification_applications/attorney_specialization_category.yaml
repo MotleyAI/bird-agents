@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: attorney_specialization_category
 source_queries:
-- version: 3
+- version: 4
   name: att_visa_counts
   source_model: case_attorney
   measures:
@@ -10,7 +10,9 @@ source_queries:
   - name: counselmail
   - name: visacls
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: att_totals
   source_model: att_visa_counts
   measures:
@@ -20,18 +22,26 @@ source_queries:
   dimensions:
   - name: counselmail
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: att_totals
     columns:
     - name: dominant_visa_pct
-      type: DOUBLE
       sql: _count_max * 100.0 / NULLIF(_count_sum, 0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: specialization_category
-      type: TEXT
       sql: CASE WHEN visacls_count_distinct = 1 THEN 'Exclusive Specialists' WHEN
         _count_max * 100.0 / NULLIF(_count_sum, 0) > 80 THEN 'Specialists' WHEN visacls_count_distinct
         BETWEEN 2 AND 3 THEN 'Hybrid Practitioners' ELSE 'Generalists' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: counselmail
   - name: _count_sum
@@ -40,6 +50,8 @@ source_queries:
   - name: dominant_visa_pct
   - name: specialization_category
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"att_totals.counselmail\" AS counselmail, \"att_totals._count_sum\"\
   \ AS _count_sum, \"att_totals.visacls_count_distinct\" AS visacls_count_distinct,\
@@ -74,11 +86,13 @@ columns:
   sql: counselmail
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: _count_sum
   sql: _count_sum
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -86,6 +100,7 @@ columns:
   sql: visacls_count_distinct
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Visa class for the case (KB #1) via cases join, denormalized.'
   hidden: false
   format:
@@ -94,6 +109,7 @@ columns:
   sql: _count_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -101,11 +117,13 @@ columns:
   sql: dominant_visa_pct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: specialization_category
   sql: specialization_category
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

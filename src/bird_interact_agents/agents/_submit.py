@@ -20,7 +20,6 @@ import re
 import sqlite3
 from typing import Any, Callable
 
-from pydantic import ValidationError
 
 from bird_interact_agents.agents._query import _strip_tool_level_keys
 from bird_interact_agents.agents._tool_specs import ToolSpec, render_action
@@ -688,8 +687,8 @@ def _dry_run_error_message(error: str) -> str:
     return (
         f"Submitted SQL failed dry-run (DB error): {error}\n\n"
         "Submission was NOT charged — fix the SQL and retry. To verify "
-        "schema names before resubmitting, call `inspect_model` or "
-        "`models_summary` (1 coin each)."
+        "schema names before resubmitting, call `inspect(entity_type="
+        "\"model\")` (1 coin)."
     )
 
 
@@ -842,31 +841,9 @@ def _is_wrapped_shape(parsed: Any) -> bool:
 
 
 def _compile_sql(client: Any, parsed: Any) -> str:
-    """Compile a parsed SLayer query (single-stage dict or nested list)
-    to SQL.
-
-    Primary path: `client.sql_sync(parsed)`. For lists, this works
-    natively once slayer relaxes the dict-only gate in `query_sync`
-    (tracked under DEV-1437).
-
-    Brace for current slayer: when `sql_sync(list)` raises, fall back
-    to `client._engine.execute_sync(query=parsed, dry_run=True).sql` —
-    the engine has always accepted lists. AttributeError covers
-    slayer 0.6.8's HTTP path (which reaches `query.model_dump(...)`
-    on a list); ValidationError and TypeError cover the plausible
-    rejection modes a refactored `query_sync` would emit.
-
-    The brace gets removed once `pyproject.toml`'s slayer floor bumps
-    past the DEV-1437 release.
-    """
-    try:
-        return client.sql_sync(parsed)
-    except (AttributeError, TypeError, ValidationError):
-        if isinstance(parsed, list):
-            engine = getattr(client, "_engine", None)
-            if engine is not None:
-                return engine.execute_sync(query=parsed, dry_run=True).sql
-        raise
+    """Compile a parsed SLayer query (single-stage dict or multi-stage list) to
+    SQL via ``client.sql_sync`` — SLayer 0.10.2 accepts both shapes natively."""
+    return client.sql_sync(parsed)
 
 
 def submit_slayer_query(
@@ -886,7 +863,7 @@ def submit_slayer_query(
     * **Nested DAG**: a JSON array of stage dicts where the last
       element is the DAG root — e.g. ``[{"name": "monthly",
       "source_model": "orders", ...}, {"source_model": "monthly",
-      ...}]``. Same shape ``query_nested`` MCP tool accepts.
+      ...}]`` (the last element is the DAG root).
 
     Any other top-level shape (scalar, wrapped object like
     ``{"queries": [...]}``) is rejected with a sharp error message

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: products
 sql_table: products
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: prodregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: prodtheme
   sql: prodtheme
   type: TEXT
   primary_key: false
+  unique: false
   description: "Product theme classification, used for enforcement risk: 'Digital'\
     \ = software, credentials, virtual goods (no shipping); 'Data' = databases, PII,\
     \ IP packages; 'Service' = activities (hacking, docs, technical assistance); 'Physical'\
@@ -32,31 +34,37 @@ columns:
   sql: prodsubcat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: prodlistdays
   sql: prodlistdays
   type: INT
   primary_key: false
+  unique: false
   hidden: false
 - name: prodpriceusd
   sql: prodpriceusd
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: prodqty
   sql: prodqty
   type: INT
   primary_key: false
+  unique: false
   hidden: false
 - name: vendref
   sql: vendref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: buyref
   sql: buyref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

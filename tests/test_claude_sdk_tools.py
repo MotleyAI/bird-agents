@@ -154,7 +154,7 @@ async def test_submit_query_charges_budget_exactly_once(monkeypatch):
     status = agent_mod._ctx_var.get()["status"]
     start = status.remaining_budget
 
-    result = await agent_mod.submit_query.handler({"source_model": "m"})
+    result = await agent_mod.submit_query.handler({"query": {"source_model": "m"}})
 
     assert status.remaining_budget == start - ACTION_COSTS["submit_query"]
     text = result["content"][0]["text"]
@@ -163,18 +163,17 @@ async def test_submit_query_charges_budget_exactly_once(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_submit_query_missing_required_fields_rejected(monkeypatch):
-    """DEV-1555 CR r1 unification: passing neither `source_model` nor
-    `queries` is the equivalent of the old `bad JSON` case — the
-    wrapper rejects it with a clear error before charging the budget
-    and before any helper runs."""
+    """A call missing `query` (or with a non-object/list value) is rejected
+    with the two-shapes message before charging the budget or running any
+    helper."""
     agent_mod = _seed_ctx(monkeypatch)
     status = agent_mod._ctx_var.get()["status"]
     start = status.remaining_budget
 
     result = await agent_mod.submit_query.handler({})
 
-    text = result["content"][0]["text"]
-    assert "source_model" in text or "queries" in text
+    text = result["content"][0]["text"].lower()
+    assert "object" in text and ("array" in text or "list" in text)
     # Budget UNTOUCHED — the wrapper short-circuits before
     # `submit_slayer_query` runs.
     assert status.remaining_budget == start

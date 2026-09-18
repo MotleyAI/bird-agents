@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: scanspatial
 sql_table: scanspatial
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: domainregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,16 +16,19 @@ columns:
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: crewref
   sql: crewref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: aream2
   sql: aream2
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -32,6 +36,7 @@ columns:
   sql: volm3
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -39,6 +44,7 @@ columns:
   sql: boxx
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -46,6 +52,7 @@ columns:
   sql: boxy
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -53,6 +60,7 @@ columns:
   sql: boxz
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -60,6 +68,7 @@ columns:
   sql: angleaz
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -67,6 +76,7 @@ columns:
   sql: angletilt
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -74,6 +84,7 @@ columns:
   sql: groundspan
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

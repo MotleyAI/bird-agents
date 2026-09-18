@@ -116,8 +116,8 @@ SUBMIT_QUERY_SPEC = ToolSpec(
         "JSON string whose top-level value is EITHER (a) a single "
         'SlayerQuery object, e.g. {"source_model": "orders", '
         '"dimensions": ["status"], "measures": ["amount:sum"]}, OR '
-        "(b) a nested-DAG array of stage objects — the same shape "
-        '`query_nested` accepts — e.g. [{"name": "monthly", '
+        "(b) a nested-DAG array of stage objects, e.g. "
+        '[{"name": "monthly", '
         '"source_model": "orders", "measures": ["amount:sum"], '
         '"time_dimensions": [{"dimension": "created_at", '
         '"granularity": "month"}]}, {"source_model": "monthly", '

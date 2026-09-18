@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: environmentalmonitoring
 sql_table: environmentalmonitoring
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: reckeylink
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: devlink
   sql: devlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: env_metrics
   sql: env_metrics
   type: TEXT
   primary_key: false
+  unique: false
   description: JSON blob bundling temperature, humidity, light/shock and tracking
     telemetry for the shipment. Sub-fields are surfaced as named helper columns elsewhere
     on this model.
@@ -27,30 +30,35 @@ columns:
   sql: json_extract(env_metrics, '$.temperature.avg_c')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Average temperature (\xB0C) recorded during transit."
   hidden: false
 - name: temp_min_c
   sql: json_extract(env_metrics, '$.temperature.min_c')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Minimum temperature (\xB0C) recorded during transit."
   hidden: false
 - name: temp_max_c
   sql: json_extract(env_metrics, '$.temperature.max_c')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Maximum temperature (\xB0C) recorded during transit."
   hidden: false
 - name: temp_excursion_count
   sql: json_extract(env_metrics, '$.temperature.excursion_count')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Count of temperature excursions beyond limits.
   hidden: false
 - name: temp_excursion_duration_min
   sql: json_extract(env_metrics, '$.temperature.excursion_duration_min')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Total minutes of temperature deviation during transit. This is the\
     \ per-shipment Temperature Excursion Duration (TED, KB #0): the sum \u03A3 t\u1D62\
     \ over each individual excursion event aggregated to a single value at telemetry-record\
@@ -66,24 +74,28 @@ columns:
   sql: json_extract(env_metrics, '$.temperature.alarm_count')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Number of temperature alarm events.
   hidden: false
 - name: humidity_avg_pct
   sql: json_extract(env_metrics, '$.humidity.avg_pct')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Average relative humidity (%).
   hidden: false
 - name: humidity_excursion_count
   sql: json_extract(env_metrics, '$.humidity.excursion_count')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Count of humidity deviations.
   hidden: false
 - name: humidity_monitor
   sql: json_extract(env_metrics, '$.humidity.humidity_monitor')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Humidity monitoring flag: 'Yes' (Highly Sensitive), 'Partial' (Moderately\
     \ Sensitive), 'No' (Not Sensitive), null (humidity sensitivity not specified).\
     \ KB #28 (Humidity Sensitivity Categories) describes the labelled tiers; this\
@@ -101,6 +113,7 @@ columns:
   sql: json_extract(env_metrics, '$.light_and_shock.shock_event_count')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Count of shock events detected. KB #23 (Shock Event Significance Levels)\
     \ classifies each shock as 'Minor' (unlikely to cause damage), 'Moderate' (potential\
     \ to damage if repeated), or 'Severe' (likely to cause damage). Source data does\
@@ -118,18 +131,21 @@ columns:
   sql: json_extract(env_metrics, '$.light_and_shock.shock_monitor')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Shock-event monitoring flag: Active/Passive/null.'
   hidden: false
 - name: light_monitor_mode
   sql: json_extract(env_metrics, '$.light_and_shock.light_monitor_mode')
   type: TEXT
   primary_key: false
+  unique: false
   description: Light-exposure monitoring flag.
   hidden: false
 - name: location_tracking_state
   sql: json_extract(env_metrics, '$.tracking.location_tracking_state')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Location tracking state (KB #18): 'Active', 'Intermittent', 'Failed',\
     \ or null. NULL means tracking not implemented for this shipment.\n\n[kb=18]\n\
     Location tracking can be in one of these states: 'Active' (providing regular updates),\
@@ -145,24 +161,28 @@ columns:
   sql: CAST(json_extract(env_metrics, '$.tracking.gps_completeness_pct') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: GPS completeness/coverage percentage.
   hidden: false
 - name: route_deviation_incidents
   sql: json_extract(env_metrics, '$.tracking.route_deviation_incidents')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Number of route deviation incidents.
   hidden: false
 - name: unscheduled_stops
   sql: json_extract(env_metrics, '$.tracking.unscheduled_stops')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Count of unplanned stops.
   hidden: false
 - name: stop_duration_min
   sql: json_extract(env_metrics, '$.tracking.stop_duration_min')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Total minutes spent in unplanned stops.
   hidden: false
 - name: is_critical_monitoring_failure
@@ -171,6 +191,7 @@ columns:
     AS REAL) > 30)
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Critical Monitoring Failure (KB #11): GPS completeness < 80% OR temperature\
     \ monitoring gaps exceeding 30 minutes during transit. NOTE: source data exposes\
     \ total excursion_duration_min, not per-gap duration, so this proxies 'gaps >\
@@ -189,6 +210,7 @@ columns:
     AS REAL) * 60.0, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Time In Range Percentage (TIRP, KB #25): (T_total - TED) / T_total\
     \ * 100 where T_total is converted from shipments.shipment_overview JSON actual_duration_hrs\
     \ (hours) to minutes to match TED units (minutes). Reaches the host shipment via\
@@ -213,6 +235,7 @@ columns:
     'Red Zone' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Quality Risk Zone (KB #27): 'Green' (TIRP > 98% and no single excursion\
     \ > 30 min), 'Yellow' (95-98% TIRP or any excursion 30-60 min), 'Red' (TIRP <\
     \ 95% or any excursion > 60 min). Source data exposes total excursion_duration_min\
@@ -230,6 +253,7 @@ columns:
   sql: (CAST(json_extract(env_metrics, '$.temperature.avg_c') AS REAL) + 273.15)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Average temperature in Kelvin, derived from env_metrics.temperature.avg_c.\
     \ Used as the per-shipment T\u1D62 series feed into MKT (KB #26). Note: source\
     \ data only stores avg/min/max per shipment, not the full point series, so :mkt\
@@ -249,6 +273,7 @@ columns:
     INTEGER) = 0 THEN reckeylink END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Compliant shipment id helper for CCCR (KB #5): yields the shipment\
     \ reckey only when the row has zero temperature excursions, NULL otherwise. Plugged\
     \ into a COUNT to produce N_compliant.\n\n[kb=5]\nCCCR = \\frac{N_{compliant}}{N_{total}}\
@@ -264,6 +289,7 @@ columns:
   sql: CASE WHEN temp_excursion_duration_min > 15 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Temperature Monitoring Gap indicator (KB #8): proxy 1 when total minutes-out-of-range\
     \ exceeds 15 (the KB defines a gap as a >15-minute period without temperature\
     \ readings; source schema only exposes total excursion_duration_min, not per-event\
@@ -280,6 +306,7 @@ columns:
     END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Temperature Profile Categorization (KB #40): Stable / Cyclic / Trend\
     \ / Excursion / Erratic. Schema lacks a continuous temperature point series, so\
     \ this proxies via excursion_count and temp range (max-min). 'Trend' is not derivable\
@@ -297,6 +324,7 @@ columns:
   sql: temp_excursion_count
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Last Mile Delivery Metrics (KB #50): the only sub-metric directly\
     \ observable from this model is Temperature Deviation Frequency, which equals\
     \ the per-shipment temp_excursion_count. Other last-mile metrics (First Attempt\

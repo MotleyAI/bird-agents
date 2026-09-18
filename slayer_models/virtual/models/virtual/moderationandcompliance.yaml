@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: moderationandcompliance
 sql_table: moderationandcompliance
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: modreg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: moderationinteractpivot
   sql: moderationinteractpivot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: moderationsocialpivot
   sql: moderationsocialpivot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rptcount
   sql: rptcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -30,6 +34,7 @@ columns:
   sql: warncount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -37,31 +42,37 @@ columns:
   sql: violhist
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: modstat
   sql: modstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: contcomp
   sql: contcomp
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ageverif
   sql: ageverif
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: payverif
   sql: payverif
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: idverif
   sql: idverif
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

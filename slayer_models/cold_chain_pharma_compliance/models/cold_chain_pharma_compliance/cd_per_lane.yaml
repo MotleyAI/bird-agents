@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: cd_per_lane
 source_queries:
-- version: 3
+- version: 4
   source_model: qualitycompliance
   measures:
   - formula: is_customs_delayed:sum
@@ -9,6 +9,8 @@ source_queries:
   - name: route_string
     model: shipments
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"qualitycompliance.shipments.route_string\" AS shipments__route_string,\
   \ \"qualitycompliance.is_customs_delayed_sum\" AS is_customs_delayed_sum FROM (SELECT\n\
@@ -24,11 +26,13 @@ columns:
   sql: shipments__route_string
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_customs_delayed_sum
   sql: is_customs_delayed_sum
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Customs-delay indicator for Lane Risk Potential (KB #36): 1 when custom_clearance_status=''Delayed''
     on this shipment, 0 otherwise. Used to compute CD (count of customs delays per
     lane).'

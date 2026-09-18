@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: logistics
 sql_table: logistics
 query_variables: {}
@@ -8,24 +8,28 @@ columns:
   sql: log_match_registry
   type: TEXT
   primary_key: true
+  unique: false
   description: FK to transplant_matching.match_rec_registry.
   hidden: false
 - name: trans_method
   sql: trans_method
   type: TEXT
   primary_key: false
+  unique: false
   description: Transportation method.
   hidden: false
 - name: don_ref_reg
   sql: don_ref_reg
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to demographics.
   hidden: false
 - name: rec_ref_reg
   sql: rec_ref_reg
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to recipients_demographics.
   hidden: false
 measures: []

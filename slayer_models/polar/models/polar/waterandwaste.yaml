@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: waterandwaste
 sql_table: waterandwaste
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: waterregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: watereqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: waterlevelpercent
   sql: waterlevelpercent
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -27,6 +30,7 @@ columns:
   sql: waterpressurekpa
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -34,6 +38,7 @@ columns:
   sql: watertemperaturec
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -41,6 +46,7 @@ columns:
   sql: waterflowlpm
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -48,6 +54,7 @@ columns:
   sql: waterqualityindex
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -55,6 +62,7 @@ columns:
   sql: wastetanklevelpercent
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -63,6 +71,7 @@ columns:
     / 100.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Water Resource Management Index (KB #7).\n\n[kb=7]\nWRMI = waterlevelpercent\
     \ \\times \\frac{waterqualityindex}{100} \\times (1 - \\frac{wastetanklevelpercent}{100}),\
     \ \\text{ where higher water quality and appropriate water/waste levels indicate\
@@ -78,6 +87,7 @@ columns:
     >= 26 THEN 'Poor' ELSE 'Unsafe' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Water Quality Classification System (KB #25): High-Quality (>=91),\
     \ Good (71-90), Moderate (51-70), Poor (26-50), Unsafe (<26).\n\n[kb=25]\nWater\
     \ is classified into five quality categories based on its quality index: 'High-Quality'\
@@ -98,6 +108,7 @@ columns:
     / 100.0)) < 0.5
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Water Conservation Requirement (KB #18): TRUE iff WRMI < 0.5.\n\n\
     [kb=18]\nWater conservation measures must be implemented when the WRMI falls below\
     \ 0.5, indicating either low water levels, poor water quality, or high waste tank\
@@ -115,6 +126,7 @@ columns:
     ELSE 'Sustainable Management' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Water Resource Management Status Classification (KB #53): Conservation\
     \ Needed (WRMI < 0.5), Monitoring Advised (0.5 <= WRMI < 0.7), Sustainable Management\
     \ (WRMI >= 0.7).\n\n[kb=53]\nWater management operations are classified into three\

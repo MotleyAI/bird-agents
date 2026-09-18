@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: robot_record
 sql_table: robot_record
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: recreg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: rects
   sql: rects
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: botcode
   sql: botcode
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

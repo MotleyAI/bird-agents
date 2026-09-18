@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: news_articles
 sql_table: articles
 query_variables: {}
@@ -8,42 +8,49 @@ columns:
   sql: artkey
   type: INT
   primary_key: true
+  unique: false
   description: Primary key.
   hidden: false
 - name: catlabel
   sql: catlabel
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Category: Entertainment, Business, Sports, News, Technology.'
   hidden: false
 - name: subcatlbl
   sql: subcatlbl
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Sub-category: International, Opinion, Local, Feature.'
   hidden: false
 - name: pubtime
   sql: pubtime
   type: TIMESTAMP
   primary_key: false
+  unique: false
   description: Publication timestamp.
   hidden: false
 - name: authname
   sql: authname
   type: TEXT
   primary_key: false
+  unique: false
   description: Author name.
   hidden: false
 - name: srcref
   sql: srcref
   type: TEXT
   primary_key: false
+  unique: false
   description: Source/publication reference.
   hidden: false
 - name: wordlen
   sql: wordlen
   type: INT
   primary_key: false
+  unique: false
   description: "Article word count. KB #22: higher word counts (e.g. 1200) generally\
     \ correlate with longer reading times and may affect retention.\n\n[kb=22]\nHigher\
     \ word counts, such as 1200 words, generally correlate with longer estimated reading\
@@ -57,54 +64,63 @@ columns:
   sql: readsec
   type: INT
   primary_key: false
+  unique: false
   description: Estimated reading time in seconds.
   hidden: false
 - name: difflevel
   sql: difflevel
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Reading difficulty: Basic, Intermediate, Advanced.'
   hidden: false
 - name: freshscore
   sql: freshscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Freshness score (0..1).
   hidden: false
 - name: qualscore
   sql: qualscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Quality score (0..1).
   hidden: false
 - name: sentscore
   sql: sentscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Sentiment score (-1..1).
   hidden: false
 - name: contrscore
   sql: contrscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Controversy score (0..1).
   hidden: false
 - name: tagset
   sql: tagset
   type: TEXT
   primary_key: false
+  unique: false
   description: Tags/keywords.
   hidden: false
 - name: conttype
   sql: conttype
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Content type: Article, Gallery, Video, Interactive.'
   hidden: false
 - name: contformat
   sql: contformat
   type: TEXT
   primary_key: false
+  unique: false
   description: "Format variation: Mobile, Text, HTML, AMP (KB #29 illustrates how\
     \ display adjustments cater to diverse contexts and devices).\n\n[kb=29]\nVariations\
     \ such as 'Mobile', 'Text', 'HTML', or 'AMP' show how display adjustments cater\
@@ -118,6 +134,7 @@ columns:
   sql: accscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Accessibility score (0..1). KB #24 illustrates: scores like 0.9 signal\
     \ high compliance with usability standards.\n\n[kb=24]\nAn accessibility score\
     \ like 90.00 demonstrates a high level of compliance with usability standards,\
@@ -132,30 +149,35 @@ columns:
   sql: mediacount
   type: INT
   primary_key: false
+  unique: false
   description: Number of media elements.
   hidden: false
 - name: vidsec
   sql: vidsec
   type: INT
   primary_key: false
+  unique: false
   description: Video duration in seconds.
   hidden: false
 - name: paywall
   sql: paywall
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Paywall status: Metered, Premium, Free.'
   hidden: false
 - name: authref
   sql: authref
   type: INT
   primary_key: false
+  unique: false
   description: FK to news_users.userkey (when the author is also a user).
   hidden: false
 - name: engagement_metrics
   sql: engagement_metrics
   type: TEXT
   primary_key: false
+  unique: false
   description: 'JSON: social.shares/comments, average_rating, completion_rate, engagement_rate,
     popularity_score.'
   hidden: false
@@ -163,6 +185,7 @@ columns:
   sql: (qualscore + freshscore + sentscore - contrscore) / 3.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Article Quality Index (AQI, KB #1) = (qualscore + freshscore + sentscore\
     \ - contrscore) / 3.\n\n[kb=1]\nAQI = \\frac{(qualscore + freshscore + sentscore\
     \ - contrscore)}{3}, \\text{ where each score is normalized on a uniform scale.}\
@@ -177,6 +200,7 @@ columns:
     1.5 WHEN 'advanced' THEN 2.0 ELSE 1.2 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Readability weight w (KB #56) for difficulty level: Basic=1, Intermediate=1.5,\
     \ Advanced=2, others=1.2.\n\n[kb=56]\nDifficulty levels are assigned weights:\
     \ Basic = 1, Intermediate = 1.5, Advanced = 2, Others = 1.2. \u2014 Defines difficulty-based\
@@ -190,6 +214,7 @@ columns:
     THEN 1.0 WHEN 'intermediate' THEN 1.5 WHEN 'advanced' THEN 2.0 ELSE 1.2 END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Article Readability Score (ARS, KB #5) = readsec \xD7 log10(wordlen)\
     \ / readability_weight.\n\n[kb=5]\nARS = \\frac{readsec \\times \\log(wordlen)}{w},\
     \ \\text{ where w is a weight factor assigned according to the article difficulty\
@@ -208,6 +233,7 @@ columns:
     'advanced' THEN 2.0 ELSE 1.2 END)) <= 100 THEN 'Medium' ELSE 'High' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Readability segmentation (KB #57): Low if ARS<50, Medium if 50\u2264\
     ARS\u2264100, High if ARS>100.\n\n[kb=57]\nLow readability: ARS < 50, Medium readability:\
     \ 50 \u2264 ARS \u2264 100, High readability: ARS > 100. \u2014 Classifies articles\

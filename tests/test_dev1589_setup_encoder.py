@@ -247,7 +247,7 @@ def test_exact_tool_surface():
     assert slayer == {
         "create_model", "edit_model", "save_memory", "validate_models",
         "search", "models_summary", "inspect_model", "inspect",
-        "recommend_root_model", "query", "query_nested",
+        "recommend_root_model", "query",
     }
     assert se.NATIVE_TOOL_NAME == "mcp__bird-interact-tools__submit_encoding"
     # DEV-1644: the deny-list is DERIVED (= all advertised slayer tools −

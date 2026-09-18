@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: driver_performance_value
 sql: "SELECT\n  ds.drive_link AS drive_link,\n  r.yr AS yr,\n  CAST(MAX(ds.acc_pt)\
   \ AS REAL) / NULLIF(COUNT(*), 0) AS ppr,\n  CAST(strftime('%Y', 'now') - strftime('%Y',\
@@ -17,30 +17,35 @@ columns:
   sql: drive_link
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to drivers.
   hidden: false
 - name: yr
   sql: yr
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Year of the season.
   hidden: false
 - name: ppr
   sql: ppr
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Driver''s Points Per Race (KB #26) for the season.'
   hidden: false
 - name: driver_age
   sql: driver_age
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Driver Age (KB #20) computed from driver_identity.birth_date.'
   hidden: false
 - name: dpv
   sql: dpv
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Driver Performance Value (KB #37): PPR / driver_age. Higher = more\
     \ points per race relative to age.\n\n[kb=37]\nDPV = \\frac{\\text{Driver's Points\
     \ Per Race (PPR)}}{\\text{Driver Age}}, \\text{providing a measure of success\

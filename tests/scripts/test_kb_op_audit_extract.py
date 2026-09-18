@@ -186,8 +186,10 @@ def test_cast():
 
 
 def test_json_extract_function_form():
+    # sqlglot 30.18 normalises the JSON_EXTRACT(...) function form to the
+    # ``->>`` scalar-extract operator at parse time (same node as ``data ->> x``).
     rows = _extract("SELECT JSON_EXTRACT(data, '$.name') FROM t")
-    assert _ops(rows) == ["JSON_EXTRACT"]
+    assert _ops(rows) == ["->>"]
     assert rows[0]["bucket"] == "C"
 
 

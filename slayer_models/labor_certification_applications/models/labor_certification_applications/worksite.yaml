@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: worksite
 sql_table: worksite
 query_variables: {}
@@ -8,41 +8,49 @@ columns:
   sql: w_addr1
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: wcity
   sql: wcity
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: wstate
   sql: wstate
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: wzip
   sql: wzip
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: secent
   sql: secent
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: secentname
   sql: secentname
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: waddr_2
   sql: waddr_2
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: wcnty
   sql: wcnty
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

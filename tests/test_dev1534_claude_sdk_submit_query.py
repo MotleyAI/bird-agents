@@ -1,17 +1,12 @@
-"""DEV-1534 Fix C / DEV-1555 CR r1 unification: claude_sdk
-`submit_query` exposes the SAME structured shape as `query` — single-
-stage via `source_model` + projection fields, or nested-DAG via
-`queries`. `normalize_filters` is a separate boolean knob, not embedded
-in the payload.
+"""DEV-1907: claude_sdk `submit_query` takes the unified `query` argument
+(one SlayerQuery object or a multi-stage list) plus a `normalize_filters`
+sibling knob, never embedded in the payload.
 
-The agent no longer passes a `query_json` JSON STRING; the wrapper
-builds the JSON internally from the structured args and forwards it to
-`submit_slayer_query`. The opt-out flag is still forwarded to
+The wrapper serialises the `query` value to JSON and forwards it to
+`submit_slayer_query`; the opt-out flag flows to
 `normalize_query_payload(parsed, normalize=normalize_filters)`.
-
-`submitted_query` in the trajectory is whatever the wrapper handed
-to `submit_slayer_query` (the JSON string it built); `normalize_filters`
-never appears inside that JSON.
+`submitted_query` in the trajectory is that JSON string; `normalize_filters`
+never appears inside it.
 """
 from __future__ import annotations
 
@@ -67,8 +62,7 @@ async def test_submit_query_default_normalizes(monkeypatch):
 
     agent_mod._ctx_var.get()["_slayer_client"] = SimpleNamespace(sql_sync=fake_sql_sync)
     await agent_mod.submit_query.handler({
-        "source_model": "w",
-        "filters": ["category == \"Gadgets\""],
+        "query": {"source_model": "w", "filters": ["category == \"Gadgets\""]},
     })
 
     assert received["payload"]["filters"] == ["lower(trim(category)) == 'gadgets'"]
@@ -95,8 +89,7 @@ async def test_submit_query_normalize_filters_false_passthrough(monkeypatch):
 
     agent_mod._ctx_var.get()["_slayer_client"] = SimpleNamespace(sql_sync=fake_sql_sync)
     await agent_mod.submit_query.handler({
-        "source_model": "w",
-        "filters": ['category == "Gadgets"'],
+        "query": {"source_model": "w", "filters": ['category == "Gadgets"']},
         "normalize_filters": False,
     })
 
@@ -123,8 +116,7 @@ async def test_submit_query_normalize_filters_true_explicit(monkeypatch):
 
     agent_mod._ctx_var.get()["_slayer_client"] = SimpleNamespace(sql_sync=fake_sql_sync)
     await agent_mod.submit_query.handler({
-        "source_model": "w",
-        "filters": ["category == \"Gadgets\""],
+        "query": {"source_model": "w", "filters": ["category == \"Gadgets\""]},
         "normalize_filters": True,
     })
 
@@ -150,8 +142,7 @@ async def test_submit_query_records_built_payload(monkeypatch):
         sql_sync=lambda p: "SELECT 1",
     )
     await agent_mod.submit_query.handler({
-        "source_model": "w",
-        "filters": ["category == \"Gadgets\""],
+        "query": {"source_model": "w", "filters": ["category == \"Gadgets\""]},
         "normalize_filters": False,
     })
     rec = agent_mod._ctx_var.get().get("result")
@@ -167,51 +158,18 @@ async def test_submit_query_records_built_payload(monkeypatch):
     assert status.remaining_budget == 20.0 - ACTION_COSTS["submit_query"]
 
 
-def test_submit_query_tool_schema_advertises_structured_args():
-    """DEV-1555 CR r1 unification: `submit_query` exposes the SAME
-    structured shape as `query` — `source_model` plus projection
-    fields OR `queries` array. `normalize_filters` is a separate
-    boolean knob. The schema's ``required`` is empty (the handler
-    gates on source_model XOR queries at runtime)."""
+def test_submit_query_tool_schema_is_unified_query_shape():
+    """DEV-1907: `submit_query` advertises the unified `query` argument (one
+    SlayerQuery object or a multi-stage list) plus a boolean `normalize_filters`
+    sibling — no structured `source_model`/`queries`/`query_json` args."""
     from bird_interact_agents.agents.claude_sdk import agent as agent_mod
 
-    tool = agent_mod.submit_query
-    schema = None
-    for attr in ("inputSchema", "input_schema", "schema", "args_schema"):
-        s = getattr(tool, attr, None)
-        if s is not None:
-            schema = s
-            break
-    assert schema is not None, (
-        f"submit_query tool exposes no recognised schema attribute "
-        f"(checked inputSchema/input_schema/schema/args_schema); cannot "
-        f"verify the `normalize_filters` parameter. Tool object: {tool!r}"
-    )
-    if isinstance(schema, dict) and "properties" in schema:
-        props = schema["properties"]
-        assert "source_model" in props
-        assert "queries" in props
-        assert "normalize_filters" in props
-        nf = props["normalize_filters"]
-        nf_type = nf.get("type") if isinstance(nf, dict) else None
-        assert nf_type == "boolean", (
-            f"normalize_filters must be declared as boolean in input schema; "
-            f"got {nf!r}"
-        )
-        # `queries` must be an array (nested-DAG list of stage objects).
-        qs = props["queries"]
-        qs_type = qs.get("type") if isinstance(qs, dict) else None
-        assert qs_type == "array"
-        # Legacy `query_json` single-string parameter is gone.
-        assert "query_json" not in props
-        required = schema.get("required", [])
-        assert required == [], (
-            f"submit_query schema must have empty `required` so EITHER "
-            "source_model OR queries can be supplied; the SDK marks "
-            "every key required for flat-dict schemas, so the explicit "
-            f"empty list is load-bearing. got: {required!r}"
-        )
-    else:
-        pytest.fail(
-            f"unrecognised schema shape: {type(schema).__name__} {schema!r}"
-        )
+    schema = agent_mod.submit_query.input_schema
+    assert isinstance(schema, dict) and "properties" in schema
+    props = schema["properties"]
+    assert set(props) == {"query", "normalize_filters"}
+    nf = props["normalize_filters"]
+    assert isinstance(nf, dict) and nf.get("type") == "boolean"
+    for legacy in ("source_model", "queries", "query_json"):
+        assert legacy not in props
+    assert schema.get("required") == ["query"]

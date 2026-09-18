@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: critical_safety_condition
 source_queries:
-- version: 3
+- version: 4
   name: agg_per_container_csc
   source_model: sensordata
   measures:
@@ -16,27 +16,35 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: vsi_per_shipment
   source_model:
     source_name: vaccinedetails
+    columns:
+    - name: vsi_inline
+      sql: ((julianday(expireday) - julianday('now')) * agg_per_container_csc.tss)
+        / 365.0 * agg_per_container_csc.cei * (1 - agg_per_container_csc.trs)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: agg_per_container_csc
       join_pairs:
       - - containvac
         - containlink
-    columns:
-    - name: vsi_inline
-      type: DOUBLE
-      sql: ((julianday(expireday) - julianday('now')) * agg_per_container_csc.tss)
-        / 365.0 * agg_per_container_csc.cei * (1 - agg_per_container_csc.trs)
+      join_type: left
   measures:
   - formula: vsi_inline:avg
     name: vsi
   dimensions:
   - name: shipinject
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: tsr_per_shipment
   source_model: transportinfo
   measures:
@@ -45,7 +53,9 @@ source_queries:
   dimensions:
   - name: shiptransit
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: agg_per_vehicle_csc
   source_model: sensordata
   measures:
@@ -56,34 +66,45 @@ source_queries:
   dimensions:
   - name: vehsenseref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vaccine_shipments
+    columns:
+    - name: tsr_value
+      sql: (CAST(transportinfo.distdonekm AS REAL) / NULLIF(transportinfo.distdonekm
+        + transportinfo.distleftkm, 0) * 100) / 100.0 * (1 - agg_per_vehicle_csc.trs)
+        * agg_per_vehicle_csc.hqi
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: is_critical_safety_condition
+      sql: CASE WHEN vsi_per_shipment.vsi < 0.3 AND ((CAST(transportinfo.distdonekm
+        AS REAL) / NULLIF(transportinfo.distdonekm + transportinfo.distleftkm, 0)
+        * 100) / 100.0 * (1 - agg_per_vehicle_csc.trs) * agg_per_vehicle_csc.hqi)
+        < 0.4 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: vsi_per_shipment
       join_pairs:
       - - shipmentregistry
         - shipinject
+      join_type: left
     - target_model: transportinfo
       join_pairs:
       - - shipmentregistry
         - shiptransit
+      join_type: left
     - target_model: agg_per_vehicle_csc
       join_pairs:
       - - shipmentregistry
         - vehsenseref
-    columns:
-    - name: tsr_value
-      type: DOUBLE
-      sql: (CAST(transportinfo.distdonekm AS REAL) / NULLIF(transportinfo.distdonekm
-        + transportinfo.distleftkm, 0) * 100) / 100.0 * (1 - agg_per_vehicle_csc.trs)
-        * agg_per_vehicle_csc.hqi
-    - name: is_critical_safety_condition
-      type: BOOLEAN
-      sql: CASE WHEN vsi_per_shipment.vsi < 0.3 AND ((CAST(transportinfo.distdonekm
-        AS REAL) / NULLIF(transportinfo.distdonekm + transportinfo.distleftkm, 0)
-        * 100) / 100.0 * (1 - agg_per_vehicle_csc.trs) * agg_per_vehicle_csc.hqi)
-        < 0.4 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: shipmentregistry
   - name: vsi
@@ -91,6 +112,8 @@ source_queries:
   - name: tsr_value
   - name: is_critical_safety_condition
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vaccine_shipments.shipmentregistry\" AS shipmentregistry,\
   \ \"vaccine_shipments.vsi_per_shipment.vsi\" AS vsi_per_shipment__vsi, \"vaccine_shipments.tsr_value\"\
@@ -177,11 +200,13 @@ columns:
   sql: shipmentregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vsi_per_shipment__vsi
   sql: vsi_per_shipment__vsi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -189,11 +214,13 @@ columns:
   sql: tsr_value
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_critical_safety_condition
   sql: is_critical_safety_condition
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

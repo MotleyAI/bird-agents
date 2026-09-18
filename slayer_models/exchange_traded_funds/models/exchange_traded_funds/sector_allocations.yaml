@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: sector_allocations
 sql_table: sector_allocations
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: allockey
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: productlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sectorlink
   sql: sectorlink
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -27,6 +30,7 @@ columns:
   sql: weightpct
   type: INT
   primary_key: false
+  unique: false
   description: "Sector Weight (KB 28): the percentage of a fund's assets invested\
     \ in this sector. A high value such as 0.4 (40%) indicates a significant bet on\
     \ that sector's performance. Decimal share, 0-1.\n\n[kb=28]\nThe percentage of\

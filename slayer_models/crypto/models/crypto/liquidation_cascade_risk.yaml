@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: liquidation_cascade_risk
 source_queries:
-- version: 3
+- version: 4
   name: lr_per_pair
   source_model:
     source_name: liquidation_risk
@@ -10,6 +10,7 @@ source_queries:
       join_pairs:
       - - recordvault
         - recordvault
+      join_type: left
   measures:
   - formula: is_liquidation_high_risk:sum / *:count
     name: high_risk_share
@@ -17,36 +18,47 @@ source_queries:
   - name: mktnote
     model: orders
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: obi_per_pair
   source_model:
     source_name: marketdata
     columns:
     - name: abs_obi_raw
-      type: DOUBLE
       sql: ABS((CAST(marketdata.quote_depth_snapshot ->> '$.depth.biddepth' AS REAL)
         - CAST(marketdata.quote_depth_snapshot ->> '$.depth.askdepth' AS REAL)) /
         NULLIF(CAST(marketdata.quote_depth_snapshot ->> '$.depth.biddepth' AS REAL)
         + CAST(marketdata.quote_depth_snapshot ->> '$.depth.askdepth' AS REAL), 0))
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: abs_obi_raw:avg
     name: abs_obi_avg
   dimensions:
   - name: mktcombo
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: lr_per_pair
+    columns:
+    - name: is_liquidation_cascade
+      sql: CASE WHEN lr_per_pair.high_risk_share > 0.15 AND obi_per_pair.abs_obi_avg
+        > 0.3 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: obi_per_pair
       join_pairs:
       - - orders__mktnote
         - mktcombo
-    columns:
-    - name: is_liquidation_cascade
-      type: DOUBLE
-      sql: CASE WHEN lr_per_pair.high_risk_share > 0.15 AND obi_per_pair.abs_obi_avg
-        > 0.3 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: orders__mktnote
   - name: high_risk_share
@@ -54,6 +66,8 @@ source_queries:
     model: obi_per_pair
   - name: is_liquidation_cascade
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"lr_per_pair.orders__mktnote\" AS orders__mktnote, \"\
   lr_per_pair.high_risk_share\" AS high_risk_share, \"lr_per_pair.obi_per_pair.abs_obi_avg\"\
@@ -123,11 +137,13 @@ columns:
   sql: orders__mktnote
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: high_risk_share
   sql: high_risk_share
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -135,6 +151,7 @@ columns:
   sql: obi_per_pair__abs_obi_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -142,6 +159,7 @@ columns:
   sql: is_liquidation_cascade
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

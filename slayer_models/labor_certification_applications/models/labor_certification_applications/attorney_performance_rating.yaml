@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: attorney_performance_rating
 source_queries:
-- version: 3
+- version: 4
   name: att_rates
   source_model: case_attorney
   measures:
@@ -10,18 +10,26 @@ source_queries:
   dimensions:
   - name: counselmail
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: att_rates
     columns:
     - name: approval_rate
-      type: DOUBLE
       sql: is_case_certified_sum * 100.0 / NULLIF(_count, 0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: performance_rating
-      type: TEXT
       sql: CASE WHEN is_case_certified_sum * 100.0 / NULLIF(_count, 0) > 95 THEN 'High
         Performer' WHEN is_case_certified_sum * 100.0 / NULLIF(_count, 0) >= 85 THEN
         'Standard Performer' ELSE 'Underperformer' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: counselmail
   - name: is_case_certified_sum
@@ -29,6 +37,8 @@ source_queries:
   - name: approval_rate
   - name: performance_rating
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"att_rates.counselmail\" AS counselmail, \"att_rates.is_case_certified_sum\"\
   \ AS is_case_certified_sum, \"att_rates._count\" AS _count, \"att_rates.approval_rate\"\
@@ -54,11 +64,13 @@ columns:
   sql: counselmail
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_case_certified_sum
   sql: is_case_certified_sum
   type: DOUBLE
   primary_key: false
+  unique: false
   description: '1 if joined case is certified, else 0. Resolved via the cases join.
     KB #24.'
   hidden: false
@@ -66,6 +78,7 @@ columns:
   sql: _count
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -73,11 +86,13 @@ columns:
   sql: approval_rate
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: performance_rating
   sql: performance_rating
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

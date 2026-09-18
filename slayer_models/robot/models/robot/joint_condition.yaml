@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: joint_condition
 sql_table: joint_condition
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: jcondoperref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: jcrecref
   sql: jcrecref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: jcdetref
   sql: jcdetref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: j1tempval
   sql: j1tempval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Joint 1 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
     C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
     \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
@@ -38,6 +42,7 @@ columns:
   sql: j2tempval
   type: INT
   primary_key: false
+  unique: false
   description: "Joint 2 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
     C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
     \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
@@ -53,6 +58,7 @@ columns:
   sql: j3tempval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Joint 3 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
     C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
     \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
@@ -68,6 +74,7 @@ columns:
   sql: j4tempval
   type: INT
   primary_key: false
+  unique: false
   description: "Joint 4 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
     C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
     \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
@@ -83,6 +90,7 @@ columns:
   sql: j5tempval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Joint 5 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
     C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
     \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
@@ -98,6 +106,7 @@ columns:
   sql: j6tempval
   type: INT
   primary_key: false
+  unique: false
   description: "Joint 6 temperature (\xB0C). Typical operating range 20-60\xB0C; >60\xB0\
     C indicates potential issues (KB #20).\n\n[kb=20]\nJoint temperatures are measured\
     \ in degrees Celsius. Typical operating temperatures range from 20\xB0C to 60\xB0\
@@ -113,6 +122,7 @@ columns:
   sql: j1vibval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Joint 1 vibration amplitude (mm/s). Higher values may indicate wear\
     \ or misalignment (KB #21).\n\n[kb=21]\nVibration levels are measured in units\
     \ such as mm/s. Higher values may indicate wear or misalignment. \u2014 Illustrates\
@@ -127,6 +137,7 @@ columns:
   sql: j2vibval
   type: INT
   primary_key: false
+  unique: false
   description: "Joint 2 vibration (mm/s). Higher values may indicate wear or misalignment\
     \ (KB #21).\n\n[kb=21]\nVibration levels are measured in units such as mm/s. Higher\
     \ values may indicate wear or misalignment. \u2014 Illustrates the vibration levels\
@@ -141,6 +152,7 @@ columns:
   sql: j3vibval
   type: INT
   primary_key: false
+  unique: false
   description: "Joint 3 vibration (mm/s). Higher values may indicate wear or misalignment\
     \ (KB #21).\n\n[kb=21]\nVibration levels are measured in units such as mm/s. Higher\
     \ values may indicate wear or misalignment. \u2014 Illustrates the vibration levels\
@@ -155,6 +167,7 @@ columns:
   sql: j4vibval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Joint 4 vibration (mm/s). Higher values may indicate wear or misalignment\
     \ (KB #21).\n\n[kb=21]\nVibration levels are measured in units such as mm/s. Higher\
     \ values may indicate wear or misalignment. \u2014 Illustrates the vibration levels\
@@ -169,6 +182,7 @@ columns:
   sql: j5vibval
   type: INT
   primary_key: false
+  unique: false
   description: "Joint 5 vibration (mm/s). Higher values may indicate wear or misalignment\
     \ (KB #21).\n\n[kb=21]\nVibration levels are measured in units such as mm/s. Higher\
     \ values may indicate wear or misalignment. \u2014 Illustrates the vibration levels\
@@ -183,6 +197,7 @@ columns:
   sql: j6vibval
   type: INT
   primary_key: false
+  unique: false
   description: "Joint 6 vibration (mm/s). Higher values may indicate wear or misalignment\
     \ (KB #21).\n\n[kb=21]\nVibration levels are measured in units such as mm/s. Higher\
     \ values may indicate wear or misalignment. \u2014 Illustrates the vibration levels\
@@ -197,6 +212,7 @@ columns:
   sql: j1backval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -204,6 +220,7 @@ columns:
   sql: j2backval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -211,6 +228,7 @@ columns:
   sql: j3backval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -218,6 +236,7 @@ columns:
   sql: j4backval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -225,6 +244,7 @@ columns:
   sql: j5backval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -232,6 +252,7 @@ columns:
   sql: j6backval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -239,6 +260,7 @@ columns:
   sql: MAX(j1tempval, j2tempval, j3tempval, j4tempval, j5tempval, j6tempval)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Row-level max across the 6 joint temperatures \u2014 helper for MJT\
     \ (KB #2).\n\n[kb=2]\nFor a given robot R, MJT = \\max_{jc \\in \\text{joint_condition}\
     \ \\mid \\text{jcdetref = R}} \\max(jc.j1tempval, jc.j2tempval, jc.j3tempval,\

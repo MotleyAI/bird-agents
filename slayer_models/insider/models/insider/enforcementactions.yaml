@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: enforcementactions
 sql_table: enforcementactions
 query_variables: {}
@@ -8,22 +8,26 @@ columns:
   sql: enforcereg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: compref2
   sql: compref2
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: acttake
   sql: acttake
   type: TEXT
   primary_key: false
+  unique: false
   description: Enforcement action applied (Warning / Restriction / Suspension).
   hidden: false
 - name: esclvl
   sql: esclvl
   type: TEXT
   primary_key: false
+  unique: false
   description: Escalation destination within the organisation (Supervisor / Compliance
     / Legal).
   hidden: false
@@ -31,6 +35,7 @@ columns:
   sql: resstat
   type: TEXT
   primary_key: false
+  unique: false
   description: "Resolution progress status (Pending / In Progress / Resolved). KB\
     \ #72 (Premature Resolution Block): updates to 'Resolved' must be blocked when\
     \ linked investigationdetails.iii > 75.\n\n[kb=72]\nBlock UPDATE of enforcementactions.resstat\
@@ -46,12 +51,14 @@ columns:
   sql: penimp
   type: TEXT
   primary_key: false
+  unique: false
   description: Type of penalty imposed (Warning / Fine / Ban).
   hidden: false
 - name: penamt
   sql: penamt
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Monetary amount of fines or restitution in USD.
   hidden: false
   format:
@@ -60,36 +67,42 @@ columns:
   sql: legactstat
   type: TEXT
   primary_key: false
+  unique: false
   description: Status of any legal proceedings.
   hidden: false
 - name: settlestat
   sql: settlestat
   type: TEXT
   primary_key: false
+  unique: false
   description: Settlement progress.
   hidden: false
 - name: repimp
   sql: repimp
   type: TEXT
   primary_key: false
+  unique: false
   description: Estimated reputational impact.
   hidden: false
 - name: busrestr
   sql: busrestr
   type: TEXT
   primary_key: false
+  unique: false
   description: Extent of business restrictions imposed (Partial / Full).
   hidden: false
 - name: remedstat
   sql: remedstat
   type: TEXT
   primary_key: false
+  unique: false
   description: Status of required remediation actions.
   hidden: false
 - name: traderestr
   sql: traderestr
   type: TEXT
   primary_key: false
+  unique: false
   description: "Trading Restriction Period Types (KB #29): 'Blackout' = complete prohibition\
     \ on trading specific securities or during certain periods (e.g. around earnings).\
     \ 'Special' = other case-specific restrictions (order-type / position-size limits,\
@@ -107,65 +120,76 @@ columns:
   sql: sysupdneed
   type: TEXT
   primary_key: false
+  unique: false
   description: Whether surveillance systems require updates.
   hidden: false
 - name: polupdneed
   sql: polupdneed
   type: TEXT
   primary_key: false
+  unique: false
   description: Need for policy updates.
   hidden: false
 - name: trainreq
   sql: trainreq
   type: TEXT
   primary_key: false
+  unique: false
   description: Mandatory training requirement type.
   hidden: false
 - name: repgenstat
   sql: repgenstat
   type: TEXT
   primary_key: false
+  unique: false
   description: How enforcement reports are generated.
   hidden: false
 - name: dataretstat
   sql: dataretstat
   type: TEXT
   primary_key: false
+  unique: false
   description: Data-retention status for case records.
   hidden: false
 - name: auditstat
   sql: auditstat
   type: TEXT
   primary_key: false
+  unique: false
   description: Audit-trail completeness for the action.
   hidden: false
 - name: conflvl
   sql: conflvl
   type: TEXT
   primary_key: false
+  unique: false
   description: Confidentiality level of the case data.
   hidden: false
 - name: accrestr
   sql: accrestr
   type: TEXT
   primary_key: false
+  unique: false
   description: Access restrictions applied to the case.
   hidden: false
 - name: datashare
   sql: datashare
   type: TEXT
   primary_key: false
+  unique: false
   description: Data-sharing status with external parties.
   hidden: false
 - name: invdetref
   sql: invdetref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: efir
-  sql: penamt * 1.0 / NULLIF(compliancecase__transactionrecord__trader.acctbal, 0)
+  sql: penamt * 1.0 / NULLIF(compliancecase.transactionrecord.trader.acctbal, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Enforcement Financial Impact Ratio (EFIR = penamt / acctbal) \u2014\
     \ KB #9. acctbal joined via compliancecase.transactionrecord.trader.\n\n[kb=9]\n\
     EFIR = \\frac{\\text{penamt}}{\\text{acctbal}} \u2014 Calculates the ratio of\
@@ -176,10 +200,11 @@ columns:
   meta:
     kb_id: 9
 - name: lefi
-  sql: (penamt * 1.0 / NULLIF(compliancecase__transactionrecord__trader.acctbal, 0))
-    * log10(MAX(10.0, penamt))
+  sql: (penamt * 1.0 / NULLIF(compliancecase.transactionrecord.trader.acctbal, 0))
+    * LOG(10, MAX(10.0, penamt))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Logarithmic Enforcement Fine Impact (LEFI = EFIR * log10(Max(10, penamt)))\
     \ \u2014 KB #35.\n\n[kb=35]\nLEFI = \\text{EFIR} \\times \\log_{10}(\\text{Max}(10,\
     \ \\text{penamt})) \\\\ \\text{where EFIR is the Enforcement Financial Impact\
@@ -190,11 +215,12 @@ columns:
   meta:
     kb_id: 35
 - name: res
-  sql: (compliancecase.prevviol * 1.0 / MAX(1.0, compliancecase__transactionrecord__trader.acctdays
-    / 365.0)) * (penamt * 1.0 / NULLIF(compliancecase__transactionrecord__trader.acctbal,
+  sql: (compliancecase.prevviol * 1.0 / MAX(1.0, compliancecase.transactionrecord.trader.acctdays
+    / 365.0)) * (penamt * 1.0 / NULLIF(compliancecase.transactionrecord.trader.acctbal,
     0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Recidivism Enforcement Severity (RES = CRS * EFIR) \u2014 KB #53.\
     \ CRS inlined from compliancecase fields.\n\n[kb=53]\nRES = \\text{CRS} \\times\
     \ \\text{EFIR} \\\\ \\text{where CRS is Compliance Recidivism Score  and EFIR\
@@ -209,6 +235,7 @@ columns:
   sql: penimp = 'Fine' OR penimp = 'Ban' OR acttake = 'Suspension' OR busrestr = 'Full'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Significant Enforcement Action (KB #19): penimp IN ('Fine','Ban')\
     \ OR acttake='Suspension' OR busrestr='Full'.\n\n[kb=19]\nAn action is considered\
     \ a Significant Enforcement Action if `penimp` is 'Fine' or 'Ban' OR `acttake`\
@@ -220,10 +247,11 @@ columns:
     kb_id: 19
 - name: is_financially_impactful_case
   sql: (penimp = 'Fine' OR penimp = 'Ban' OR acttake = 'Suspension' OR busrestr =
-    'Full') AND ((penamt * 1.0 / NULLIF(compliancecase__transactionrecord__trader.acctbal,
+    'Full') AND ((penamt * 1.0 / NULLIF(compliancecase.transactionrecord.trader.acctbal,
     0)) > 0.1)
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Financially Impactful Enforcement Case (KB #48): Significant Enforcement\
     \ Action AND EFIR > 0.1.\n\n[kb=48]\nA trader subject to a Significant Enforcement\
     \ Action  AND whose Enforcement Financial Impact Ratio (EFIR)  is greater than\
@@ -235,11 +263,12 @@ columns:
     kb_id: 48
 - name: is_escalated_compliance_failure
   sql: (compliancecase.prevviol > 3 OR compliancecase.comprate = 'C' OR compliancecase.comprate
-    = 'D' OR (compliancecase.prevviol * 1.0 / MAX(1.0, compliancecase__transactionrecord__trader.acctdays
+    = 'D' OR (compliancecase.prevviol * 1.0 / MAX(1.0, compliancecase.transactionrecord.trader.acctdays
     / 365.0)) > 1.0) AND (penimp = 'Fine' OR penimp = 'Ban' OR acttake = 'Suspension'
     OR busrestr = 'Full')
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Escalated Compliance Failure (KB #61): Problematic Compliance History\
     \ (joined case) AND Significant Enforcement Action.\n\n[kb=61]\nA trader identified\
     \ with Problematic Compliance History  AND subject to a Significant Enforcement\
@@ -251,14 +280,15 @@ columns:
     kb_id: 61
 - name: is_costly_high_frequency_risk_enforcement
   sql: ((penimp = 'Fine' OR penimp = 'Ban' OR acttake = 'Suspension' OR busrestr =
-    'Full') AND ((penamt * 1.0 / NULLIF(compliancecase__transactionrecord__trader.acctbal,
-    0)) > 0.1)) AND (((CAST(json_extract(compliancecase__transactionrecord__trader.trading_performance,
-    '$.risklevel.levratio') AS REAL) > 5.0 AND json_extract(compliancecase__transactionrecord__trader.trading_performance,
-    '$.risklevel.risklevel') = 'Aggressive') OR (compliancecase__transactionrecord__trader.voldaily
-    * 1.0 / NULLIF(compliancecase__transactionrecord__trader.acctbal, 0)) > 0.5) AND
-    compliancecase__transactionrecord__trader.freqscope = 'High')
+    'Full') AND ((penamt * 1.0 / NULLIF(compliancecase.transactionrecord.trader.acctbal,
+    0)) > 0.1)) AND (((CAST(JSON_EXTRACT(compliancecase.transactionrecord.trader.trading_performance,
+    '$.risklevel.levratio') AS FLOAT) > 5.0 AND JSON_EXTRACT(compliancecase.transactionrecord.trader.trading_performance,
+    '$.risklevel.risklevel') = 'Aggressive') OR (compliancecase.transactionrecord.trader.voldaily
+    * 1.0 / NULLIF(compliancecase.transactionrecord.trader.acctbal, 0)) > 0.5) AND
+    compliancecase.transactionrecord.trader.freqscope = 'High')
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Costly High-Frequency Risk Enforcement (KB #69): Financially Impactful\
     \ Enforcement Case AND High-Frequency High-Risk Trader.\n\n[kb=69]\nAn enforcement\
     \ case identified as Financially Impactful  targeting a trader previously flagged\

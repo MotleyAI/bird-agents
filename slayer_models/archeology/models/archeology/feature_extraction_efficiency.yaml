@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: feature_extraction_efficiency
 source_queries:
-- version: 3
+- version: 4
   name: feat_per_zone
   source_model: scanfeatures
   measures:
@@ -12,7 +12,9 @@ source_queries:
   dimensions:
   - name: zoneref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: pc_per_arcref
   source_model: scanpointcloud
   measures:
@@ -21,7 +23,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: pcdr_per_arcref
   source_model: point_cloud_density_ratio
   measures:
@@ -30,7 +34,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: scans_keyed
   source_model:
     source_name: scans
@@ -39,14 +45,17 @@ source_queries:
       join_pairs:
       - - zoneref
         - zoneref
+      join_type: left
     - target_model: pc_per_arcref
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
     - target_model: pcdr_per_arcref
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
   dimensions:
   - name: questregistry
   - name: arcref
@@ -60,14 +69,19 @@ source_queries:
   - name: pcdr
     model: pcdr_per_arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: scans_keyed
     columns:
     - name: fee
-      type: DOUBLE
       sql: (feat_per_zone__traitcount + feat_per_zone__articount) / (pcdr_per_arcref__pcdr
         * sqrt(pc_per_arcref__clouddense)) * 1000.0
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: fee:avg
     name: fee
@@ -76,6 +90,8 @@ source_queries:
   - name: arcref
   - name: zoneref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"scans_keyed.questregistry\" AS questregistry, \"scans_keyed.arcref\"\
   \ AS arcref, \"scans_keyed.zoneref\" AS zoneref, \"scans_keyed.fee\" AS fee FROM\
@@ -161,21 +177,25 @@ columns:
   sql: questregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: arcref
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: zoneref
   sql: zoneref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: fee
   sql: fee
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: trader_event_speculator
 sql: "SELECT\n  t.tradereg,\n  t.trading_performance,\n  json_extract(t.trading_performance,\
   \ '$.risklevel.risklevel') AS risk_appetite,\n  COALESCE(\n    SUM(CASE WHEN sf.corpeventprx\
@@ -17,31 +17,37 @@ columns:
   sql: tradereg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: risk_appetite
   sql: risk_appetite
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: event_share
   sql: event_share
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: any_insider_flag
   sql: any_insider_flag
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: any_high_sdf
   sql: any_high_sdf
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_suspected_event_driven_insider
   sql: event_share > 0.30 AND any_insider_flag = 1
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Suspected Event-Driven Insider (KB #41): Event-Driven Trader AND any\
     \ transaction triggers Potential Insider Trading Flag.\n\n[kb=41]\nA trader who\
     \ meets the criteria for Event-Driven Trader  AND for whom the Potential Insider\
@@ -55,6 +61,7 @@ columns:
   sql: event_share > 0.30 AND risk_appetite = 'Aggressive'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Aggressive Event Speculator (KB #46): Event-Driven Trader AND risk_appetite='Aggressive'.\n\
     \n[kb=46]\nA trader classified as an Event-Driven Trader  AND whose Trader Risk\
     \ Appetite  is 'Aggressive'. \u2014 Classifies event-driven traders who employ\
@@ -67,6 +74,7 @@ columns:
   sql: event_share > 0.30 AND risk_appetite = 'Aggressive' AND any_high_sdf = 1
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Volatile Event Speculator (KB #64): Aggressive Event Speculator AND\
     \ SDF > 1.0 (any transaction).\n\n[kb=64]\nA trader identified as an Aggressive\
     \ Event Speculator  AND associated with a high Sentiment Divergence Factor (e.g.,\

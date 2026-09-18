@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: content_manipulation_ring
 source_queries:
-- version: 3
+- version: 4
   name: account_scores
   source_model: moderationaction
   measures:
@@ -17,7 +17,9 @@ source_queries:
   - name: account_id
   - name: cluster_id
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model: account_scores
   measures:
   - formula: cms_v:min
@@ -33,6 +35,8 @@ source_queries:
   dimensions:
   - name: cluster_id
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"account_scores.cluster_id\" AS cluster_id, \"account_scores.min_cms\"\
   \ AS min_cms, \"account_scores.avg_cas_coord\" AS avg_cas_coord, \"account_scores.max_linkacctnum\"\
@@ -79,6 +83,7 @@ columns:
   sql: cluster_id
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row cluster identifier resolved through the moderationaction \u2192\
     \ contentbehavior \u2192 sessionbehavior \u2192 profile \u2192 account join chain.\
     \ Equals account.platident; per KB #80, this is the cluster identifier used to\
@@ -88,6 +93,7 @@ columns:
   sql: min_cms
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Content Manipulation Score (KB #8): 0.4*(1-cntuniqscore) + 0.3*mediareratio
     + 0.3*(1-txtuniq).'
   hidden: false
@@ -97,6 +103,7 @@ columns:
   sql: avg_cas_coord
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Coordinated Activity Score (KB #6): 0.5*coordscore + 0.3*netinflscore
     + 0.2*clustsize/100.'
   hidden: false
@@ -106,6 +113,7 @@ columns:
   sql: max_linkacctnum
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Linked / sockpuppet account count.
   hidden: false
   format:
@@ -114,6 +122,7 @@ columns:
   sql: all_sockpuppet
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Sockpuppet Network member predicate (KB #14): linkacctnum > 5 AND
     CAS_coord > 0.8.'
   hidden: false
@@ -121,6 +130,7 @@ columns:
   sql: member_count
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer

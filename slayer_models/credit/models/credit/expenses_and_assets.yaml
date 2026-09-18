@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: expenses_and_assets
 sql_table: expenses_and_assets
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: expemplref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: mthexp
   sql: mthexp
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -20,6 +22,7 @@ columns:
   sql: fixexpratio
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -27,6 +30,7 @@ columns:
   sql: discexpratio
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -34,6 +38,7 @@ columns:
   sql: savamount
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -41,6 +46,7 @@ columns:
   sql: investamt
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -48,6 +54,7 @@ columns:
   sql: liqassets
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -55,6 +62,7 @@ columns:
   sql: totassets
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -62,6 +70,7 @@ columns:
   sql: totliabs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -69,6 +78,7 @@ columns:
   sql: networth
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Net Worth. Total Assets - Total Liabilities (totassets - totliabs).\
     \ Stored directly here.\n\n[kb=4]\nNet Worth = \\text{Total Assets} - \\text{Total\
     \ Liabilities} = totassets - totliabs = networth \u2014 Calculates the financial\
@@ -83,11 +93,13 @@ columns:
   sql: vehown
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vehvalue
   sql: vehvalue
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -95,6 +107,7 @@ columns:
   sql: bankacccount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -102,6 +115,7 @@ columns:
   sql: bankaccage
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -109,6 +123,7 @@ columns:
   sql: bankaccbal
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -116,6 +131,7 @@ columns:
   sql: propfinancialdata
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Property/housing JSON: propown (Rent/Living with Parents/Own), proptype
     (Apartment/House/Condo), propvalue (DECIMAL), rentpayhist enum, and mortgagebits
     {mortbalance, mortpayhist}.'
@@ -125,6 +141,7 @@ columns:
   sql: json_extract(propfinancialdata, '$.mortgagebits.mortbalance')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Mortgage balance (extracted from propfinancialdata JSON).
   hidden: false
   meta: {}
@@ -132,6 +149,7 @@ columns:
   sql: json_extract(propfinancialdata, '$.propvalue')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Property value (extracted from propfinancialdata JSON).
   hidden: false
   meta: {}
@@ -139,6 +157,7 @@ columns:
   sql: json_extract(propfinancialdata, '$.propown')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Property ownership: Rent/Living with Parents/Own (extracted from propfinancialdata
     JSON).'
   hidden: false
@@ -147,6 +166,7 @@ columns:
   sql: json_extract(propfinancialdata, '$.proptype')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Property classification: Apartment/House/Condo (extracted from propfinancialdata
     JSON).'
   hidden: false
@@ -155,6 +175,7 @@ columns:
   sql: json_extract(propfinancialdata, '$.rentpayhist')
   type: TEXT
   primary_key: false
+  unique: false
   description: Rent payment history (extracted from propfinancialdata JSON).
   hidden: false
   meta: {}
@@ -162,6 +183,7 @@ columns:
   sql: json_extract(propfinancialdata, '$.mortgagebits.mortpayhist')
   type: TEXT
   primary_key: false
+  unique: false
   description: Mortgage payment history (extracted from propfinancialdata JSON).
   hidden: false
   meta: {}
@@ -171,6 +193,7 @@ columns:
     '$.propvalue') AS REAL) END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Loan-to-Value Ratio (LTV) = mortgage balance / property value (extracted\
     \ from propfinancialdata JSON).\n\n[kb=2]\nLTV = \\frac{\\text{Mortgage Balance}}{\\\
     text{Property Value}} = \\frac{\\text{propfinancialdata.mortgagebits.mortbalance}}{\\\
@@ -190,6 +213,7 @@ columns:
     'PMI Required' ELSE 'High Leverage' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "LTV significance band derived from ltv.\n\n[kb=24]\nLoan-to-Value\
     \ ratio (LTV) typically ranges from 0-1 (or above). Below 0.80 generally avoids\
     \ private mortgage insurance requirements, 0.80-0.95 typically requires PMI, and\

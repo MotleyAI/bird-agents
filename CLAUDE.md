@@ -1,5 +1,33 @@
 # Project notes for bird-interact-agents
 
+## SLayer 0.10.2 (DEV-1907)
+
+`motley-slayer[advanced-search]` is pinned `>=0.10.2` in both extras. What
+changed for this repo:
+
+* **One `query` argument.** The `claude_sdk` `query` / `submit_query` natives
+  take a single `query` — a query object, a multi-stage list, or a run-by-name
+  string — matching SLayer's own `query` tool (its docstring + `SlayerQuery`
+  schema teach the shape). `normalize_filters` is a sibling arg, never a query
+  field. There is NO `query_nested` and NO `help` tool anymore (folded into
+  `query` / `inspect(reference="memory:help.intro")`); the advertised MCP
+  surface is 20 tools, pinned by `tests/test_slayer_tool_surface.py`.
+* **Prompts don't restate tool docs.** Slayer-mode prompts carry only what the
+  tools can't (grader/user-sim/gates/`[kb=N]` + a one-line single-query nudge +
+  the `lower(trim(...))` filter-normalisation note); they must NOT re-teach the
+  query DSL, dedup-vs-raw-rows, search-vs-inspect, or SQL-artifact checks.
+* **Committed reference is at storage schema 10.** Every `slayer_models/<db>`
+  round-trips through 0.10.2 `YAMLStorage` byte-identically (guarded by
+  `tests/test_dev1907_reference_store.py`). Query-backed models carry no
+  top-level `measures`; inline `ModelExtension` sources carry no `filters`. To
+  re-migrate after a future SLayer bump: load every model through `YAMLStorage`
+  against an empty scratch sqlite (datasource repointed) and copy the rewritten
+  `models/` back — the migration is the load's write-back, not a bespoke script.
+* Import homes moved: `_normalize_sql_filter_operators` / `parse_filter_expr` /
+  `walk_parsed_refs` / `AggCall` live in `slayer.engine.syntax`;
+  `is_trivial_base` / `root_scope_column_ids` / `resolve_ref_target` in
+  `slayer.sql.column_expansion`.
+
 ## Worktree-safe by default — never depend on a path inside `repo_root`
 
 Every gitignored input or output (data dirs, encoded models, results,

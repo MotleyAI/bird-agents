@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: equipment
 sql_table: equipment
 query_variables: {}
@@ -8,31 +8,37 @@ columns:
   sql: equipregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: equipform
   sql: equipform
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: equipdesign
   sql: equipdesign
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: equiptune
   sql: equiptune
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: equipstatus
   sql: equipstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: powerlevel
   sql: powerlevel
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -41,6 +47,7 @@ columns:
     THEN 0.5 WHEN 'Poor' THEN 0.2 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "EquipStatus_value (KB #39 component): Excellent=1.0, Good=0.7, Fair=0.5,\
     \ Poor=0.2. KB #39 specifies endpoints (Excellent=1.0, Poor=0.2); intermediate\
     \ values (Good=0.7, Fair=0.5) are linearly interpolated.\n\n[kb=39]\nEER = \\\
@@ -58,6 +65,7 @@ columns:
   sql: julianday('now') - julianday(equiptune)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "EquipAge_days (KB #39 component): days since EquipTune (last calibration\
     \ date). Uses current date.\n\n[kb=39]\nEER = \\frac{SQS \\times EquipStatus\\\
     _value}{PowerLevel \\times (101 - EquipAge\\_days) / 365} \\times 25, \\text{\

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: regulatoryandmaintenance
 sql_table: regulatoryandmaintenance
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: regmaintregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,41 +16,49 @@ columns:
   sql: maintflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: maintdatelast
   sql: maintdatelast
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: maintdatenext
   sql: maintdatenext
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: calibflag
   sql: calibflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: calibdatelast
   sql: calibdatelast
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: calibdatenext
   sql: calibdatenext
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: docuflag
   sql: docuflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: compscore
   sql: compscore
   type: INT
   primary_key: false
+  unique: false
   description: "Compliance / condition score. A score above 0.9 indicates excellent\
     \ compliance with all regulatory requirements (KB #21).\n\n[kb=21]\nA score above\
     \ 0.9 indicates excellent compliance with all regulatory requirements. \u2014\
@@ -64,11 +73,13 @@ columns:
   sql: riskflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: incidents
   sql: incidents
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -76,71 +87,85 @@ columns:
   sql: resolveflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: respperson
   sql: respperson
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: contactno
   sql: contactno
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: contactemerg
   sql: contactemerg
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: inspectdatelast
   sql: inspectdatelast
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: inspectdatenext
   sql: inspectdatenext
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: inspectoutcome
   sql: inspectoutcome
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: correctactions
   sql: correctactions
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: preventsteps
   sql: preventsteps
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: validflag
   sql: validflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: verifymethod
   sql: verifymethod
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: shipgov
   sql: shipgov
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vehgov
   sql: vehgov
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: mcs
   sql: compscore * (1 - COALESCE(CAST(incidents AS REAL) / 10, 0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Maintenance Compliance Score (MCS). Compliance with maintenance schedules:\
     \ CompScore * (1 - Incidents/10) (KB #7).\n\n[kb=7]\nMCS = CompScore \\times (1\
     \ - \\frac{Incidents}{10}) \u2014 Calculates compliance with maintenance schedules.\n\
@@ -155,6 +180,7 @@ columns:
     THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Maintenance Due flag. True when MCS < 0.7 AND (Current_Date > MaintDateNext\
     \ OR Current_Date > CalibDateNext) (KB #13).\n\n[kb=13]\nEquipment where MCS <\
     \ 0.7 and (Current_Date > MaintDateNext or Current_Date > CalibDateNext) \u2014\
@@ -168,6 +194,7 @@ columns:
     0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Days Overdue. Number of days past the scheduled maintenance or calibration\
     \ date: max(Current_Date - MaintDateNext, Current_Date - CalibDateNext, 0) (KB\
     \ #61).\n\n[kb=61]\nDaysOverdue = \\max\\left( (\\text{Current_Date} - \\text{MaintDateNext}),\

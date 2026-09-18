@@ -24,9 +24,6 @@ R2 enforcement model (verified against the SDK semantics):
 
 from __future__ import annotations
 
-from bird_interact_agents.agents._shared_otf_prompts import (
-    _COMPACT_SEARCH_DISCIPLINE,
-)
 from bird_interact_agents.harness import MAX_MODEL_TURNS
 
 # Hard cap for ONE discovery answer (one ``ask_discovery`` round). The main
@@ -123,8 +120,6 @@ _DISCOVERY_COMPACT_NOTE = (
     "`inspect_model` / `models_summary`). Use the search-for-discovery,\n"
     "inspect-for-detail discipline below so a single broad sweep does not\n"
     "bloat your warm context — and so the facts you report stay crisp:\n\n"
-    + _COMPACT_SEARCH_DISCIPLINE
-    + "\n"
 )
 # DEV-1666/DEV-1668: lean variant — `inspect_model` dropped (a model's shape is
 # read via the compact `inspect(entity_type="model", …)` primitive) and
@@ -138,8 +133,6 @@ _DISCOVERY_COMPACT_NOTE_LEAN = (
     "search-for-discovery, inspect-for-detail discipline below so a single\n"
     "broad sweep does not bloat your warm context — and so the facts you\n"
     "report stay crisp:\n\n"
-    + _COMPACT_SEARCH_DISCIPLINE
-    + "\n"
 )
 
 
@@ -210,7 +203,6 @@ query needs, immediately before building the query, to get the root model +
 join paths for exactly those entities — use `search` + `inspect` for
 exploration, not `recommend_root_model` as a browser.
 
-""" + _COMPACT_SEARCH_DISCIPLINE + """
 """
 
 
@@ -257,7 +249,6 @@ across questions). Knowledge-base item definitions are on your surface too —
 read them verbatim with `get_knowledge_definition` /
 `get_all_external_knowledge_names`.
 
-""" + _COMPACT_SEARCH_DISCIPLINE + """
 """
         post_fail = f"""
 

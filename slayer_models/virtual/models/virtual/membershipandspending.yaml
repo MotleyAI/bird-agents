@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: membershipandspending
 sql_table: membershipandspending
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: memberreg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: memberfanpivot
   sql: memberfanpivot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: membkind
   sql: membkind
   type: TEXT
   primary_key: false
+  unique: false
   description: "Membership tier (KB #3). 'Free' = ~10 hrs/month basic content; 'Basic'\
     \ (~$5/mo) = reduced ads + extra content; 'Premium' (~$10-15/mo) = ad-free + exclusive\
     \ content + priority viewing; 'Diamond' (>$25/mo) = all benefits + 1-on-1 interactions\
@@ -36,6 +39,7 @@ columns:
   sql: membdays
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -43,6 +47,7 @@ columns:
   sql: spendusd
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -50,11 +55,13 @@ columns:
   sql: spendfreq
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: paymethod
   sql: paymethod
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

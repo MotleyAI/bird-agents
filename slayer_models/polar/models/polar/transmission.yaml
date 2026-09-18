@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: transmission
 sql_table: transmission
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: transregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: transeqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: transengfluidsref
   sql: transengfluidsref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -27,6 +30,7 @@ columns:
   sql: transmissiontemperaturec
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -34,6 +38,7 @@ columns:
   sql: transmissionpressurekpa
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -41,6 +46,7 @@ columns:
   sql: transmissiongear
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -48,6 +54,7 @@ columns:
   sql: differentialtemperaturec
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -55,6 +62,7 @@ columns:
   sql: axletemperaturec
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -62,6 +70,7 @@ columns:
   sql: transopmaintref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer

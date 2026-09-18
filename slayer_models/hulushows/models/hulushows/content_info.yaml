@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: content_info
 sql_table: content_info
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: content_key
   type: INT
   primary_key: true
+  unique: false
   description: "PK \u2014 1:1 with core.content_key."
   hidden: false
   format:
@@ -16,12 +17,14 @@ columns:
   sql: story_outline
   type: TEXT
   primary_key: false
+  unique: false
   description: Plot synopsis / show description for discovery and recommendations.
   hidden: false
 - name: mediacounts
   sql: mediacounts
   type: TEXT
   primary_key: false
+  unique: false
   description: JSONB column with content_volumes (Clips_Total, Episode_Total, Feature_Films,
     Film_Clips, Seasons_Total, Videos_Total).
   hidden: false
@@ -29,48 +32,56 @@ columns:
   sql: visualassets
   type: TEXT
   primary_key: false
+  unique: false
   description: JSONB column with KeyArt_URL, Thumbnail_URL, Link_Desc, Art_Copyright.
   hidden: false
 - name: clips_total
   sql: CAST(mediacounts ->> '$.content_volumes.Clips_Total' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Total short-clip volume for the content (Clips_Total).
   hidden: false
 - name: episode_total
   sql: CAST(mediacounts ->> '$.content_volumes.Episode_Total' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Total episode count across all seasons (Episodes Vol).
   hidden: false
 - name: feature_films
   sql: CAST(mediacounts ->> '$.content_volumes.Feature_Films' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Number of feature films associated with this content.
   hidden: false
 - name: film_clips
   sql: CAST(mediacounts ->> '$.content_volumes.Film_Clips' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Number of film clips / trailers for film content.
   hidden: false
 - name: seasons_total
   sql: CAST(mediacounts ->> '$.content_volumes.Seasons_Total' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Total seasons available.
   hidden: false
 - name: videos_total
   sql: CAST(mediacounts ->> '$.content_volumes.Videos_Total' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Aggregate count of all video content types (episodes + clips + features).
   hidden: false
 - name: is_long_running
   sql: CAST(mediacounts ->> '$.content_volumes.Seasons_Total' AS INTEGER) >= 10
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Long-running Series (KB 15): 10+ seasons.\n\n[kb=15]\nAny series that\
     \ continues for 10 or more years or installments is considered long-running. \u2014\
     \ Identifies series with significant longevity.\n[/kb=15]"
@@ -83,6 +94,7 @@ columns:
     CAST(mediacounts ->> '$.content_volumes.Episode_Total' AS INTEGER) <= 10
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Limited Series (KB 40): a single season with no more than ten episodes.\n\
     \n[kb=40]\nIf a show consists of only a single part and no more than ten installments,\
     \ it's called a limited series. \u2014 Defines content with very few seasons,\
@@ -96,6 +108,7 @@ columns:
     CAST(mediacounts ->> '$.content_volumes.Clips_Total' AS INTEGER) >= 100
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High Engagement Show (KB 17): 'very large number of episodes and extra\
     \ video segments'. Operationalised as Episode_Total \u2265 100 AND Clips_Total\
     \ \u2265 100.\n\n[kb=17]\nIf a show includes a very large number of episodes and\
@@ -113,6 +126,7 @@ columns:
     0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Content Size Index (CSI, KB 21): sum of Episodes Vol + Film Clip Vol\
     \ + Feature Vol + Game Vol + Film Clip Vol (KB lists 'Film Cli pVol' twice \u2014\
     \ we add it twice, weight 2) + Trailer Vol. content_info.mediacounts has no Game/Trailer\
@@ -130,6 +144,7 @@ columns:
     NULLIF(CAST(mediacounts ->> '$.content_volumes.Seasons_Total' AS INTEGER), 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Season-to-Episode Ratio (KB 23): avg episodes per season = Episodes\
     \ Vol / Seasons Count.\n\n[kb=23]\nSE_Ratio = \\frac{\\text{Episodes Vol}}{\\\
     text{Seasons Count}} \u2014 Computes average episodes per season.\n[/kb=23]"
@@ -142,6 +157,7 @@ columns:
     AS INTEGER), 0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Title-to-Episode Ratio (TER, KB 36): LENGTH(content_title) / (Episode_Total\
     \ + 1). content_title comes from the joined core model.\n\n[kb=36]\nTER = The\
     \ ratio of the length of a show\u2019s title to its total number of episodes,\
@@ -156,6 +172,7 @@ columns:
     0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Studio Productivity Index (SPI, KB 32): Videos_Total / (Seasons_Total\
     \ + 1). KB phrasing is 'videos / project groupings + 1'.\n\n[kb=32]\nSPI = The\
     \ productivity of a studio is measured by dividing the number of videos it made\
@@ -171,6 +188,7 @@ columns:
     AS INTEGER), 0) > 0 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Integer flag (1=Has Clips, 0=No Clips) per KB 79.
   hidden: false
 - name: clip_availability_flag
@@ -179,6 +197,7 @@ columns:
     AS INTEGER), 0) > 0 THEN 'Has Clips' ELSE 'No Clips' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Clip Availability Flag (KB 79): 'Has Clips' if any film clip / clip\
     \ content exists, else 'No Clips'.\n\n[kb=79]\nIf a show includes at least one\
     \ film clip, it\u2019s marked as 'Has Clips'; if it doesn\u2019t, it\u2019s marked\
@@ -194,6 +213,7 @@ columns:
     0) > 0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Empty Clip Bucket Indicator (KB 47): Film_Clips=0 AND Episode_Total>0.\n\
     \n[kb=47]\nShows where Film Clips Count = 0 and Episodes Vol > 0 indicate a 'clip\
     \ bucket empty' status. \u2014 Highlights content with no associated clips but\
@@ -208,6 +228,7 @@ columns:
     AS INTEGER), 0) BETWEEN 200 AND 500 THEN 'Medium' ELSE 'Low' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Content Volume Level Classification (KB 75): High if Videos_Total>500,\
     \ Medium if 200..500, Low otherwise.\n\n[kb=75]\nIf videos total > 500 then 'High';\
     \ if between 200 and 500 then 'Medium'; otherwise 'Low'. \u2014 Classifies shows\

@@ -799,8 +799,8 @@ are unactionable on one-shot.
   ``agent_has_aggregate=False`` (or only trivial ``MAX``/``MIN`` over
   the grouped key) while the gold has no ``GROUP BY``, and the
   predicted row count is at or below the gold's. Remediation: agent
-  should call ``mcp__slayer__query_nested`` or disable SLayer's default
-  dimension deduplication when raw per-record rows are required.
+  should disable SLayer's default dimension deduplication
+  (``distinct_dimension_values=false``) when raw per-record rows are required.
 * ``exhausted_budget_guessing`` — agent consumed all turns on
   exploratory/repeated attempts without converging.
 * ``other`` — doesn't fit the above; details in ``AutopsyAnalysis.other_details``.

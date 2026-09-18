@@ -21,22 +21,22 @@ from __future__ import annotations
 import pytest
 
 
-# The five tools the DEV-1644 failure-mode analysis found leaking on the
+# Tools the DEV-1644 failure-mode analysis found leaking on the
 # livesqlbench-large v2 run — none were on the agent allow-list nor on the
-# old partial deny-list, so their schemas leaked to the model.
+# old partial deny-list, so their schemas leaked to the model. (0.10.2
+# folded the fifth, `query_nested`, into `query`.)
 _HISTORICAL_LEAK_TOOLS = {
     "mcp__slayer__query",
-    "mcp__slayer__query_nested",
     "mcp__slayer__describe_datasource",
     "mcp__slayer__edit_datasource",
     "mcp__slayer__delete_model",
 }
 
-# The full advertised surface for the lock-pinned slayer (0.9.6). Pinning the
+# The full advertised surface for the lock-pinned slayer (0.10.2). Pinning the
 # exact set turns any upstream add/remove into a loud CI failure (the lock only
 # moves on a deliberate version bump) — the strongest anti-leak contract.
-# DEV-1668: slayer 0.9.6 removed the `help` MCP tool (help content is now
-# `inspect(reference="memory:help.intro", entity_type="memory")`) → 21 tools.
+# 0.10.2 folded `query_nested` into `query` (help content is
+# `inspect(reference="memory:help.intro", entity_type="memory")`) → 20 tools.
 _EXPECTED_SURFACE = {
     f"mcp__slayer__{t}"
     for t in (
@@ -44,7 +44,7 @@ _EXPECTED_SURFACE = {
         "delete_model", "describe_datasource", "edit_datasource",
         "edit_model", "forget_memory", "get_datasource_priority",
         "ingest_datasource_models", "inspect", "inspect_model",
-        "list_datasources", "models_summary", "query", "query_nested",
+        "list_datasources", "models_summary", "query",
         "recommend_root_model", "save_memory", "search",
         "set_datasource_priority", "validate_models",
     )
@@ -81,8 +81,8 @@ def test_surface_contains_historical_leak_tools():
 def test_surface_matches_pinned_slayer_set():
     """Exact-set pin on the lock-pinned slayer surface (Codex round-2). A
     tool added/removed upstream fails here on the next version bump, forcing a
-    review so a new tool can't silently leak. DEV-1668: 0.9.6 = 21 tools
-    (``help`` removed)."""
+    review so a new tool can't silently leak. 0.10.2 = 20 tools
+    (``query_nested`` folded into ``query``)."""
     assert _fresh_surface() == _EXPECTED_SURFACE
 
 
@@ -102,7 +102,7 @@ def test_surface_superset_of_every_allow_list():
 
 
 # ---------------------------------------------------------------------------
-# Helper internals (monkeypatched — independent of the real 22-tool surface).
+# Helper internals (monkeypatched — independent of the real 20-tool surface).
 # ---------------------------------------------------------------------------
 
 

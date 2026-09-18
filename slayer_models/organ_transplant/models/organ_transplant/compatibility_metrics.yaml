@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: compatibility_metrics
 sql_table: compatibility_metrics
 query_variables: {}
@@ -8,12 +8,14 @@ columns:
   sql: match_comp_registry
   type: TEXT
   primary_key: true
+  unique: false
   description: FK to transplant_matching.match_rec_registry.
   hidden: false
 - name: hla_mis_count
   sql: hla_mis_count
   type: INT
   primary_key: false
+  unique: false
   description: "HLA Mismatch Score: count of mismatched HLA antigens (A, B, DR) between\
     \ donor and recipient. Range 0-6.\n\n[kb=4]\nA count of the mismatched HLA antigens\
     \ (A, B, DR) between the donor and recipient. Formula: $S_{mismatch} = \\sum_{i\
@@ -30,6 +32,7 @@ columns:
   sql: blood_compat
   type: TEXT
   primary_key: false
+  unique: false
   description: "ABO compatibility text (heavily case-noised). See blood_compat_norm.\
     \ KB ABO Blood Type Compatibility.\n\n[kb=20]\nA fundamental matching rule where\
     \ recipient blood type determines acceptable donor types. Type O is the universal\
@@ -45,12 +48,14 @@ columns:
   sql: distance
   type: TEXT
   primary_key: false
+  unique: false
   description: Donor-recipient geographic distance text (always 'NN miles').
   hidden: false
 - name: exp_isch_time
   sql: exp_isch_time
   type: TEXT
   primary_key: false
+  unique: false
   description: "Expected cold ischemia time text, e.g. '539 minutes ischemia'. See\
     \ exp_isch_minutes. KB Cold Ischemia.\n\n[kb=21]\nA state of organ preservation\
     \ where metabolic activity is slowed by cooling, typically to around 4\xB0C, to\
@@ -66,30 +71,35 @@ columns:
   sql: exp_time
   type: TEXT
   primary_key: false
+  unique: false
   description: Expected transport time text, e.g. '142 minutes transport'.
   hidden: false
 - name: cost_est
   sql: cost_est
   type: TEXT
   primary_key: false
+  unique: false
   description: Estimated transplant cost text (e.g. 'US$5210.53').
   hidden: false
 - name: donor_ref_reg
   sql: donor_ref_reg
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to demographics.contrib_registry.
   hidden: false
 - name: recip_ref_reg
   sql: recip_ref_reg
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to recipients_demographics.recip_registry.
   hidden: false
 - name: compatscores
   sql: compatscores
   type: TEXT
   primary_key: false
+  unique: false
   description: 'JSON: {Hla_Score, Size_Score, Age_Score} sub-scores (provided by upstream
     system).'
   hidden: false
@@ -98,6 +108,7 @@ columns:
     = 'incompatible' THEN 'Incompatible' ELSE blood_compat END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Normalized ABO compatibility (case-folded) -> 'Compatible'/'Incompatible'/NULL.\n\
     \n[kb=20]\nA fundamental matching rule where recipient blood type determines acceptable\
     \ donor types. Type O is the universal donor; Type AB is the universal recipient.\
@@ -113,6 +124,7 @@ columns:
     = 'incompatible' THEN 0 ELSE NULL END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "True/false ABO compatibility (NULL when blood_compat is NULL/missing).\n\
     \n[kb=20]\nA fundamental matching rule where recipient blood type determines acceptable\
     \ donor types. Type O is the universal donor; Type AB is the universal recipient.\
@@ -127,24 +139,28 @@ columns:
   sql: CAST(substr(distance, 1, instr(distance, ' ') - 1) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Distance in miles (parsed).
   hidden: false
 - name: distance_km
   sql: CAST(substr(distance, 1, instr(distance, ' ') - 1) AS REAL) * 1.609344
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Distance in km (miles * 1.609344).
   hidden: false
 - name: exp_isch_minutes
   sql: CAST(substr(exp_isch_time, 1, instr(exp_isch_time, ' ') - 1) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Expected cold ischemia time in minutes (parsed).
   hidden: false
 - name: exp_transport_minutes
   sql: CAST(substr(exp_time, 1, instr(exp_time, ' ') - 1) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Expected transport time in minutes (parsed).
   hidden: false
 - name: total_ischemia_minutes
@@ -152,6 +168,7 @@ columns:
     1, instr(exp_time, ' ') - 1) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Total Ischemia Time = T_cold + T_warm (KB). Uses exp_isch_minutes\
     \ (cold) + exp_transport_minutes (warm).\n\n[kb=2]\nThe sum of the time from organ\
     \ recovery to preservation and the time from preservation to transplant. Formula:\
@@ -165,18 +182,21 @@ columns:
   sql: CAST(substr(cost_est, 4) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Estimated cost in USD (numeric, parsed from 'US$NNN.NN').
   hidden: false
 - name: compat_hla_score
   sql: CAST(json_extract(compatscores, '$.Hla_Score') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Pre-computed HLA sub-score (0-1).
   hidden: false
 - name: compat_size_score
   sql: CAST(json_extract(compatscores, '$.Size_Score') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Pre-computed Size sub-score (0-1). KB Size Compatibility Score.\n\n\
     [kb=6]\nA score derived from the ratio of donor and recipient BMI. Formula: $S_{size}\
     \ = 1 - |\\frac{BMI_{donor}}{BMI_{recipient}} - 1|$. \u2014 A score that assesses\
@@ -190,6 +210,7 @@ columns:
   sql: CAST(json_extract(compatscores, '$.Age_Score') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Pre-computed Age sub-score (0-1). KB Age Compatibility Score.\n\n\
     [kb=7]\nA normalized score based on the Donor-Recipient Age Difference. Formula:\
     \ $S_{age} = e^{-0.03 \\times |Age_{recipient} - Age_{donor}|}$, using a standard\
@@ -205,6 +226,7 @@ columns:
     + CAST(substr(exp_time, 1, instr(exp_time, ' ') - 1) AS REAL)))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Logistical Feasibility Index = 700/distance_km + 300/total_ischemia_minutes\
     \ (KB).\n\n[kb=8]\nA score combining geographic distance and Total Ischemia Time.\
     \ Formula: $I_{logistics} = (\\frac{700}{Distance_{km}}) + (\\frac{300}{T_{ischemia\\\
@@ -219,6 +241,7 @@ columns:
     + 0.4 * (1.0 - hla_mis_count / 6.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Immunological Compatibility Score = 0.6*I_ABO + 0.4*(1 - HLA_mismatch/6)\
     \ (KB).\n\n[kb=10]\nA weighted score based on ABO blood type compatibility status\
     \ and the HLA Mismatch Score. Formula: $S_{immune} = 0.6 \\times I_{ABO} + 0.4\
@@ -234,6 +257,7 @@ columns:
     '$.Size_Score') AS REAL) BETWEEN 0.9 AND 1.1 THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Optimal Donor-Recipient Match (KB): full ABO compat AND HLA mismatch=0\
     \ AND Size_Score in [0.9, 1.1].\n\n[kb=31]\nAn ideal match defined by meeting\
     \ three specific, stringent criteria simultaneously: 1) Full ABO Blood Type Compatibility.\
@@ -252,6 +276,7 @@ columns:
     '-mismatch (Partial Match)' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "HLA Mismatch Levels (KB 44): '0-mismatch' is a perfect HLA match (ideal).\
     \ '6-mismatch' is a complete mismatch across A, B, DR loci, the highest immunological\
     \ barrier outside ABO/positive crossmatch. Intermediate counts are partial matches.\n\

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: account
 sql_table: account
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: accindex
   type: TEXT
   primary_key: true
+  unique: false
   description: 'Account primary key. Used as the natural grouping key for KB metrics.
     The KB #81 (member count per cluster) and KB #83 (member account IDs per cluster)
     helpers are encoded as named measures on moderationaction (member_count, member_account_ids).'
@@ -17,11 +18,13 @@ columns:
   sql: acctident
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: platident
   sql: platident
   type: TEXT
   primary_key: false
+  unique: false
   description: "Platform identifier. Per KB #80, this is the cluster identifier used\
     \ to group accounts in an Amplification Network and similar cluster-level rules.\n\
     \n[kb=80]\nIn this context, the platform identifier (`platident`) associated with\
@@ -36,16 +39,19 @@ columns:
   sql: plattype
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: acctcreatedate
   sql: acctcreatedate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: acctagespan
   sql: acctagespan
   type: INT
   primary_key: false
+  unique: false
   description: 'Account age in days since creation. Denominator of AAF (KB #0).'
   hidden: false
   format:
@@ -54,6 +60,7 @@ columns:
   sql: acctstatus
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Account status enum (Active / Deleted / Suspended / Dormant). KB #15
     (Dormant Bot) checks acctstatus=''Dormant''.'
   hidden: false
@@ -61,11 +68,13 @@ columns:
   sql: acctcategory
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: authstatus
   sql: authstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

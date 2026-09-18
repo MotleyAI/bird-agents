@@ -1,19 +1,24 @@
-version: 6
+version: 10
 name: vaccine_efficiency_rank
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: vaccinedetails
     columns:
     - name: efficiency_rank
-      type: DOUBLE
       sql: RANK() OVER (ORDER BY CAST(vialtally AS REAL) * 10 / NULLIF(container.volliters,
         0) DESC)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: vacregistry
   - name: ser
   - name: efficiency_rank
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.ser\"\
   \ AS ser, \"vaccinedetails.efficiency_rank\" AS efficiency_rank FROM (SELECT\n \
@@ -29,6 +34,7 @@ columns:
   sql: vacregistry
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -36,6 +42,7 @@ columns:
   sql: ser
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Storage Efficiency Ratio (SER). How efficiently container volume is
     utilized: VialTally * 10 / VolLiters (KB #5). Reaches container.volliters via
     the FK join.'
@@ -44,6 +51,7 @@ columns:
   sql: efficiency_rank
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

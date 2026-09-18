@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: registration_confidence_level
 source_queries:
-- version: 3
+- version: 4
   name: pc_per_arcref
   source_model: scanpointcloud
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: reg_per_arcref
   source_model: scanregistration
   measures:
@@ -22,7 +24,9 @@ source_queries:
   - name: arcref
   - name: logmethod
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: merged
   source_model:
     source_name: pc_per_arcref
@@ -31,6 +35,7 @@ source_queries:
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
   dimensions:
   - name: arcref
   - name: scanresolmm
@@ -41,21 +46,29 @@ source_queries:
   - name: logmethod
     model: reg_per_arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: merged
     columns:
     - name: rar
-      type: DOUBLE
       sql: scanresolmm / (reg_per_arcref__logaccumm * sqrt(1 + reg_per_arcref__errvalmm
         / reg_per_arcref__logaccumm))
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: registration_confidence_level
-      type: TEXT
       sql: CASE WHEN (scanresolmm / (reg_per_arcref__logaccumm * sqrt(1 + reg_per_arcref__errvalmm
         / reg_per_arcref__logaccumm))) > 1.5 AND reg_per_arcref__logmethod LIKE '%Target%'
         THEN 'High Confidence' WHEN (scanresolmm / (reg_per_arcref__logaccumm * sqrt(1
         + reg_per_arcref__errvalmm / reg_per_arcref__logaccumm))) >= 1.0 THEN 'Medium
         Confidence' ELSE 'Low Confidence' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: rar:avg
     name: rar
@@ -64,6 +77,8 @@ source_queries:
   - name: reg_per_arcref__logmethod
   - name: registration_confidence_level
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"merged.arcref\" AS arcref, \"merged.reg_per_arcref__logmethod\"\
   \ AS reg_per_arcref__logmethod, \"merged.registration_confidence_level\" AS registration_confidence_level,\
@@ -115,21 +130,25 @@ columns:
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: reg_per_arcref__logmethod
   sql: reg_per_arcref__logmethod
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: registration_confidence_level
   sql: registration_confidence_level
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rar
   sql: rar
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

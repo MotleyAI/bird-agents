@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: products
 sql_table: products
 query_variables: {}
@@ -8,18 +8,21 @@ columns:
   sql: prodcode
   type: TEXT
   primary_key: true
+  unique: false
   description: Unique product code. PK.
   hidden: false
 - name: prodlabel
   sql: prodlabel
   type: TEXT
   primary_key: false
+  unique: false
   description: Commercial product label.
   hidden: false
 - name: prodcat
   sql: prodcat
   type: TEXT
   primary_key: false
+  unique: false
   description: "Product category / therapeutic class. KB #22 (Temperature-Sensitive\
     \ Product Categories) names the principal cold-chain categories: Vaccines, Biologics\
     \ (incl. monoclonal antibodies and recombinant proteins), Blood Products (incl.\
@@ -37,6 +40,7 @@ columns:
   sql: maker
   type: TEXT
   primary_key: false
+  unique: false
   description: Manufacturer name. NULL means manufacturer not specified.
   hidden: false
 measures: []

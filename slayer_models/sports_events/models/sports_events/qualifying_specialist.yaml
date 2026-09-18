@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: qualifying_specialist
 source_queries:
-- version: 3
+- version: 4
   name: best_qual_per_driver
   source_model: qualifying
   dimensions:
@@ -12,21 +12,32 @@ source_queries:
   - name: px_pos
   - name: best_qualifying_seconds
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: best_qual_per_driver
     columns:
     - name: pole_seconds
-      type: DOUBLE
       sql: MIN(best_qualifying_seconds) OVER (PARTITION BY rbind)
-    - name: qualifying_time_deficit_to_pole
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: qualifying_time_deficit_to_pole
       sql: best_qualifying_seconds - MIN(best_qualifying_seconds) OVER (PARTITION
         BY rbind)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: is_qualifying_specialist
-      type: BOOLEAN
       sql: (best_qualifying_seconds - MIN(best_qualifying_seconds) OVER (PARTITION
         BY rbind)) < 0.2
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: qualkey
   - name: rbind
@@ -38,6 +49,8 @@ source_queries:
   - name: qualifying_time_deficit_to_pole
   - name: is_qualifying_specialist
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"best_qual_per_driver.qualkey\" AS qualkey, \"best_qual_per_driver.rbind\"\
   \ AS rbind, \"best_qual_per_driver.pilotrec\" AS pilotrec, \"best_qual_per_driver.corptag\"\
@@ -83,6 +96,7 @@ columns:
   sql: qualkey
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Unique qualifying record identifier.
   hidden: false
   format:
@@ -91,6 +105,7 @@ columns:
   sql: rbind
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to races.
   hidden: false
   format:
@@ -99,6 +114,7 @@ columns:
   sql: pilotrec
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to drivers.
   hidden: false
   format:
@@ -107,6 +123,7 @@ columns:
   sql: corptag
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to constructors.
   hidden: false
   format:
@@ -115,6 +132,7 @@ columns:
   sql: px_pos
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Final qualifying position (1 = Pole Position, KB #10).'
   hidden: false
   format:
@@ -123,6 +141,7 @@ columns:
   sql: best_qualifying_seconds
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Driver''s best qualifying time (across Q1/Q2/Q3) in seconds. Used
     as T_driver in KB #28 Qualifying Time Deficit to Pole.'
   hidden: false
@@ -130,16 +149,19 @@ columns:
   sql: pole_seconds
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: qualifying_time_deficit_to_pole
   sql: qualifying_time_deficit_to_pole
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_qualifying_specialist
   sql: is_qualifying_specialist
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

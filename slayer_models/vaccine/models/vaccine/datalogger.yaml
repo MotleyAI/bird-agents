@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: datalogger
 sql_table: datalogger
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: loggerreg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: logflag
   sql: logflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: loginterval
   sql: loginterval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -25,6 +28,7 @@ columns:
   sql: transmitflag
   type: TEXT
   primary_key: false
+  unique: false
   description: "Data transmission status. 'Real-time' indicates data is being transmitted\
     \ to the central system without delay as it is collected (KB #23).\n\n[kb=23]\n\
     Indicates data is being transmitted to the central system without delay as it\
@@ -37,11 +41,13 @@ columns:
   sql: datauptime
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: datapct
   sql: datapct
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -49,26 +55,31 @@ columns:
   sql: batteryswap
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: firmvers
   sql: firmvers
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: softupdate
   sql: softupdate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: syshealth
   sql: syshealth
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: memusepct
   sql: memusepct
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -76,6 +87,7 @@ columns:
   sql: storecapmb
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -83,6 +95,7 @@ columns:
   sql: storeremainmb
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -90,11 +103,13 @@ columns:
   sql: netsignal
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: commproto
   sql: commproto
   type: TEXT
   primary_key: false
+  unique: false
   description: Communication protocol used by the data logger (raw enum). See is_commproto_rf
     / is_commproto_satellite for KB-illustrated values.
   hidden: false
@@ -103,11 +118,13 @@ columns:
   sql: syncflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: syncfreqhr
   sql: syncfreqhr
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -115,17 +132,20 @@ columns:
   sql: containlog
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: shiplog
   sql: shiplog
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lhi
   sql: container.batterypct / 100.0 * (1 - COALESCE(CAST(memusepct AS REAL) / 100,
     0)) * COALESCE(datapct, 0) / 100.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Logger Health Index (LHI). Overall health score for the data logger:\
     \ BatteryPct/100 * (1 - MemUsePct/100) * DataPct/100 (KB #6). BatteryPct comes\
     \ from the joined container row.\n\n[kb=6]\nLHI = \\frac{BatteryPct}{100} \\times\
@@ -141,6 +161,7 @@ columns:
     AND container.pwrbackupflag = 'Not Available') THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Logger Failure Risk flag. True when LHI < 0.3 OR (BatteryPct < 20\
     \ AND PwrBackupFlag = 'Not Available') (KB #15). BatteryPct and PwrBackupFlag\
     \ come from the joined container row.\n\n[kb=15]\nA logger where LHI < 0.3 or\
@@ -154,6 +175,7 @@ columns:
   sql: CASE WHEN commproto = 'RF' THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "True when CommProto = 'RF': uses 433MHz ISM band radio frequency transmission\
     \ with FSK modulation for short-range data exchange below 100m (KB #22).\n\n[kb=22]\n\
     Uses 433MHz ISM band radio frequency transmission with FSK modulation for short-range\
@@ -166,6 +188,7 @@ columns:
   sql: CASE WHEN commproto = 'Satellite' THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "True when CommProto = 'Satellite': uses satellite networks for global\
     \ coverage and reliable data transmission (KB #26).\n\n[kb=26]\nIndicates the\
     \ system is using satellite networks for global coverage and reliable data transmission.\

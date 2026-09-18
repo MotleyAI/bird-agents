@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: scanprocessing
 sql_table: scanprocessing
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: flowregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,21 +16,25 @@ columns:
   sql: equipref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: zoneref
   sql: zoneref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: flowsoft
   sql: flowsoft
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: flowhrs
   sql: flowhrs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -37,6 +42,7 @@ columns:
   sql: proccpu
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -44,6 +50,7 @@ columns:
   sql: memusagegb
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -51,6 +58,7 @@ columns:
   sql: procgpu
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -58,36 +66,43 @@ columns:
   sql: stashloc
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: safebak
   sql: safebak
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: datalevel
   sql: datalevel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: metabench
   sql: metabench
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: coordframe
   sql: coordframe
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: elevref
   sql: elevref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: remaingb
   sql: remaingb
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -95,26 +110,31 @@ columns:
   sql: stationlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: camcal
   sql: camcal
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lensdist
   sql: lensdist
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: colortune
   sql: colortune
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: flowstage
   sql: flowstage
   type: TEXT
   primary_key: false
+  unique: false
   description: "Processing Stage (KB #27). Sequential workflow: 'Raw' (unprocessed)\
     \ \u2192 'Aligned' (multiple scans registered) \u2192 'Cleaned' (noise/artifacts\
     \ removed) \u2192 'Meshed' (point cloud \u2192 polygon mesh) \u2192 'Textured'\
@@ -133,6 +153,7 @@ columns:
   sql: fmtver
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

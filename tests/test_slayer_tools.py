@@ -8,6 +8,9 @@ from pathlib import Path
 import pytest
 
 from bird_interact_agents.config import settings
+from bird_interact_agents.slayer_pipeline.portable_connection import (
+    reanchor_connection_string,
+)
 
 
 def _tmp_models_copy(tmp_path, db_name: str) -> str:
@@ -18,6 +21,26 @@ def _tmp_models_copy(tmp_path, db_name: str) -> str:
     src = Path(__file__).resolve().parent.parent / "slayer_models" / db_name
     dst = tmp_path / db_name
     shutil.copytree(src, dst)
+    # SLayer 0.10.2 opens the datasource DB during sql_sync/translation, so the
+    # committed (machine-agnostic) connection_string must be re-anchored at the
+    # locally-materialised DB — the same reanchor the real task-prep path runs.
+    ds_dir = dst / "datasources"
+    if ds_dir.exists():
+        import re
+        for dsf in ds_dir.glob("*.yaml"):
+            txt = dsf.read_text(encoding="utf-8")
+
+            def _sub(m: "re.Match[str]") -> str:
+                anchored = reanchor_connection_string(
+                    m.group(1), db_name, Path(settings.db_path),
+                    db_root=Path(settings.db_path),
+                )
+                return f"connection_string: {anchored}"
+
+            dsf.write_text(
+                re.sub(r"connection_string:\s*(\S+)", _sub, txt),
+                encoding="utf-8",
+            )
     return str(dst)
 
 
@@ -54,9 +77,11 @@ async def test_submit_query_tool_with_valid_slayer_query(tmp_path):
     # Trivial valid SLayer query — exercises sql_sync + execute_submit_action.
     # Likely won't match the gold answer but should not error during translate.
     result = await agent_mod.submit_query.handler({
-        "source_model": "observatories",
-        "dimensions": ["observstation"],
-        "limit": 1,
+        "query": {
+            "source_model": "observatories",
+            "dimensions": ["observstation"],
+            "limit": 1,
+        },
     })
     text = result["content"][0]["text"]
     assert "Generated SQL:" in text
@@ -88,12 +113,11 @@ async def test_submit_query_tool_with_invalid_json(tmp_path):
         "result": None,
     })
 
-    # DEV-1555 CR r1 unification: passing neither `source_model` nor
-    # `queries` is the "invalid call" case — the wrapper rejects it
-    # with a clear error before any JSON parsing happens.
+    # A call missing `query` (or with a non-object/list value) is rejected
+    # with the two-shapes message before any compilation happens.
     result = await agent_mod.submit_query.handler({})
-    text = result["content"][0]["text"]
-    assert "source_model" in text or "queries" in text
+    text = result["content"][0]["text"].lower()
+    assert "object" in text and ("array" in text or "list" in text)
 
 
 def test_otf_slayer_one_shot_tool_list_includes_unified_query_wrapper():

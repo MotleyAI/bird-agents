@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: news_recommendations
 sql_table: recommendations
 query_variables: {}
@@ -8,24 +8,28 @@ columns:
   sql: reckey
   type: INT
   primary_key: true
+  unique: false
   description: Primary key.
   hidden: false
 - name: alglabel
   sql: alglabel
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Algorithm: Contextual, Content-based, Collaborative, Hybrid.'
   hidden: false
 - name: stratlabel
   sql: stratlabel
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Strategy: Trending, Editorial, Similar, Personalized.'
   hidden: false
 - name: posval
   sql: posval
   type: INT
   primary_key: false
+  unique: false
   description: "Position/rank in the list. KB #28: a recommendation placed in position\
     \ 3 may benefit from higher prominence than lower-ranked placements.\n\n[kb=28]\n\
     A recommendation placed in position 3, for example, may benefit from higher prominence\
@@ -39,18 +43,21 @@ columns:
   sql: recpage
   type: TEXT
   primary_key: false
+  unique: false
   description: Page where the recommendation is shown.
   hidden: false
 - name: recsec
   sql: recsec
   type: TEXT
   primary_key: false
+  unique: false
   description: Section where the recommendation is shown.
   hidden: false
 - name: recscore
   sql: recscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Recommendation relevance score (0..1). KB #11 PP (Personalization\
     \ Priority): content that strongly matches user preferences and exhibits high\
     \ interaction rates is prioritized in personalized recommendations \u2014 recscore\
@@ -67,30 +74,35 @@ columns:
   sql: confval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Algorithm confidence score (0..1).
   hidden: false
 - name: divval
   sql: divval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Diversity score.
   hidden: false
 - name: novval
   sql: novval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Novelty score.
   hidden: false
 - name: seryval
   sql: seryval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Serendipity score.
   hidden: false
 - name: artlink
   sql: artlink
   type: INT
   primary_key: false
+  unique: false
   description: FK to news_articles.artkey.
   hidden: false
 measures: []

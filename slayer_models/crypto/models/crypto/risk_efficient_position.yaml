@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: risk_efficient_position
 source_queries:
-- version: 3
+- version: 4
   name: rar_stage
   source_model: risk_adjusted_return
   measures:
@@ -10,21 +10,13 @@ source_queries:
   dimensions:
   - name: recordvault
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: orders
-    joins:
-    - target_model: rar_stage
-      join_pairs:
-      - - recordvault
-        - recordvault
-    - target_model: riskandmargin
-      join_pairs:
-      - - recordvault
-        - ordervault
     columns:
     - name: is_risk_efficient
-      type: BOOLEAN
       sql: rar_stage.rar_v > 1.5 AND (ABS(riskandmargin__orders.dealquote - CASE riskandmargin.risk_margin_profile
         ->> '$.position.posedge' WHEN 'Long' THEN CAST(riskandmargin.risk_margin_profile
         ->> '$.price_levels.stopquote' AS REAL) ELSE CAST(riskandmargin.risk_margin_profile
@@ -33,10 +25,27 @@ source_queries:
         THEN CAST(riskandmargin.risk_margin_profile ->> '$.price_levels.trigquote'
         AS REAL) ELSE CAST(riskandmargin.risk_margin_profile ->> '$.price_levels.stopquote'
         AS REAL) END), 0)) < 0.5
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: rar_stage
+      join_pairs:
+      - - recordvault
+        - recordvault
+      join_type: left
+    - target_model: riskandmargin
+      join_pairs:
+      - - recordvault
+        - ordervault
+      join_type: left
   dimensions:
   - name: recordvault
   - name: is_risk_efficient
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.is_risk_efficient\"\
   \ AS is_risk_efficient FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\"\
@@ -92,11 +101,13 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_risk_efficient
   sql: is_risk_efficient
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

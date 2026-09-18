@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: testsessions
 sql_table: testsessions
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: sessionregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: stampmoment
   sql: stampmoment
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: devscope
   sql: devscope
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cpuusepct
   sql: cpuusepct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -30,6 +34,7 @@ columns:
   sql: memusemb
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -37,11 +42,13 @@ columns:
   sql: driverstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: fwupdur
   sql: fwupdur
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -49,6 +56,7 @@ columns:
   sql: wlsignal
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Wireless signal strength in dBm (KB #25: -30 excellent, -90 poor;\
     \ > -50 optimal, -50 to -70 good, < -70 occasional disconnects).\n\n[kb=25]\n\
     Typically measured in dBm, with values ranging from -30 (excellent) to -90 (poor).\
@@ -67,6 +75,7 @@ columns:
   sql: battlevel
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -74,6 +83,7 @@ columns:
   sql: battcapmah
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -81,6 +91,7 @@ columns:
   sql: battlifeh
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -88,6 +99,7 @@ columns:
   sql: chgtimemin
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -95,6 +107,7 @@ columns:
   sql: qchgflag
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -102,11 +115,13 @@ columns:
   sql: usbpwrline
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: latms
   sql: latms
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Overall latency in ms (KB #20: < 1.0ms enables split-second reactions;\
     \ > 5.0ms is noticeable input delay).\n\n[kb=20]\nMeasured in milliseconds, representing\
     \ the delay between user input and system response. Values below 1.0ms enable\
@@ -124,6 +139,7 @@ columns:
   sql: inplagms
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -131,6 +147,7 @@ columns:
   sql: pollratehz
   type: INT
   primary_key: false
+  unique: false
   description: "Polling rate in Hz (KB #21: 125Hz office, 500Hz casual, 1000Hz competitive,\
     \ 4000Hz+ pro esports).\n\n[kb=21]\nMeasured in Hertz (times per second), representing\
     \ how often the device reports its state to the computer. Values of 125Hz are\
@@ -148,6 +165,7 @@ columns:
   sql: dbtimems
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -155,6 +173,7 @@ columns:
   sql: resptimems
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -162,6 +181,7 @@ columns:
   sql: clkregms
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -169,6 +189,7 @@ columns:
   sql: (pollratehz * 1.0 / 100) * (1 - (inplagms + resptimems) * 1.0 / 30) * 10
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Input Responsiveness Score (IRS) \u2014 polling rate, input lag, response\
     \ time. Higher = more responsive input.\n\n[kb=2]\nIRS = \\frac{PollRateHz}{100}\
     \ \\times \\left(1 - \\frac{InpLagMs + RespTimeMs}{30}\\right) \\times 10, \\\
@@ -183,6 +204,7 @@ columns:
   sql: inplagms < 1.0 AND pollratehz >= 1000 AND latms < 2.0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Minimal Input Latency (KB #17), session-level subset: InpLagMs < 1.0\
     \ AND PollRateHz >= 1000 AND LatMs < 2.0. Full KB also requires ClkLat < 0.8 (on\
     \ performance, accessible from session via the performance \u2192 testsessions\

@@ -1,55 +1,70 @@
-version: 7
+version: 10
 name: polar_base_energy_security_status
 source_queries:
-- version: 3
+- version: 4
   name: rec_pbess
   source_model:
     source_name: thermalsolarwindandgrid
     columns:
     - name: rec_h2_ok_flag
-      type: DOUBLE
       sql: CASE WHEN ((json_extract(renewablemetrics, '$.solar.output_w') + json_extract(renewablemetrics,
         '$.wind.output_w')) * 100.0 / NULLIF(fuelcelloutputw + json_extract(renewablemetrics,
         '$.solar.output_w') + json_extract(renewablemetrics, '$.wind.output_w'), 0))
         > 65 AND hydrogenlevelpercent > 70 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: rec_h2_ok_flag:min
     name: rec_h2_ok
   dimensions:
   - name: thermaleqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: esi_pbess
   source_model:
     source_name: powerbattery
     columns:
     - name: esi_batt_ok_flag
-      type: DOUBLE
       sql: CASE WHEN (energyefficiencypercent * CASE powersource WHEN 'Solar' THEN
         1.5 WHEN 'Wind' THEN 1.5 WHEN 'Hybrid' THEN 1.2 WHEN 'Battery' THEN 1.0 WHEN
         'Diesel' THEN 0.7 ELSE 0 END) > 0.7 AND json_extract(batterystatus, '$.level_percent')
         > 75 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: esi_batt_ok_flag:min
     name: esi_batt_ok
   dimensions:
   - name: pwrbatteqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: rssi_pbess
   source_model:
     source_name: resource_self_sufficiency_index
     columns:
     - name: rssi_ok_flag
-      type: DOUBLE
       sql: CASE WHEN rssi > 0.75 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: rssi_ok_flag:min
     name: rssi_ok
   dimensions:
   - name: thermaleqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: rec_pbess
     joins:
@@ -57,16 +72,20 @@ source_queries:
       join_pairs:
       - - thermaleqref
         - pwrbatteqref
+      join_type: left
     - target_model: rssi_pbess
       join_pairs:
       - - thermaleqref
         - thermaleqref
+      join_type: left
   measures:
   - formula: rec_h2_ok:min * esi_pbess.esi_batt_ok:min * rssi_pbess.rssi_ok:min
     name: is_energy_secure
   dimensions:
   - name: thermaleqref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"rec_pbess.thermaleqref\" AS thermaleqref, \"rec_pbess.rec_h2_ok_min\"\
   \ AS rec_h2_ok_min, \"rec_pbess.is_energy_secure\" AS is_energy_secure, \"rec_pbess.rssi_pbess.rssi_ok_min\"\
@@ -161,16 +180,19 @@ columns:
   sql: thermaleqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rec_h2_ok_min
   sql: rec_h2_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_energy_secure
   sql: is_energy_secure
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -178,11 +200,13 @@ columns:
   sql: rssi_pbess__rssi_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: esi_pbess__esi_batt_ok_min
   sql: esi_pbess__esi_batt_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

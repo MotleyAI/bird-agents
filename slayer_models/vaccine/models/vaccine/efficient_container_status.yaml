@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: efficient_container_status
 source_queries:
-- version: 3
+- version: 4
   name: ser_per_container
   source_model: vaccinedetails
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: containvac
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: tss_per_container
   source_model: sensordata
   measures:
@@ -19,23 +21,30 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: container
+    columns:
+    - name: is_efficient_container
+      sql: CASE WHEN ser_per_container.ser > 0.8 AND tss_per_container.tss > 0.9 THEN
+        1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: ser_per_container
       join_pairs:
       - - containregistry
         - containvac
+      join_type: left
     - target_model: tss_per_container
       join_pairs:
       - - containregistry
         - containlink
-    columns:
-    - name: is_efficient_container
-      type: BOOLEAN
-      sql: CASE WHEN ser_per_container.ser > 0.8 AND tss_per_container.tss > 0.9 THEN
-        1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: containregistry
   - name: ser
@@ -44,6 +53,8 @@ source_queries:
     model: tss_per_container
   - name: is_efficient_container
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"container.containregistry\" AS containregistry, \"container.ser_per_container.ser\"\
   \ AS ser_per_container__ser, \"container.tss_per_container.tss\" AS tss_per_container__tss,\
@@ -74,11 +85,13 @@ columns:
   sql: containregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ser_per_container__ser
   sql: ser_per_container__ser
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -86,6 +99,7 @@ columns:
   sql: tss_per_container__tss
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -93,6 +107,7 @@ columns:
   sql: is_efficient_container
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

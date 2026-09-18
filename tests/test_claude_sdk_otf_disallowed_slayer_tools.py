@@ -21,7 +21,6 @@ from __future__ import annotations
 
 _LEAK_TOOLS = {
     "mcp__slayer__query",
-    "mcp__slayer__query_nested",
     "mcp__slayer__describe_datasource",
     "mcp__slayer__edit_datasource",
     "mcp__slayer__delete_model",
@@ -114,9 +113,8 @@ def test_encoder_no_leak_and_closes_list_datasources_gap():
     disallowed = set(derive_disallowed_slayer_tools(SLAYER_MCP_TOOLS))
     assert disallowed.isdisjoint(allow)
     assert disallowed | allow == _surface()
-    # The encoder self-tests DAGs via slayer query/query_nested — allowed,
-    # never disallowed.
-    for t in ("mcp__slayer__query", "mcp__slayer__query_nested"):
+    # The encoder self-tests DAGs via slayer `query` — allowed, never disallowed.
+    for t in ("mcp__slayer__query",):
         assert t in allow
         assert t not in disallowed
     # Pre-existing leak the encoder's allow-list never granted and its old

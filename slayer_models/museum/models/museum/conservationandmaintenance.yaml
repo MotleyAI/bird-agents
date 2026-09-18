@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: conservationandmaintenance
 sql_table: conservationandmaintenance
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: conservemaintregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,16 +16,19 @@ columns:
   sql: artrefmaintained
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: hallrefmaintained
   sql: hallrefmaintained
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: surfreadrefobserved
   sql: surfreadrefobserved
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -32,26 +36,31 @@ columns:
   sql: conservetreatstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: treatpriority
   sql: treatpriority
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lastcleaningdate
   sql: lastcleaningdate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: nextcleaningdue
   sql: nextcleaningdue
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cleanintervaldays
   sql: cleanintervaldays
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -59,46 +68,55 @@ columns:
   sql: maintlog
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: incidentreportstatus
   sql: incidentreportstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: emergencydrillstatus
   sql: emergencydrillstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: stafftrainstatus
   sql: stafftrainstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: budgetallocstatus
   sql: budgetallocstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: maintbudgetstatus
   sql: maintbudgetstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: conservefreq
   sql: conservefreq
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: intervhistory
   sql: intervhistory
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: prevtreatments
   sql: prevtreatments
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -106,17 +124,20 @@ columns:
   sql: treateffectiveness
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: reversibilitypotential
   sql: reversibilitypotential
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: budget_score
   sql: CASE LOWER(TRIM(budgetallocstatus)) WHEN 'adequate' THEN 1.0 WHEN 'review required'
     THEN 0.5 WHEN 'insufficient' THEN 0.0 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric mapping of BudgetAllocStatus per KB #9 hint: Adequate=1.0,\
     \ Review Required=0.5, Insufficient=0.0. Used as the per-artifact budget-adequacy\
     \ signal that the BudgetRatio in the CBE formula needs (the underlying column\
@@ -133,6 +154,7 @@ columns:
   sql: LOWER(TRIM(budgetallocstatus)) = 'insufficient'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Boolean: BudgetAllocStatus = 'Insufficient'. Used by KB #17 Conservation\
     \ Budget Crisis composite predicate.\n\n[kb=17]\nOccurs when CBE < 0.5 AND at\
     \ least one artifact has ConserveStatus='Critical' and BudgetAllocStatus='Insufficient'.\
@@ -150,6 +172,7 @@ columns:
     WHEN 'review required' THEN 0.5 WHEN 'insufficient' THEN 0.0 ELSE NULL END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Helper column used to express the Conservation Budget Efficiency (CBE,\
     \ KB #9) numerator as a single sum-able expression on conservationandmaintenance.\
     \ Equals CPI * budget_score, where budget_score is the numeric mapping of BudgetAllocStatus\

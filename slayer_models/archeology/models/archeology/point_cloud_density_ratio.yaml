@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: point_cloud_density_ratio
 source_queries:
-- version: 3
+- version: 4
   name: pc_per_arcref
   source_model: scanpointcloud
   measures:
@@ -12,7 +12,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: sp_per_arcref
   source_model: scanspatial
   measures:
@@ -21,7 +23,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: pc_per_arcref
     joins:
@@ -29,12 +33,15 @@ source_queries:
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
   measures:
   - formula: totalpts:avg / (clouddense:avg * sp_per_arcref.aream2:avg)
     name: pcdr
   dimensions:
   - name: arcref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"pc_per_arcref.arcref\" AS arcref, \"pc_per_arcref.totalpts_avg\"\
   \ AS totalpts_avg, \"pc_per_arcref.clouddense_avg\" AS clouddense_avg, \"pc_per_arcref.pcdr\"\
@@ -68,11 +75,13 @@ columns:
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: totalpts_avg
   sql: totalpts_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -80,6 +89,7 @@ columns:
   sql: clouddense_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -87,6 +97,7 @@ columns:
   sql: pcdr
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -94,6 +105,7 @@ columns:
   sql: sp_per_arcref__aream2_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

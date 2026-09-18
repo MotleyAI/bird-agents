@@ -1,18 +1,23 @@
-version: 6
+version: 10
 name: art_avg
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: shipments
     columns:
     - name: k
       sql: '1'
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: art_score:avg
   dimensions:
   - name: k
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"shipments.k\" AS k, \"shipments.art_score_avg\" AS art_score_avg\
   \ FROM (SELECT\n  1 AS \"shipments.k\",\n  AVG(\n    CASE\n      WHEN LOWER(TRIM(shipment_overview\
@@ -26,11 +31,13 @@ columns:
   sql: k
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: art_score_avg
   sql: art_score_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Alternative Route Availability proxy (KB #30, SCRS sub-score, 0-10):
     low risk lane = 8, medium = 5, high = 2, unknown = 4. Used inside Supply Chain
     Resilience Score; not a KB-authored value but a heuristic the gold solution applies

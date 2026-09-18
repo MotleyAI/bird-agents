@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: powerbattery
 sql_table: powerbattery
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: powerbattregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,26 +16,31 @@ columns:
   sql: pwrbatteqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: powerstatus
   sql: powerstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: powersource
   sql: powersource
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: chargingstatus
   sql: chargingstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: powerconsumptionw
   sql: powerconsumptionw
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Power consumption (W). 5\u201350 small instruments, 20\u2013200 comms,\
     \ 500\u20135000 heating, 1000+ vehicles (KB #24).\n\n[kb=24]\nPower consumption\
     \ measured in watts varies by equipment type. Small scientific instruments typically\
@@ -53,6 +59,7 @@ columns:
   sql: energyefficiencypercent
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Energy efficiency %. <30 inefficient, 30\u201360 standard, 60\u2013\
     80 efficient, >80 highly efficient (KB #27).\n\n[kb=27]\nEnergy efficiency percentage\
     \ typically ranges from 10% to 99%. Values below 30% indicate inefficient systems\
@@ -71,6 +78,7 @@ columns:
   sql: batterystatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: esi
   sql: energyefficiencypercent * CASE powersource WHEN 'Solar' THEN 1.5 WHEN 'Wind'
@@ -78,6 +86,7 @@ columns:
     ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Energy Sustainability Index (KB #2): efficiency% x powersource multiplier\
     \ (Solar/Wind=1.5, Hybrid=1.2, Battery=1.0, Diesel=0.7, otherwise 0).\n\n[kb=2]\n\
     ESI = energyefficiencypercent \\times \\begin{cases} 1.5 & \\text{if powersource\
@@ -100,6 +109,7 @@ columns:
     Impact' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Energy Sustainability Classification (KB #13): Green (ESI > 0.8),\
     \ Intermediate (0.4 <= ESI <= 0.8), High Impact (ESI < 0.4).\n\n[kb=13]\nEquipment\
     \ is classified as 'Green' (ESI > 0.8), 'Intermediate' (ESI between 0.4 and 0.8),\
@@ -114,6 +124,7 @@ columns:
   sql: json_extract(batterystatus, '$.level_percent')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Battery level percent (extracted from batterystatus JSON).
   hidden: false
 measures: []

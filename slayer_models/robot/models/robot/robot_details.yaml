@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: robot_details
 sql_table: robot_details
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: botdetreg
   type: TEXT
   primary_key: true
+  unique: false
   description: "Robot primary key. Carrier for Robot Count measure (KB #56).\n\n[kb=56]\n\
     Let M be the model series, \\mathcal{R}_M be the set of unique robot identifiers\
     \ in M. Then Robot Count = |\\mathcal{R}_M| \u2014 The number of distinct robots\
@@ -20,21 +21,25 @@ columns:
   sql: mfgnameval
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: modelseriesval
   sql: modelseriesval
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: bottypeval
   sql: bottypeval
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: payloadcapkg
   sql: payloadcapkg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -42,6 +47,7 @@ columns:
   sql: reachmmval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -49,21 +55,25 @@ columns:
   sql: instdateval
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: fwversionval
   sql: fwversionval
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ctrltypeval
   sql: ctrltypeval
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ray
   sql: (julianday(robot_record.rects) - julianday(instdateval)) / 365.25
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Robot Age in Years (RAY) (KB #0): (record_timestamp \u2212 install_date)\
     \ in years. Joins robot_record.rects with this row's instdateval.\n\n[kb=0]\n\
     For a given robot R, let D be the instdateval from robot_details where botdetreg\
@@ -78,6 +88,7 @@ columns:
   sql: ((julianday(robot_record.rects) - julianday(instdateval)) / 365.25) >= 2
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Old Robot (KB #10): RAY >= 2 years.\n\n[kb=10]\nA robot is considered\
     \ old if RAY >= 2. \u2014 Indicates if a robot is old based on its age.\n[/kb=10]"
   label: Old Robot

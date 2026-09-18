@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: vaccinedetails
 sql_table: vaccinedetails
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: vacregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: vacvariant
   type: TEXT
   primary_key: false
+  unique: false
   description: "Vaccine type/variant. 'Viral Vector' uses a modified adenovirus Ad26\
     \ vector expressing SARS-CoV-2 spike protein, requiring -20 C storage with a 6-month\
     \ shelf life (KB #27).\n\n[kb=27]\nUses modified adenovirus Ad26 vector expressing\
@@ -28,26 +30,31 @@ columns:
   sql: mfgsource
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: batchlabel
   sql: batchlabel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: prodday
   sql: prodday
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: expireday
   sql: expireday
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lotmeasure
   sql: lotmeasure
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -55,6 +62,7 @@ columns:
   sql: vialtally
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -62,6 +70,7 @@ columns:
   sql: dosepervial
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -69,6 +78,7 @@ columns:
   sql: dosetotal
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -76,16 +86,19 @@ columns:
   sql: shipinject
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: containvac
   sql: containvac
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ser
   sql: CAST(vialtally AS REAL) * 10 / NULLIF(container.volliters, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Storage Efficiency Ratio (SER). How efficiently container volume is\
     \ utilized: VialTally * 10 / VolLiters (KB #5). Reaches container.volliters via\
     \ the FK join.\n\n[kb=5]\nSER = \\frac{VialTally \\times 10}{VolLiters} \u2014\

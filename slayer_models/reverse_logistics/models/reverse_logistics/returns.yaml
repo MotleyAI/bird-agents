@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: returns
 sql_table: returns
 query_variables: {}
@@ -8,31 +8,37 @@ columns:
   sql: casenum
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: logtime
   sql: logtime
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: srctxn
   sql: srctxn
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: itemlink
   sql: itemlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: revdate
   sql: revdate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: dayslapsed
   sql: dayslapsed
   type: INT
   primary_key: false
+  unique: false
   description: "Days Lapsed: number of calendar days between original transaction\
     \ and completion of return processing.\n\n[kb=16]\nDifference in days between\
     \ transaction date and point at which funds/refund are issued. \u2014 Number of\
@@ -48,6 +54,7 @@ columns:
   sql: return_channel
   type: TEXT
   primary_key: false
+  unique: false
   description: "Return Channels \u2014 pathway through which the customer sent the\
     \ item back. 'Store' (in-person retail outlet), 'Courier' (doorstep pickup), 'Mail'\
     \ (national post), 'Locker' (automated drop-box), 'Pickup' (retailer-scheduled\
@@ -66,11 +73,13 @@ columns:
   sql: return_details
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: shipping_fee
   sql: CAST(json_extract(return_details, '$.shipping.fee') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Shipping Fee (S_f): cost charged by the logistics provider for transporting\
     \ the returned item.\n\n[kb=10]\nA monetary amount reflecting transportation cost\
     \ incurred for a single return shipment. \u2014 Cost charged by the logistics\
@@ -83,6 +92,7 @@ columns:
   sql: CAST(json_extract(return_details, '$.fraud.fraud_flags') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Number of fraud flags raised on this return (0-5).\n\n[kb=7]\n$$FFS\
     \ = F_f \\times w_{risk}$$ where $F_f$ is number of fraud flags and $w_{risk}$\
     \ is weight based on Fraud Risk Level. \u2014 Composite score that weights fraud\
@@ -95,6 +105,7 @@ columns:
   sql: TRIM(json_extract(return_details, '$.fraud.risk_level'), '"')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Fraud Risk Level \u2014 qualitative grading of suspected fraud severity.\
     \ 'Low', 'Medium', or 'High'.\n\n[kb=21]\nThere are 3 different levels: 'Low',\
     \ 'Medium' and 'High'. \u2014 Qualitative grading of suspected fraud severity\
@@ -108,6 +119,7 @@ columns:
     THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Risk weight for FFS \u2014 Low=1, Medium=2, High=3 (KB does not pin\
     \ exact weights; using ascending-by-severity ordinals).\n\n[kb=7]\n$$FFS = F_f\
     \ \\times w_{risk}$$ where $F_f$ is number of fraud flags and $w_{risk}$ is weight\
@@ -123,6 +135,7 @@ columns:
     1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 ELSE NULL END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Fraud Flag Severity Score (FFS) = F_f * w_risk. F_f is fraud_flags;\
     \ w_risk is 1/2/3 for Low/Medium/High.\n\n[kb=7]\n$$FFS = F_f \\times w_{risk}$$\
     \ where $F_f$ is number of fraud flags and $w_{risk}$ is weight based on Fraud\
@@ -136,6 +149,7 @@ columns:
   sql: TRIM(json_extract(return_details, '$.authorization.warranty_status'), '"')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Warranty Status \u2014 'Valid' (within manufacturer/retailer warranty),\
     \ 'Expired' (term lapsed), 'Not Applicable' (no warranty / proof unavailable).\n\
     \n[kb=27]\n'Valid' is within manufacturer or retailer warranty period; 'Expired'\
@@ -150,6 +164,7 @@ columns:
   sql: TRIM(json_extract(return_details, '$.authorization.warranty_claim'), '"')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Warranty claim identifier (NULL if none filed).\n\n[kb=6]\n$$WCR =\
     \ \\frac{N_{claims}}{T_r}$$ where $N_{claims}$ is the number of authorised warranty\
     \ claims. \u2014 Proportion of returns that include a valid warranty claim.\n\
@@ -165,6 +180,7 @@ columns:
     = 'Approved' THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "1 if an authorised warranty claim was filed for this return (claim\
     \ id present AND auth_status='Approved'), else 0. KB #6 N_claims indicator.\n\n\
     [kb=6]\n$$WCR = \\frac{N_{claims}}{T_r}$$ where $N_{claims}$ is the number of\

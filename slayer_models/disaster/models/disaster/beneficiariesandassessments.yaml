@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: beneficiariesandassessments
 sql_table: beneficiariesandassessments
 query_variables: {}
@@ -8,36 +8,43 @@ columns:
   sql: beneregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: benedistref
   sql: benedistref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: beneopsref
   sql: beneopsref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: beneregister
   sql: beneregister
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vulnerabilityreview
   sql: vulnerabilityreview
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: needsassessstatus
   sql: needsassessstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: distequityidx
   sql: distequityidx
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -45,6 +52,7 @@ columns:
   sql: benefeedbackscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -52,17 +60,20 @@ columns:
   sql: commengagelvl
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: localcapacitygrowth
   sql: localcapacitygrowth
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: commengage_numeric
   sql: CASE commengagelvl WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN
     3 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Numeric mapping of commengagelvl used by KB #19 (BSI) and KB #38 (CEE):
     Low=1, Medium=2, High=3, else=0.'
   hidden: false
@@ -71,6 +82,7 @@ columns:
     THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * 20 + distequityidx * 50
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Beneficiary Satisfaction Index (BSI, KB #19): benefeedbackscore*10\
     \ + commengage_numeric*20 + distequityidx*50, with commengage_numeric mapping\
     \ Low=1, Medium=2, High=3.\n\n[kb=19]\nBSI = benefeedbackscore \\times 10 + (commengage\\\
@@ -87,6 +99,7 @@ columns:
     WHEN 'High' THEN 1.2 WHEN 'Medium' THEN 1.0 WHEN 'Low' THEN 0.8 ELSE 0 END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Resource Distribution Equity (RDE, KB #31): distequityidx * (1 + transportation.distributionpoints/20)\
     \ * (1 - (100 - transportation.deliverysuccessrate)/100) * coordeffect_factor.\n\
     \n[kb=31]\nRDE = distequityidx \\times \\left(1 + \\frac{distributionpoints}{20}\\\
@@ -105,6 +118,7 @@ columns:
     END) * ((coordinationandevaluation.stakeholdersatisf + 1) / 5.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Community Engagement Effectiveness (CEE, KB #38): (BSI/100) * commengage_numeric\
     \ * ((stakeholdersatisf+1)/5).\n\n[kb=38]\nCEE = \\frac{BSI}{100} \\times commengage\\\
     _numeric \\times \\left(\\frac{stakeholdersatisf + 1}{5}\\right), \\text{ where\
@@ -121,6 +135,7 @@ columns:
     THEN 3 ELSE 0 END) * 20 + distequityidx * 50) > 70
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Community Resilience Builder (KB #28): localcapacitygrowth='Active'\
     \ AND commengagelvl='High' AND BSI>70.\n\n[kb=28]\nOperations where localcapacitygrowth\
     \ is 'Active' AND commengagelvl is 'High' AND BSI > 70, representing efforts that\
@@ -135,6 +150,7 @@ columns:
     = 'Low'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Vulnerable Population Hotspot (KB #23): vulnerabilityreview='Complete'\
     \ AND distequityidx<0.3 AND coordeffectlvl='Low'.\n\n[kb=23]\nAreas where vulnerabilityreview\
     \ is 'Complete' with distequityidx < 0.3 AND coordeffectlvl is 'Low', indicating\
@@ -152,6 +168,7 @@ columns:
     0.4 AND distequityidx < 0.5 AND transportation.distributionpoints < 5
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Resource Distribution Inequity (KB #48): RDE<0.4 AND distequityidx<0.5\
     \ AND distributionpoints<5.\n\n[kb=48]\nOperations where RDE < 0.4 AND distequityidx\
     \ < 0.5 AND distributionpoints < 5, indicating serious inequities in how resources\
@@ -171,6 +188,7 @@ columns:
     THEN 2 WHEN 'High' THEN 3 ELSE 0 END) * 20 + distequityidx * 50) > 70)
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Community Resilience Opportunity (KB #46): CEE>2.5 AND vulnerabilityreview='Complete'\
     \ AND NOT is_community_resilience_builder.\n\n[kb=46]\nAreas where CEE > 2.5 AND\
     \ vulnerabilityreview is 'Complete' BUT NOT qualifying as Community Resilience\

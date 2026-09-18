@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: showcases
 sql_table: showcases
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: showcasereg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: hallref
   sql: hallref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: airtightness
   sql: airtightness
   type: INT
   primary_key: false
+  unique: false
   description: "Showcase airtightness (KB #26): REAL value typically ranging 0.01\
     \ (extremely airtight, <0.01 air changes/day) to 5.0 (poor, multiple changes/day).\
     \ Museum-grade typically <0.1.\n\n[kb=26]\nA REAL value typically ranging from\
@@ -34,36 +37,43 @@ columns:
   sql: showcasematerial
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sealcondition
   sql: sealcondition
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: maintstatus
   sql: maintstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: filterstatus
   sql: filterstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: silicagelstatus
   sql: silicagelstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: silicagelchangedate
   sql: silicagelchangedate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: humiditybuffercap
   sql: humiditybuffercap
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -71,6 +81,7 @@ columns:
   sql: pollutantabsorbcap
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -78,6 +89,7 @@ columns:
   sql: leakrate
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -85,6 +97,7 @@ columns:
   sql: pressurepa
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -92,21 +105,25 @@ columns:
   sql: inertgassysstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: firesuppresssys
   sql: firesuppresssys
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: empowerstatus
   sql: empowerstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: backupsysstatus
   sql: backupsysstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []
@@ -115,11 +132,6 @@ joins:
   join_pairs:
   - - hallref
     - hallrecord
-  join_type: left
-- target_model: environmentalreadingscore
-  join_pairs:
-  - - showcasereg
-    - showcaseref
   join_type: left
 filters: []
 hidden: false

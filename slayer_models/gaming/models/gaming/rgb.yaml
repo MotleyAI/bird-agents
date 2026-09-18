@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: rgb
 sql_table: rgb
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: rgbregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: rgbmechref
   sql: rgbmechref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rgbaudref
   sql: rgbaudref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rgbbright
   sql: rgbbright
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -30,6 +34,7 @@ columns:
   sql: rgbcoloracc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -37,6 +42,7 @@ columns:
   sql: rgbrfrate
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -44,11 +50,13 @@ columns:
   sql: rgbmodes
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rgbzones
   sql: rgbzones
   type: INT
   primary_key: false
+  unique: false
   description: "Independently controllable RGB zones (KB #28: single-zone basic, 3-5\
     \ directional, 10+ complex patterns, 100+ per-key max customization).\n\n[kb=28]\n\
     Measured as distinct independently controllable lighting areas. Single-zone devices\
@@ -67,6 +75,7 @@ columns:
   sql: rgbcolors
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -75,6 +84,7 @@ columns:
     / 20)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "RGB Implementation Quality (RIQ) \u2014 brightness/100 \xD7 color\
     \ accuracy/10 \xD7 (0.5 + zones/20).\n\n[kb=6]\nRIQ = \\frac{RgbBright}{100} \\\
     times \\frac{RgbColorAcc}{10} \\times \\left(0.5 + \\frac{RgbZones}{20}\\right),\
@@ -93,6 +103,7 @@ columns:
     * 1.0 / 20)) >= 3.0 THEN 'Standard RGB' ELSE 'Basic RGB' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "RGB Quality Classification (KB #51): 'Premium' RIQ > 8.0, 'High-Quality'\
     \ 6.0-8.0, 'Standard' 3.0-5.9, 'Basic' < 3.0.\n\n[kb=51]\nA classification system\
     \ that segments gaming devices into four RGB quality categories: 'Premium RGB\

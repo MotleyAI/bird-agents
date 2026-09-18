@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: performance
 sql_table: performance
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: perfregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: perfsessionref
   sql: perfsessionref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: accelmax
   sql: accelmax
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -25,6 +28,7 @@ columns:
   sql: speedips
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -32,6 +36,7 @@ columns:
   sql: liftdistmm
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -39,6 +44,7 @@ columns:
   sql: angsnap
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -46,11 +52,13 @@ columns:
   sql: btntens
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: clklat
   sql: clklat
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -58,6 +66,7 @@ columns:
   sql: clkdur
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -65,11 +74,13 @@ columns:
   sql: screnctyp
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: scrsteps
   sql: scrsteps
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -77,6 +88,7 @@ columns:
   sql: scraccy
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

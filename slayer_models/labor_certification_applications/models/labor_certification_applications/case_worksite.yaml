@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: case_worksite
 sql_table: case_worksite
 query_variables: {}
@@ -8,31 +8,37 @@ columns:
   sql: dockkey
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: ws_addr1
   sql: ws_addr1
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: wscity
   sql: wscity
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: wsstate
   sql: wsstate
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: wszip
   sql: wszip
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: wsheads
   sql: wsheads
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -40,17 +46,21 @@ columns:
   sql: wagetrack
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: homefirm
   sql: cases.homefirm
   type: TEXT
   primary_key: false
+  unique: false
   description: Employer (homefirm) for the case, denormalized via cases join.
   hidden: false
 - name: naics_code
-  sql: CAST(cases__employer.employer_contact_info ->> '$.naics_code' AS INTEGER)
+  sql: CAST(JSON_EXTRACT_SCALAR(cases.employer.employer_contact_info, '$.naics_code')
+    AS INT)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Employer NAICS code (KB #6) via cases\u2192employer join."
   hidden: false
 - name: offered_wage_annual
@@ -60,6 +70,7 @@ columns:
     1 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Offered wage annualized for this case_worksite, denormalized via prevailing_wage
     join. Used for KB #28 / KB #31 industry-wage analyses.'
   hidden: false
@@ -76,6 +87,7 @@ columns:
     WHEN 'Week' THEN 52 WHEN 'Month' THEN 12 WHEN 'Year' THEN 1 ELSE NULL END, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "WDR for this case_worksite, denormalized via prevailing_wage join.\
     \ Used for KB #31 (Industry Wage Differential).\n\n[kb=11]\nWDR = ((Offered Wage\
     \ - Prevailing Wage) / Prevailing Wage) \xD7 100%. Both offered and prevailing\
@@ -91,12 +103,14 @@ columns:
   sql: cases.soccd
   type: TEXT
   primary_key: false
+  unique: false
   description: 'SOC code (KB #7) for this case_worksite, denormalized via cases join.'
   hidden: false
 - name: wd_workers_helper
   sql: wsheads
   type: INT
   primary_key: false
+  unique: false
   description: "Helper for Worksite Density (WD, KB #16). WD = total workers (\u03A3\
     \ wsheads) / distinct worksite addresses; see worksite_density measure.\n\n[kb=16]\n\
     WD = (Number of Workers at Worksite / Number of Worksites). Worksite and worker\

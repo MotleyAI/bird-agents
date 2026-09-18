@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: customer_loyalty_network
 source_queries:
-- version: 3
+- version: 4
   name: tx_per_vendor_buyer
   source_model: transactions
   measures:
@@ -12,7 +12,9 @@ source_queries:
     model: products
   - name: buyref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: loyal_buyers_per_vendor
   source_model: tx_per_vendor_buyer
   measures:
@@ -23,24 +25,32 @@ source_queries:
   filters:
   - tx_count > 5
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vendors
+    columns:
+    - name: is_customer_loyalty_network
+      sql: CASE WHEN vendors.vrs > 90 AND COALESCE(loyal_buyers_per_vendor.loyal_buyer_count,
+        0) >= 1 AND vendors.vendrate > 4.8 AND vendors.vendchecklvl IN ('Advanced','Premium')
+        THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: loyal_buyers_per_vendor
       join_pairs:
       - - vendregistry
         - products__vendref
-    columns:
-    - name: is_customer_loyalty_network
-      type: DOUBLE
-      sql: CASE WHEN vendors.vrs > 90 AND COALESCE(loyal_buyers_per_vendor.loyal_buyer_count,
-        0) >= 1 AND vendors.vendrate > 4.8 AND vendors.vendchecklvl IN ('Advanced','Premium')
-        THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: vendregistry
   - name: is_customer_loyalty_network
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vendors.vendregistry\" AS vendregistry, \"vendors.is_customer_loyalty_network\"\
   \ AS is_customer_loyalty_network FROM (SELECT\n  vendors.vendregistry AS \"vendors.vendregistry\"\
@@ -73,11 +83,13 @@ columns:
   sql: vendregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_customer_loyalty_network
   sql: is_customer_loyalty_network
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

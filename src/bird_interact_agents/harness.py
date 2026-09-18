@@ -366,7 +366,6 @@ ACTION_COSTS = {
     "submit_sql": 3,
     "submit_query": 3,
     # SLayer tools
-    "help": 0.5,
     "list_datasources": 0.5,
     "models_summary": 1,
     "inspect_model": 0.5,

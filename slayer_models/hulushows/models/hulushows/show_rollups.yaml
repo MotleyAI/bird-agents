@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: show_rollups
 sql_table: show_rollups
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: srkeys
   type: INT
   primary_key: true
+  unique: false
   description: "FK to core.content_key \u2014 which show this rollup row is for."
   hidden: false
   format:
@@ -16,6 +17,7 @@ columns:
   sql: srlinks
   type: INT
   primary_key: true
+  unique: false
   description: "FK to rollups.tierkey \u2014 which subscription tier (free / subscriber\
     \ / current / free_on_web / etc.)."
   hidden: false
@@ -26,6 +28,7 @@ columns:
   sql: launchmoment
   type: TEXT
   primary_key: false
+  unique: false
   description: "First-availability timestamp in this tier. KB 9 (Cache Time Formats)\
     \ documents that this field carries multiple date formats. KB 48 (Missing Launch\
     \ Moment) is encoded on the is_legacy_uploaded column.\n\n[kb=9]\nIncludes examples\
@@ -39,6 +42,7 @@ columns:
   sql: latestadd
   type: TEXT
   primary_key: false
+  unique: false
   description: "Most-recent content addition timestamp for this tier. NULL implies\
     \ the content has not been updated since first appearance (KB 14).\n\n[kb=14]\n\
     If there\u2019s no recent update record, it means the content hasn\u2019t received\
@@ -52,6 +56,7 @@ columns:
   sql: contentvols
   type: TEXT
   primary_key: false
+  unique: false
   description: 'JSONB column with standard_content volumes: Ep_Vol, Clip_Vol, Game_Vol,
     Season_Vol, Feature_Vol, Media_Total, Trailer_Vol, FilmClip_Vol.'
   hidden: false
@@ -59,6 +64,7 @@ columns:
   sql: html5metrics
   type: TEXT
   primary_key: false
+  unique: false
   description: 'JSONB column with html5_volumes: H5_Clips, H5_Games, H5_Episodes,
     H5_Features, H5_Trailers, H5_FilmClips, H5_MediaTotal.'
   hidden: false
@@ -66,6 +72,7 @@ columns:
   sql: ratinginfo
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSONB column with TV_Rating, Peak_Rating (KB 2/19 \u2014 noisy variants\
     \ like 'TVMA','MA','T14'), and Unrated_Vol (KB 12)."
   hidden: false
@@ -74,36 +81,42 @@ columns:
   sql: CAST(contentvols ->> '$.standard_content.Ep_Vol' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Episode volume for this tier.
   hidden: false
 - name: clip_vol
   sql: CAST(contentvols ->> '$.standard_content.Clip_Vol' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Clip volume for this tier.
   hidden: false
 - name: game_vol
   sql: CAST(contentvols ->> '$.standard_content.Game_Vol' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Game volume for this tier.
   hidden: false
 - name: season_vol
   sql: CAST(contentvols ->> '$.standard_content.Season_Vol' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Season volume for this tier.
   hidden: false
 - name: feature_vol
   sql: CAST(contentvols ->> '$.standard_content.Feature_Vol' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Feature volume for this tier.
   hidden: false
 - name: media_total
   sql: CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Total media for this tier (Media_Total). KB 24 (Unrated Share), KB
     26 (AMT), KB 51 (TNML), KB 55 (UPT) are all encoded as measures over this column.
   hidden: false
@@ -112,6 +125,7 @@ columns:
   sql: CAST(contentvols ->> '$.standard_content.Trailer_Vol' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Trailer volume for this tier.\n\n[kb=58]\nTCR = \\frac{\\text{Trailer\
     \ Vol}}{\\text{Total Content Items}}, indicating marketing completeness. \u2014\
     \ Proportion of content entries that include trailers.\n[/kb=58]"
@@ -123,48 +137,56 @@ columns:
   sql: CAST(contentvols ->> '$.standard_content.FilmClip_Vol' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: FilmClip volume for this tier.
   hidden: false
 - name: h5_clips
   sql: CAST(html5metrics ->> '$.html5_volumes.H5_Clips' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: HTML5-compatible clip count for this tier (KB 7).
   hidden: false
 - name: h5_games
   sql: CAST(html5metrics ->> '$.html5_volumes.H5_Games' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: HTML5-compatible game count (KB 7).
   hidden: false
 - name: h5_episodes
   sql: CAST(html5metrics ->> '$.html5_volumes.H5_Episodes' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: HTML5-compatible episode count for this tier (KB 7).
   hidden: false
 - name: h5_features
   sql: CAST(html5metrics ->> '$.html5_volumes.H5_Features' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: HTML5-compatible feature count (KB 7).
   hidden: false
 - name: h5_trailers
   sql: CAST(html5metrics ->> '$.html5_volumes.H5_Trailers' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: HTML5-compatible trailer count (KB 7).
   hidden: false
 - name: h5_filmclips
   sql: CAST(html5metrics ->> '$.html5_volumes.H5_FilmClips' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: HTML5-compatible film clip count (KB 7).
   hidden: false
 - name: h5_media_total
   sql: CAST(html5metrics ->> '$.html5_volumes.H5_MediaTotal' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Total HTML5-compatible media count for this tier (KB 7).\n\n[kb=7]\n\
     Includes clips, episodes, games, features, trailers that support cross-platform\
     \ playback. \u2014 Details types of media available in HTML5 format.\n[/kb=7]"
@@ -176,12 +198,14 @@ columns:
   sql: ratinginfo ->> '$.TV_Rating'
   type: TEXT
   primary_key: false
+  unique: false
   description: Television rating string for this tier (KB 2/19).
   hidden: false
 - name: peak_rating_raw
   sql: ratinginfo ->> '$.Peak_Rating'
   type: TEXT
   primary_key: false
+  unique: false
   description: "Raw peak-rating string for this tier. KB 2 (TV Rating Types value\
     \ illustration): the canonical ratings (TV-Y, TV-Y7, TV-G, TV-PG, TV-14, TV-MA);\
     \ raw values are noisy ('TVMA', 'MA', 'T14', 'FOURTEEN'). The canonicalised form\
@@ -206,6 +230,7 @@ columns:
     ' ', '')) IN ('TVY','Y','T') THEN 'TV-Y' ELSE NULL END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Peak_Rating mapped to one of the six canonical TV ratings (KB 19 Canonical\
     \ Rating Enumeration: TV-Y, TV-Y7, TV-G, TV-PG, TV-14, TV-MA). NULL when the raw\
     \ value is 'Not Rated', '', or unrecognised.\n\n[kb=19]\nThe six recognized TV\
@@ -221,6 +246,7 @@ columns:
     THEN 0 ELSE 1 END = 1)
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Unrated Media (KB 12): TRUE when neither TV_Rating nor a canonical\
     \ Peak_Rating is set.\n\n[kb=12]\nMedia is considered unrated when there is no\
     \ official rating information available. \u2014 Defines media that lacks an official\
@@ -233,12 +259,14 @@ columns:
   sql: CAST(ratinginfo ->> '$.Unrated_Vol' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Count of unrated content items in this (show, tier) bucket.
   hidden: false
 - name: is_html5_compatible
   sql: CAST(html5metrics ->> '$.html5_volumes.H5_Episodes' AS INTEGER) > 0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "HTML5 Compatible Show (KB 11): TRUE when H5_Episodes > 0.\n\n[kb=11]\n\
     A show with more than 0 HTML5-compatible full episodes is HTML5 compatible. \u2014\
     \ Denotes a show with HTML5 support for full episodes.\n[/kb=11]"
@@ -253,6 +281,7 @@ columns:
     COALESCE(CAST(html5metrics ->> '$.html5_volumes.H5_Games' AS INTEGER), 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "HTML5 Depth Index (HDI, KB 59): H5_Clips + H5_Episodes + H5_Trailers\
     \ + H5_Games.\n\n[kb=59]\nHDI = H5 Clips + H5 Episodes + H5 Trailers + H5 Games,\
     \ by adding up the number of HTML5-compatible video types \u2014 Quantifies HTML5\
@@ -266,6 +295,7 @@ columns:
     ->> '$.standard_content.Ep_Vol' AS INTEGER), 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "HTML5 Episode Ratio (HER, KB 20): H5_Episodes / Ep_Vol.\n\n[kb=20]\n\
     HER = \\frac{\\text{H5 Episodes}}{\\text{Episodes Vol}} \u2014 Computes the share\
     \ of HTML5 episodes relative to all episodes.\n[/kb=20]"
@@ -278,6 +308,7 @@ columns:
     ->> '$.standard_content.Media_Total' AS INTEGER), 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Media Platform Compatibility Rate (MPCR, KB 22): H5_MediaTotal / Media_Total.\n\
     \n[kb=22]\nMPCR = \\frac{\\text{H5Media Total}}{\\text{Media Total}} \u2014 Assesses\
     \ platform compatibility for all media.\n[/kb=22]"
@@ -292,6 +323,7 @@ columns:
     0) > 0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Single-Platform Dependency (KB 60): TRUE when all available media\
     \ in this tier is HTML5-compatible (H5_MediaTotal \u2265 Media_Total).\n\n[kb=60]\n\
     Content is considered single-platform dependent if all available content is playable\
@@ -306,6 +338,7 @@ columns:
     NULLIF(CAST(contentvols ->> '$.standard_content.Feature_Vol' AS INTEGER), 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Clip-to-Feature Ratio (CFR, KB 56): FilmClip_Vol / Feature_Vol.\n\n\
     [kb=56]\nCFR = \\frac{\\text{Film Clip Vol}}{\\text{Feature Vol}}, both contributing\
     \ to the total size of content available \u2014 Compares short-form clips to long-form\
@@ -320,6 +353,7 @@ columns:
     0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Peak Media Load (KB 77): for each (show, tier), MAX(Trailer_Vol, Feature_Vol).\n\
     \n[kb=77]\nFor each show, we check the sizes of both its trailers and full episodes,\
     \ and pick whichever is bigger to represent its media load. \u2014 Identifies\
@@ -334,6 +368,7 @@ columns:
     ->> '$.standard_content.Media_Total' AS INTEGER), 0) > 0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Missing Launch Moment (KB 48): launchmoment NULL while Media_Total\
     \ > 0 \u2192 legacy-uploaded.\n\n[kb=48]\nIf Launch Moment is NULL while Media\
     \ Total > 0, the show is considered legacy-uploaded. \u2014 A meaningful missing\
@@ -346,6 +381,7 @@ columns:
   sql: latestadd IS NULL OR TRIM(latestadd) = ''
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Null Update Tag (KB 14): TRUE when latestadd is missing \u2192 content\
     \ unchanged since first appearance."
   hidden: false
@@ -353,6 +389,7 @@ columns:
   sql: CAST(strftime('%Y', 'now') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Helper: current year (used by KB 27 longevity).'
   hidden: false
 - name: launch_year
@@ -360,6 +397,7 @@ columns:
     1, 4) AS INTEGER) END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Year extracted from launchmoment (KB 9 documents formats; sample data\
     \ is YYYY-MM-DD). Used by KB 27 (longevity) and KB 91 (launch year distribution).\n\
     \n[kb=91]\nWe check when each show was released, group them by year, and count\
@@ -375,6 +413,7 @@ columns:
     'now') AS INTEGER) - CAST(SUBSTR(launchmoment, 1, 4) AS INTEGER) END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Show Longevity Estimate (KB 27): current_year - launch_year.\n\n[kb=27]\n\
     Longevity = How long content has been available is estimated by subtracting its\
     \ release year from the current year. \u2014 Estimates how long content has been\
@@ -396,6 +435,7 @@ columns:
     1), '/') - 1) END) ELSE latestadd END) AS INTEGER) END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Temporal Staleness Index (TSI, KB 57): days between today and latest\
     \ update. Handles both YYYY-MM-DD and M/D/YYYY formats found in latestadd.\n\n\
     [kb=57]\nTSI = \\text{Current Date} - \\text{Latest Update Date}, where lack of\
@@ -411,6 +451,7 @@ columns:
     INTEGER), 0) = 0 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Trailer-Deficient Feature (KB 67): TRUE when many episodes (\u2265\
     50) but Trailer_Vol = 0.\n\n[kb=67]\nA show is trailer-deficient if it has many\
     \ main episodes but no trailers \u2014 Content with features but no accompanying\
@@ -426,6 +467,7 @@ columns:
     INTEGER), 0) = 0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: 'Helper used by KB 69/70: no trailers AND no extra clips/film_clips.'
   hidden: false
 - name: is_legacy_title
@@ -437,6 +479,7 @@ columns:
     - 1) END) || '-01' ELSE latestadd END) > 365)
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Legacy Title Indicator (KB 65): no launch date AND no recent update\
     \ (>365 days). Combines KB 14 (null update) with KB 48 (missing launch).\n\n[kb=65]\n\
     Shows are considered legacy if there is no launch date and the content hasn\u2019\
@@ -450,6 +493,7 @@ columns:
   sql: CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Marker for Tier Distribution Ratio (KB 29): the per-row Media_Total\
     \ used in the TDR ratio Media_Total_tier / \u03A3 Media_Total_tier. The aggregation/grouping\
     \ is performed in the query.\n\n[kb=29]\nTDR = \\frac{\\text{Media Total}_{tier}}{\\\
@@ -466,6 +510,7 @@ columns:
     INTEGER), 0) = 0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High-Visibility Empty Bucket (KB 69): a show is highly rated but has\
     \ no extra video segments or trailers. Row predicate: TRUE when no clips and no\
     \ trailers; combine with user_score being high (joined from core). KB 70 is a\
@@ -483,6 +528,7 @@ columns:
     0)) < 1.0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Tier-Specific Content Gaps (KB 64): tier where normalized content\
     \ amount (KB 31 NMV style) is below threshold (here < 1.0).\n\n[kb=64]\nTiers\
     \ where normalized content amount is less than a given threshold are considered\
@@ -498,6 +544,7 @@ columns:
     0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Normalized Media Volume (NMV, KB 31): KB definition is 'total content\
     \ amount / (total number of parts or groupings + 1)'. KB references children KB\
     \ 4 (HasLogo flags) and KB 5 (Movie identifier formats); we operationalise 'parts'\
@@ -516,6 +563,7 @@ columns:
     * CAST(contentvols ->> '$.standard_content.Media_Total' AS INTEGER)) ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Helper for AES (KB 35): per-row term contributing to availability\
     \ entropy = -\u03A3 type_i * log(type_i). The full entropy formula uses tier proportions;\
     \ this column carries the per-row product term so the agent can sum/normalise\

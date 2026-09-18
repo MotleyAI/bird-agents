@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: eventsandclub
 sql_table: eventsandclub
 query_variables: {}
@@ -8,26 +8,31 @@ columns:
   sql: eventsreg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: eventssocialpivot
   sql: eventssocialpivot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: eventsmemberpivot
   sql: eventsmemberpivot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: clubjdate
   sql: clubjdate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: participation_summary
   sql: participation_summary
   type: TEXT
   primary_key: false
+  unique: false
   description: 'JSONB: event_attendance (concatt, evtpart, meetatt, onevtatt, offevtatt),
     engagement (votepartrate, camppart), club (clubstat, clubcontrib). Sub-fields
     are exposed as helper columns.'
@@ -36,6 +41,7 @@ columns:
   sql: participation_summary ->> '$.event_attendance.evtpart'
   type: TEXT
   primary_key: false
+  unique: false
   description: Event participation enum (Never / Rare / Regular / Always), extracted
     from participation_summary.event_attendance.evtpart.
   hidden: false
@@ -43,12 +49,14 @@ columns:
   sql: CAST(json_extract(participation_summary, '$.event_attendance.concatt') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Concert attendance count, extracted from participation_summary.event_attendance.concatt.
   hidden: false
 - name: meetatt
   sql: CAST(json_extract(participation_summary, '$.event_attendance.meetatt') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Meet-and-greet attendance count, extracted from participation_summary.event_attendance.meetatt.
   hidden: false
 - name: onevtatt
@@ -56,6 +64,7 @@ columns:
     INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Online event attendance count, extracted from participation_summary.event_attendance.onevtatt.
   hidden: false
 - name: offevtatt
@@ -63,24 +72,28 @@ columns:
     INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Offline event attendance count, extracted from participation_summary.event_attendance.offevtatt.
   hidden: false
 - name: votepartrate
   sql: CAST(json_extract(participation_summary, '$.engagement.votepartrate') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Voting participation rate, extracted from participation_summary.engagement.votepartrate.
   hidden: false
 - name: camppart
   sql: participation_summary ->> '$.engagement.camppart'
   type: TEXT
   primary_key: false
+  unique: false
   description: Campaign participation (Selective / All / Active), extracted from participation_summary.engagement.camppart.
   hidden: false
 - name: clubstat
   sql: participation_summary ->> '$.club.clubstat'
   type: TEXT
   primary_key: false
+  unique: false
   description: Fan club status (Non-member / Basic / Premium / Elite), extracted from
     participation_summary.club.clubstat.
   hidden: false
@@ -88,6 +101,7 @@ columns:
   sql: participation_summary ->> '$.club.clubcontrib'
   type: TEXT
   primary_key: false
+  unique: false
   description: Fan club contribution level (Low / Medium / High / Outstanding), extracted
     from participation_summary.club.clubcontrib.
   hidden: false
@@ -96,6 +110,7 @@ columns:
     0 WHEN 'Rare' THEN 1 WHEN 'Regular' THEN 2 WHEN 'Always' THEN 3 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Numeric mapping of evtpart enum used by ERP (KB #18): Never=0, Rare=1,
     Regular=2, Always=3.'
   hidden: false

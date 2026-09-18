@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: additionalnotes
 sql_table: additionalnotes
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: notesreg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: notesretainpivot
   sql: notesretainpivot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: noteinfo
   sql: noteinfo
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

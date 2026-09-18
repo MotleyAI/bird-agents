@@ -16,7 +16,10 @@ Format params: ``db_name``, ``kb_id``, ``kb_body``, ``deps_block``,
 ``reverse_deps_block``.
 """
 
-from bird_interact_agents.agents._shared_otf_prompts import ENCODE_HOST_GUIDANCE
+from bird_interact_agents.agents._shared_otf_prompts import (
+    ENCODE_HOST_GUIDANCE,
+    _SINGLE_QUERY_NUDGE,
+)
 
 ENCODER_PROMPT = (
     """\
@@ -35,8 +38,7 @@ THE KB ITEM TO ENCODE (id {kb_id}):
 
 TOOLS (read their own descriptions):
 * `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` —
-  learn the query/colon-aggregation syntax (`revenue:sum`, `*:count`) and the
-  `source_model` / `dimensions` / `measures` / `filters` schema.
+  learn SLayer's query language.
 * `search` — find existing models / columns / measures relevant to the KB.
 * `inspect` — read a known entity's full `Description:` + `Sample values:` by
   reference (`<db>.<model>.<col>`; single-entity point lookup).
@@ -46,10 +48,9 @@ TOOLS (read their own descriptions):
   — sanity-check the store.
 * `save_memory` — record the entity you wrote back onto this KB's memory (see
   discipline 6).
-* `query` — TEST a single candidate column/measure before you submit.
-* `query_nested` — TEST a multi-stage DAG (`queries`: a list of stage objects)
-  before you submit. Sanity-check the generated SQL (non-zero plausible rows,
-  correct units, expected casing).
+* `query` — TEST a candidate column/measure, or a multi-stage list, before you
+  submit. Sanity-check the generated SQL (non-zero plausible rows, correct
+  units, expected casing).
 
 ENCODING DISCIPLINE:
 1. Read the KB item. If it cites a formula, encode it VERBATIM — never
@@ -77,7 +78,7 @@ ENCODING DISCIPLINE:
    literals ABSENT from the column, do not write that predicate; if the column
    shows case/whitespace/abbreviation variants of the KB's literals, EXTEND the
    IN-set to include them.
-9. TEST what you wrote with `query` / `query_nested` before finalising.
+9. TEST what you wrote with `query` before finalising.
 
 Synthetic example: KB "premium revenue = sum of order amounts where the order
 tier is premium" → on host `orders`, create a measure `premium_revenue`
@@ -109,6 +110,8 @@ exist in the store and carry `meta.kb_id={kb_id}` — write it BEFORE you submit
 For `status="deferred"`, leave `entities` empty and put the open questions in
 `clarifying_questions`. Reply briefly after the tool call to finish.
 """
+    + "\n\n"
+    + _SINGLE_QUERY_NUDGE
     + "\n\n"
     + ENCODE_HOST_GUIDANCE
 )

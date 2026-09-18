@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: signaldecoding
 sql_table: signaldecoding
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: signalref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: encodetype
   sql: encodetype
   type: TEXT
   primary_key: false
+  unique: false
   description: "Encoding Type. encodetype='Frequency Hopping' describes a transmission\
     \ technique where the signal rapidly switches frequencies according to a predetermined\
     \ sequence. Detection would be characterized by discontinuous spectral features\
@@ -31,6 +33,7 @@ columns:
   sql: compressratio
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -38,11 +41,13 @@ columns:
   sql: errcorrlvl
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: decodeconf
   sql: decodeconf
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -50,16 +55,19 @@ columns:
   sql: decodemethod
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: decodestat
   sql: decodestat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: decodeiters
   sql: decodeiters
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -67,6 +75,7 @@ columns:
   sql: proctimehrs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -74,21 +83,25 @@ columns:
   sql: compresources
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: analysisdp
   sql: analysisdp
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: veriflvl
   sql: veriflvl
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: confirmstat
   sql: confirmstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

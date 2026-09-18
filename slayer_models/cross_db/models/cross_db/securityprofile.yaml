@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: securityprofile
 sql_table: securityprofile
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: securitytrace
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: flowkey
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: riskkey
   sql: riskkey
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -27,6 +30,7 @@ columns:
   sql: profilekey
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -34,11 +38,13 @@ columns:
   sql: recordregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: encstate
   sql: encstate
   type: TEXT
   primary_key: false
+  unique: false
   description: "Encryption status. KB #23: 'Full' = all data encrypted; 'Partial'\
     \ suggests gaps.\n\n[kb=23]\nEnum: 'Full', 'Partial'. 'Full' indicates all data\
     \ is encrypted, while 'Partial' suggests gaps, from SecurityProfile. \u2014 Illustrates\
@@ -51,56 +57,67 @@ columns:
   sql: encmeth
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: keymanstate
   sql: keymanstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: masklevel
   sql: masklevel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: anonmeth
   sql: anonmeth
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: psymstate
   sql: psymstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: authmeth
   sql: authmeth
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: authzframe
   sql: authzframe
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: aclstate
   sql: aclstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: apisecstate
   sql: apisecstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: logintcheck
   sql: logintcheck
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: logretdays
   sql: logretdays
   type: INT
   primary_key: false
+  unique: false
   description: "Audit log retention period in days. KB #29: 365 meets many compliance\
     \ needs; <30 may violate regulations.\n\n[kb=29]\nInteger \u2265 0 days. A LogRetDays\
     \ of 365 meets many compliance needs, while <30 may violate regulations, from\
@@ -115,22 +132,26 @@ columns:
   sql: bkpstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: drecstate
   sql: drecstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: bcstate
   sql: bcstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: srs
   sql: CASE WHEN encstate = 'Full' AND aclstate = 'Strong' THEN 3 WHEN encstate =
     'Full' OR aclstate = 'Adequate' THEN 2 ELSE 1 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Security Robustness Score (SRS) \u2014 KB #5: 3 if Full enc AND Strong\
     \ ACL; 2 if Full enc OR Adequate ACL; 1 otherwise.\n\n[kb=5]\nSRS = \\begin{cases}\
     \ 3 & \\text{if EncState = 'Full' and AclState = 'Strong'} \\\\ 2 & \\text{if\
@@ -147,6 +168,7 @@ columns:
     + 1)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Security Control Cost Ratio (SCCR) \u2014 KB #31: SRS / (CostUSD +\
     \ 1).\n\n[kb=31]\nSCCR = \\text{SRS} / (\\text{CostUSD} + 1) \u2014 Evaluates\
     \ the cost-effectiveness of security controls relative to compliance costs.\n\
@@ -162,6 +184,7 @@ columns:
     1 ELSE 1 END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Encryption Coverage Ratio (ECR) \u2014 KB #35: SRS \xD7 DSI.\n\n[kb=35]\n\
     ECR = \\text{SRS} \\times \\text{DSI} \u2014 Measures the extent of encryption\
     \ coverage relative to data sensitivity.\n[/kb=35]"
@@ -176,6 +199,7 @@ columns:
     1 ELSE 1 END)) * (logretdays * 1.0 / 365)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Security Posture Maturity (SPM) \u2014 KB #52: ECR \xD7 LogRetDays/365.\n\
     \n[kb=52]\nSPM = \\text{ECR} \\times \\frac{\\text{LogRetDays}}{365} \u2014 Evaluates\
     \ the maturity of security controls based on encryption and audit log retention.\n\
@@ -189,6 +213,7 @@ columns:
     'Full' OR aclstate = 'Adequate' THEN 2 ELSE 1 END) = 3
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Secure Data Flow (KB #11): SRS = 3.\n\n[kb=11]\nA data flow where\
     \ SRS = 3 \u2014 Classifies data flows with strong security controls.\n[/kb=11]"
   label: Secure Data Flow
@@ -202,6 +227,7 @@ columns:
     2 ELSE 1 END) < 2
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Sensitive Data Exposure (KB #14): DSI > 100 AND SRS < 2.\n\n[kb=14]\n\
     A data profile where DSI > 100 and SRS < 2 \u2014 Highlights data profiles with\
     \ high sensitivity and weak security.\n[/kb=14]"
@@ -217,6 +243,7 @@ columns:
     3 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 1 ELSE 1 END)) < 2
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Unprotected Sensitive Data (KB #41): DSI > 100 AND ECR < 2.\n\n[kb=41]\n\
     A data profile where DSI > 100 and ECR < 2 \u2014 Identifies sensitive data lacking\
     \ adequate encryption coverage.\n[/kb=41]"
@@ -229,6 +256,7 @@ columns:
     THEN 3 WHEN encstate = 'Full' OR aclstate = 'Adequate' THEN 2 ELSE 1 END) < 2
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Insecure High-Volume Flow (KB #45): VolGB > 500 AND SRS < 2.\n\n[kb=45]\n\
     A data flow where VolGB > 500 and SRS < 2 \u2014 Identifies high-volume data flows\
     \ with weak security controls.\n[/kb=45]"
@@ -245,6 +273,7 @@ columns:
     = 'Adequate' THEN 2 ELSE 1 END) < 2)
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Sensitive Unstable Flow (KB #68): DFSI < 0.5 AND Sensitive Data Exposure.\n\
     \n[kb=68]\nA data flow where DFSI < 0.5 and Sensitive Data Exposure exists \u2014\
     \ Flags sensitive data flows with stability issues.\n[/kb=68]"

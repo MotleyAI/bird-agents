@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: properties
 sql_table: properties
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: propref
   type: INT
   primary_key: true
+  unique: false
   description: A SERIAL primary key uniquely identifying each residential property
     record in the database. EX. 1,2,3
   hidden: false
@@ -17,6 +18,7 @@ columns:
   sql: houselink
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key referencing households.HouseNum with unique constraint,
     ensuring 1:1 relationship between properties and households. EX.3,4,7
   hidden: false
@@ -27,6 +29,7 @@ columns:
   sql: infralink
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key referencing infrastructure.InfraRef, indicating which infrastructure
     configuration applies to this property's location and services. EX.1,2
   hidden: false
@@ -37,6 +40,7 @@ columns:
   sql: dwelling_specs
   type: TEXT
   primary_key: false
+  unique: false
   description: JSONB column. Combines dwelling characteristics including structural
     type and room specifications for property classification and capacity assessment.
   hidden: false
@@ -47,6 +51,7 @@ columns:
   sql: JSON_EXTRACT(dwelling_specs, '$.Dwelling_Class')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Dwelling type classification describing the structural and architectural\
     \ category of the residential unit. Contains NULL when dwelling type is non-standard,\
     \ mixed-use, or classification is pending. Sample values are mixed-case ('Brickwork\
@@ -64,6 +69,7 @@ columns:
   sql: JSON_EXTRACT(dwelling_specs, '$.Bath_Count')
   type: TEXT
   primary_key: false
+  unique: false
   description: Total number of bathrooms in the residential property, including full
     bathrooms and half-bathrooms. Contains NULL when bathroom count is not available
     or property has shared/communal bathroom facilities that cannot be counted per
@@ -80,6 +86,7 @@ columns:
   sql: JSON_EXTRACT(dwelling_specs, '$.Room_Count')
   type: TEXT
   primary_key: false
+  unique: false
   description: Total number of bedrooms in the residential property, representing
     the sleeping accommodation capacity. Contains NULL when room count is not available
     or property has non-standard room configurations that cannot be classified as
@@ -97,6 +104,7 @@ columns:
     '$.Room_Count') AS REAL), 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Crosses the 1:1 properties\u2194households join (houselink \u2192\
     \ housenum) to get residentcount; divides by the Room_Count JSONB leaf. NULLIF\
     \ on the denominator yields NULL for rows with missing or zero bedrooms. Inlines\
@@ -115,6 +123,7 @@ columns:
     AS REAL), 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Inlines the Bath_Count JSON_EXTRACT (the dwelling_specs__Bath_Count\
     \ helper would not be recursively expanded \u2014 DEV-1410; fixed in SLayer 0.6.9,\
     \ inlining now optional). NULLIF prevents division by zero.\n\n[kb=15]\nCalculated\
@@ -130,6 +139,7 @@ columns:
     '$.Bath_Count') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "[kb=17]\nCalculated as twice the number of bedrooms plus the number\
     \ of bathrooms. \u2014 Calculates the potential capacity of a dwelling based on\
     \ bedrooms and bathrooms.\n[/kb=17]"
@@ -145,6 +155,7 @@ columns:
     '$.Dwelling_Class'))) LIKE 'apartment%' THEN 3 ELSE 1 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Sample values mix case ('Brickwork house', 'Apartment', 'apartment');\
     \ LOWER+TRIM normalises before the CASE. KB 6 (value-illustration) also maps 'Condominium'\
     \ \u2192 4 \u2014 here we follow KB 44's explicit scoring (Condominium falls into\
@@ -175,6 +186,7 @@ columns:
     END AS REAL)) / 3.0 AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "50/50 weighted average of (a) the inlined dwelling_type_score CASE\
     \ on `dwelling_specs.Dwelling_Class` and (b) the inlined Infrastructure Quality\
     \ Score (average of three component scores) on the joined infrastructure row.\
@@ -207,6 +219,7 @@ columns:
     0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Boolean: living_condition_score > 3 AND bathroom_ratio > 0.5. Both\
     \ component expressions are inlined (no references to the named living_condition_score\
     \ / bathroom_ratio columns) because SLayer does not recursively expand derived-column\

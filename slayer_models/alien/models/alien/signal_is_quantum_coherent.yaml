@@ -1,33 +1,41 @@
-version: 7
+version: 10
 name: signal_is_quantum_coherent
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
+    columns:
+    - name: is_quantum_coherent
+      sql: CASE WHEN signaladvancedphenomena.quanteffects IN ('Significant', 'Observed')
+        AND signalclassification.infodense > 1.5 AND ((signaldecoding.compressratio
+        * signalclassification.complexidx * signalclassification.entropyval) / 10.0)
+        > 2.5 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: signaldecoding
       join_pairs:
       - - signalregistry
         - signalref
+      join_type: left
     - target_model: signalclassification
       join_pairs:
       - - signalregistry
         - signalref
+      join_type: left
     - target_model: signaladvancedphenomena
       join_pairs:
       - - signalregistry
         - signalref
-    columns:
-    - name: is_quantum_coherent
-      type: BOOLEAN
-      sql: CASE WHEN signaladvancedphenomena.quanteffects IN ('Significant', 'Observed')
-        AND signalclassification.infodense > 1.5 AND ((signaldecoding.compressratio
-        * signalclassification.complexidx * signalclassification.entropyval) / 10.0)
-        > 2.5 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: is_quantum_coherent
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_quantum_coherent\"\
   \ AS is_quantum_coherent FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
@@ -46,11 +54,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_quantum_coherent
   sql: is_quantum_coherent
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

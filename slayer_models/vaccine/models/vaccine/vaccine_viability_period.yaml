@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: vaccine_viability_period
 source_queries:
-- version: 3
+- version: 4
   name: tss_per_container
   source_model: sensordata
   measures:
@@ -10,18 +10,24 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vaccinedetails
+    columns:
+    - name: days_to_expire
+      sql: julianday(expireday) - julianday('now')
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: tss_per_container
       join_pairs:
       - - containvac
         - containlink
-    columns:
-    - name: days_to_expire
-      type: DOUBLE
-      sql: julianday(expireday) - julianday('now')
+      join_type: left
   measures:
   - formula: days_to_expire:max * tss_per_container.tss:max
     name: vvp
@@ -30,6 +36,8 @@ source_queries:
   - name: containvac
   - name: expireday
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
   \ AS containvac, \"vaccinedetails.expireday\" AS expireday, \"vaccinedetails.days_to_expire_max\"\
@@ -65,6 +73,7 @@ columns:
   sql: vacregistry
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -72,21 +81,25 @@ columns:
   sql: containvac
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: expireday
   sql: expireday
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: days_to_expire_max
   sql: days_to_expire_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: vvp
   sql: vvp
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -94,6 +107,7 @@ columns:
   sql: tss_per_container__tss_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

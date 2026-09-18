@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: infrastructure
 sql_table: infrastructure
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: infraref
   type: INT
   primary_key: true
+  unique: false
   description: A SERIAL primary key uniquely identifying each infrastructure configuration
     record in the database. EX. 1,2,3
   hidden: false
@@ -17,6 +18,7 @@ columns:
   sql: wateraccess
   type: TEXT
   primary_key: false
+  unique: false
   description: Piped water supply access type indicating the household's water infrastructure
     connectivity. Part of unique constraint combination. ex.Yes, available at least
     in one room
@@ -33,6 +35,7 @@ columns:
   sql: roadsurface
   type: TEXT
   primary_key: false
+  unique: false
   description: Street pavement condition and type describing the road infrastructure
     quality around the household location. Part of unique constraint combination.
     EX. Asphalt, concrete;Gravel surface
@@ -43,6 +46,7 @@ columns:
   sql: parkavail
   type: TEXT
   primary_key: false
+  unique: false
   description: Private parking space availability indicating whether households have
     dedicated parking facilities. Part of unique constraint combination. EX.Available,
     not available
@@ -54,6 +58,7 @@ columns:
     LIKE 'yes%' THEN 4 ELSE 1 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Score derived from wateraccess by KB 3's mapping. Sample values all\
     \ start with 'Yes,...' so the 'Yes' branch covers piped access; any other non-NULL\
     \ string scores 1. NULL/blank wateraccess returns NULL so the score doesn't masquerade\
@@ -71,6 +76,7 @@ columns:
     LIKE '%asphalt%' OR LOWER(roadsurface) LIKE '%concrete%' THEN 4 ELSE 1 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "NULL/blank roadsurface returns NULL so the score doesn't inflate the\
     \ IQS average for missing data.\n\n[kb=4]\nValues based on schema include 'Asphalt',\
     \ 'Concrete', 'Gravel', etc. \u2014 Illustrates road surface types. For scoring,\
@@ -86,6 +92,7 @@ columns:
     LIKE '%not%' THEN 1 ELSE 4 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Sample values include 'Available' and 'Not available' (with whitespace/tab\
     \ variants). Any non-NULL string containing 'not' scores 1; other non-NULL strings\
     \ score 4. NULL/blank parkavail returns NULL so the score doesn't get treated\
@@ -106,6 +113,7 @@ columns:
     LOWER(parkavail) LIKE '%not%' THEN 1 ELSE 4 END AS REAL)) / 3.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Inlines the three component scores rather than referring to wateraccess_score\
     \ / roadsurface_score / parkavail_score by name \u2014 SLayer does not recursively\
     \ expand same-model derived-column refs in Column.sql, so a name-based composite\

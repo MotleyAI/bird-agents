@@ -1,7 +1,7 @@
-version: 7
+version: 10
 name: critical_scientific_equipment_status
 source_queries:
-- version: 3
+- version: 4
   name: ser_flag_p_eq
   source_model: scientific
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: scieqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: smsp_p_eq
   source_model: scientific_mission_success_probability
   measures:
@@ -19,22 +21,31 @@ source_queries:
   dimensions:
   - name: scieqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: ser_flag_p_eq
+    columns:
+    - name: cses_full_op_flag
+      sql: CASE WHEN ser > 0.9 AND smsp_p_eq__smsp > 0.85 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: cses_degraded_flag
+      sql: CASE WHEN NOT (ser > 0.9 AND smsp_p_eq__smsp > 0.85) AND ser > 0.7 AND
+        smsp_p_eq__smsp > 0.6 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: smsp_p_eq
       join_pairs:
       - - scieqref
         - scieqref
-    columns:
-    - name: cses_full_op_flag
-      type: DOUBLE
-      sql: CASE WHEN ser > 0.9 AND smsp_p_eq__smsp > 0.85 THEN 1 ELSE 0 END
-    - name: cses_degraded_flag
-      type: DOUBLE
-      sql: CASE WHEN NOT (ser > 0.9 AND smsp_p_eq__smsp > 0.85) AND ser > 0.7 AND
-        smsp_p_eq__smsp > 0.6 THEN 1 ELSE 0 END
+      join_type: left
   measures:
   - formula: ser:avg
     name: ser
@@ -47,6 +58,8 @@ source_queries:
   dimensions:
   - name: scieqref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"ser_flag_p_eq.scieqref\" AS scieqref, \"ser_flag_p_eq.ser\"\
   \ AS ser, \"ser_flag_p_eq.is_fully_operational\" AS is_fully_operational, \"ser_flag_p_eq.is_degraded_operation\"\
@@ -119,11 +132,13 @@ columns:
   sql: scieqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ser
   sql: ser
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Scientific Equipment Reliability (KB #8): accuracy% \xD7 calibration\
     \ multiplier."
   hidden: false
@@ -133,16 +148,19 @@ columns:
   sql: is_fully_operational
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_degraded_operation
   sql: is_degraded_operation
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: smsp_p_eq__smsp_avg
   sql: smsp_p_eq__smsp_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

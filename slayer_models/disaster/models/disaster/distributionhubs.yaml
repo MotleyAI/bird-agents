@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: distributionhubs
 sql_table: distributionhubs
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: hubregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: disteventref
   sql: disteventref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: hubcaptons
   sql: hubcaptons
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -25,6 +28,7 @@ columns:
   sql: hubutilpct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -32,6 +36,7 @@ columns:
   sql: storecapm3
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -39,6 +44,7 @@ columns:
   sql: storeavailm3
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -46,6 +52,7 @@ columns:
   sql: coldstorecapm3
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -53,6 +60,7 @@ columns:
   sql: coldstoretempc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -60,11 +68,13 @@ columns:
   sql: warehousestate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: invaccpct
   sql: invaccpct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -72,6 +82,7 @@ columns:
   sql: stockturnrate
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -79,6 +90,7 @@ columns:
   sql: (hubutilpct / 100.0) * (storecapm3 / (storeavailm3 + 1.0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Resource Utilization Ratio (RUR, KB #10): (hubutilpct/100) * (storecapm3\
     \ / (storeavailm3+1)).\n\n[kb=10]\nRUR = \\frac{hubutilpct}{100} \\times \\frac{storecapm3}{storeavailm3\
     \ + 1} \u2014 Measures how effectively hub capacity is being used relative to\
@@ -93,6 +105,7 @@ columns:
     + 1.0))) >= 2 THEN 'Moderate Utilization' ELSE 'Low Utilization' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Resource Utilization Classification (KB #50): High Utilization (RUR>5),\
     \ Moderate (2<=RUR<=5), Low (RUR<2).\n\n[kb=50]\nHigh Utilization (RUR > 5) indicates\
     \ potentially overloaded hubs that may need resource expansion; Moderate Utilization\
@@ -108,6 +121,7 @@ columns:
   sql: (storeavailm3 * 1.0 / NULLIF(storecapm3, 0)) * 100
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Available Storage Percentage (KB #53): (storeavailm3 / storecapm3)\
     \ * 100.\n\n[kb=53]\nThe percentage calculated by dividing available storage (storeavailm3)\
     \ by total storage capacity (storecapm3) and multiplying by 100 \u2014 Calculates\

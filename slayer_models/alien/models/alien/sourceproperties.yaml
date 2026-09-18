@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: sourceproperties
 sql_table: sourceproperties
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: signalref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: sourceradeg
   sql: sourceradeg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -20,6 +22,7 @@ columns:
   sql: sourcedecdeg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -27,6 +30,7 @@ columns:
   sql: sourcedistly
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -34,6 +38,7 @@ columns:
   sql: gallong
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -41,6 +46,7 @@ columns:
   sql: gallat
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -48,16 +54,19 @@ columns:
   sql: celestobj
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: objtype
   sql: objtype
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: objmag
   sql: objmag
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -65,6 +74,7 @@ columns:
   sql: objtempk
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -72,6 +82,7 @@ columns:
   sql: objmasssol
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -79,6 +90,7 @@ columns:
   sql: objagegyr
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -86,6 +98,7 @@ columns:
   sql: objmetal
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -93,6 +106,7 @@ columns:
   sql: objpropmotion
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -100,6 +114,7 @@ columns:
   sql: objradvel
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -110,6 +125,7 @@ columns:
     END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Celestial Location Significance Factor (CLSF) = (CelestObj?2:1) *\
     \ (ObjType='Giant' AND ObjMassSol in [0.8,1.2] ? 1.5 : 1) * (ObjMetal>0 ? ObjMetal+1\
     \ : 0.5). Higher values indicate source locations more likely to harbor intelligent\

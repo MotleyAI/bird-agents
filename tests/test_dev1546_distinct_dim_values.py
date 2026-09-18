@@ -1,45 +1,25 @@
 """DEV-1546 — ``distinct_dimension_values`` flag wired through the OTF
 slayer-mode preview + submit path.
 
-Slayer 0.7.2 added ``distinct_dimension_values: bool = True`` as a
-``SlayerQuery`` field (and as a top-level kwarg on its MCP ``query``
-tool). Setting ``False`` on a dimension-only query disables the auto-dedup
+Slayer added ``distinct_dimension_values: bool = True`` as a ``SlayerQuery``
+field. Setting ``False`` on a dimension-only query disables the auto-dedup
 ``GROUP BY`` and emits flat ``SELECT <dims/td>`` rows.
 
-This file pins the wiring on OUR side of slayer:
+This file pins the wiring on OUR side of slayer (post SLayer 0.10.2 — the
+unified single ``query`` argument):
 
-* ``query_impl`` accepts ``query_json: str`` as a positional arg plus
-  tool-level kwargs — the wrapper unpacks the JSON DSL through an
-  explicit field allowlist to slayer's MCP ``query`` function. Sharp
-  errors for invalid JSON, missing ``source_model``, nested-DAG list
-  shape, and unknown top-level keys.
-* DEV-1555 CR r1 (unification): the @tool wrapper for the ``query`` MCP
-  tool no longer takes a single ``query_json`` string at the SDK layer
-  — it accepts the SAME structured shape as ``submit_query`` (single-
-  stage via ``source_model`` + projection fields OR nested-DAG via
-  ``queries``), builds the SlayerQuery JSON internally, and forwards
-  it to DEV-1546's ``query_impl(query_json: str, …)``. The
-  ``distinct_dimension_values`` field rides through as a named
-  property on the schema instead of a JSON-string field. See
-  ``test_claude_sdk_query_tool_schema_uses_structured_shape_after_unification``.
-* ``query_nested_impl`` forwards stage dicts verbatim — the new field
-  rides through with no change. Pinned here as a regression net.
+* ``query_impl`` takes the ``query`` value (a query object or a multi-stage
+  list) and forwards it to slayer's MCP ``query`` fn unchanged in shape, with
+  the ``distinct_dimension_values`` field riding inside the query object. Its
+  ``filters`` are normalised (unless ``normalize_filters`` is false) and a
+  misplaced tool-level option is lifted (single object) / stripped (list).
 * ``submit_slayer_query`` forwards the JSON DSL through
-  ``normalize_query_payload`` → ``_compile_sql``. Pinned that the new
-  field survives that round-trip and that slayer's 0.7.2 rejection
-  rules surface as observation errors.
-* ``SLAYER_OTF_ONE_SHOT_V0`` (the V0 snapshot — see
-  ``_shared_otf_prompts.py``) inlines the full ``_DEDUP_VS_RAW_ROWS``
-  body byte-for-byte and is rendered by the v0 agents; the V1
-  prompts teach the same guidance in a shorter inlined form.
-
-Per the project convention (``feedback_no_prompt_content_tests``), no
-substring / anchor-phrase assertions on prompt copy — mechanical
-contracts only.
+  ``normalize_query_payload`` → ``_compile_sql`` (``client.sql_sync``). Pinned
+  that the field survives that round-trip and that slayer's structural
+  rejection rules surface as observation errors.
 """
 from __future__ import annotations
 
-import inspect
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -48,50 +28,8 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# query_impl — signature pin (single query_json + tool-level kwargs)
+# query_impl — distinct_dimension_values rides inside the query object
 # ---------------------------------------------------------------------------
-
-
-def test_query_impl_signature_is_query_json_plus_tool_opts():
-    """``query_impl(query_json, *, show_sql, dry_run, explain, format,
-    normalize_filters)`` — the single-DSL-arg shape. Slayer-native
-    SlayerQuery fields ride INSIDE ``query_json``; only tool-level
-    options (and our ``normalize_filters`` directive) live outside it.
-    """
-    from bird_interact_agents.agents._query import query_impl
-
-    sig = inspect.signature(query_impl)
-    params = list(sig.parameters.values())
-    assert [p.name for p in params] == [
-        "query_json",
-        "show_sql",
-        "dry_run",
-        "explain",
-        "format",
-        "normalize_filters",
-    ], f"unexpected param order: {[p.name for p in params]}"
-
-    # Positional-or-keyword for the JSON; keyword-only for tool opts.
-    assert params[0].kind in (
-        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        inspect.Parameter.POSITIONAL_ONLY,
-    )
-    for p in params[1:]:
-        assert p.kind == inspect.Parameter.KEYWORD_ONLY, (
-            f"{p.name} must be keyword-only"
-        )
-
-    # Defaults: tool opts default to slayer's MCP `query` defaults;
-    # normalize_filters defaults True (our directive).
-    assert params[0].default is inspect.Parameter.empty
-    defaults = {p.name: p.default for p in params[1:]}
-    assert defaults == {
-        "show_sql": False,
-        "dry_run": False,
-        "explain": False,
-        "format": "markdown",
-        "normalize_filters": True,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -121,14 +59,12 @@ async def test_query_impl_forwards_distinct_dimension_values_false(monkeypatch):
     from bird_interact_agents.agents._query import query_impl
 
     forwarded = _patch_slayer_query_fn(monkeypatch)
-    await query_impl(
-        json.dumps({
-            "source_model": "orders",
-            "dimensions": ["status"],
-            "distinct_dimension_values": False,
-        }),
-    )
-    assert forwarded["distinct_dimension_values"] is False
+    await query_impl({
+        "source_model": "orders",
+        "dimensions": ["status"],
+        "distinct_dimension_values": False,
+    })
+    assert forwarded["query"]["distinct_dimension_values"] is False
 
 
 @pytest.mark.asyncio
@@ -144,13 +80,12 @@ async def test_query_impl_defaults_distinct_dimension_values_true(monkeypatch):
     from bird_interact_agents.agents._query import query_impl
 
     forwarded = _patch_slayer_query_fn(monkeypatch)
-    await query_impl(json.dumps({
+    await query_impl({
         "source_model": "orders",
         "dimensions": ["status"],
-    }))
-    # Slayer's MCP `query` kwarg default is True; either we forward
-    # the explicit True, or we omit and let slayer's default fire.
-    assert forwarded.get("distinct_dimension_values", True) is True
+    })
+    # Wrapper adds nothing; the field is absent so SLayer's default (True) fires.
+    assert "distinct_dimension_values" not in forwarded["query"]
 
 
 # ---------------------------------------------------------------------------
@@ -166,11 +101,11 @@ async def test_query_impl_default_normalizes_filters_inside_query_json(monkeypat
     from bird_interact_agents.agents._query import query_impl
 
     forwarded = _patch_slayer_query_fn(monkeypatch)
-    await query_impl(json.dumps({
+    await query_impl({
         "source_model": "orders",
         "filters": ["category == 'Gadgets'"],
-    }))
-    assert forwarded["filters"] == ["lower(trim(category)) == 'gadgets'"]
+    })
+    assert forwarded["query"]["filters"] == ["lower(trim(category)) == 'gadgets'"]
 
 
 @pytest.mark.asyncio
@@ -181,13 +116,10 @@ async def test_query_impl_normalize_filters_false_passes_verbatim(monkeypatch):
 
     forwarded = _patch_slayer_query_fn(monkeypatch)
     await query_impl(
-        json.dumps({
-            "source_model": "orders",
-            "filters": ["category == 'Gadgets'"],
-        }),
+        {"source_model": "orders", "filters": ["category == 'Gadgets'"]},
         normalize_filters=False,
     )
-    assert forwarded["filters"] == ["category == 'Gadgets'"]
+    assert forwarded["query"]["filters"] == ["category == 'Gadgets'"]
 
 
 @pytest.mark.asyncio
@@ -198,7 +130,7 @@ async def test_query_impl_does_not_forward_normalize_filters(monkeypatch):
 
     forwarded = _patch_slayer_query_fn(monkeypatch)
     await query_impl(
-        json.dumps({"source_model": "orders"}),
+        {"source_model": "orders"},
         normalize_filters=False,
     )
     assert "normalize_filters" not in forwarded
@@ -216,7 +148,7 @@ async def test_query_impl_forwards_tool_level_kwargs(monkeypatch):
 
     forwarded = _patch_slayer_query_fn(monkeypatch)
     await query_impl(
-        json.dumps({"source_model": "orders"}),
+        {"source_model": "orders"},
         show_sql=True,
         dry_run=True,
         explain=True,
@@ -255,11 +187,10 @@ async def test_query_impl_unpacks_all_allowlisted_dsl_fields(monkeypatch):
         "variables": {"k": "v"},
         "distinct_dimension_values": False,
     }
-    await query_impl(json.dumps(payload))
-    for field, expected in payload.items():
-        assert forwarded[field] == expected, (
-            f"{field}: forwarded={forwarded.get(field)!r} expected={expected!r}"
-        )
+    await query_impl(payload)
+    assert forwarded["query"] == payload, (
+        f"forwarded query object != payload: {forwarded.get('query')!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -267,112 +198,17 @@ async def test_query_impl_unpacks_all_allowlisted_dsl_fields(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_query_impl_rejects_invalid_json(monkeypatch):
-    """Unparseable ``query_json`` surfaces a sharp error pointing at the
-    DSL shape (mirrors ``submit_slayer_query``)."""
-    from bird_interact_agents.agents._query import query_impl
-
-    _patch_slayer_query_fn(monkeypatch)
-    with pytest.raises(ValueError) as ei:
-        await query_impl("{not json}")
-    msg = str(ei.value)
-    assert "json" in msg.lower()
-
-
-@pytest.mark.asyncio
-async def test_query_impl_rejects_missing_source_model(monkeypatch):
-    """``source_model`` is the only mandatory ``SlayerQuery`` field; a
-    JSON object without it should fail at the wrapper layer (not at
-    slayer's Pydantic validator) so the error message stays sharp."""
-    from bird_interact_agents.agents._query import query_impl
-
-    _patch_slayer_query_fn(monkeypatch)
-    with pytest.raises(ValueError) as ei:
-        await query_impl(json.dumps({"dimensions": ["status"]}))
-    msg = str(ei.value)
-    assert "source_model" in msg
-
-
-@pytest.mark.parametrize("offending_field,value", [
-    # Unsupported SlayerQuery fields (not exposed as MCP `query` kwargs):
-    ("main_time_dimension", "created_at"),
-    ("name", "my_query"),
-    ("version", 3),
-    # NOTE (DEV-1577): tool-level kwargs misplaced inside the JSON
-    # (`show_sql`/`dry_run`/`explain`/`format`/`normalize_filters`) are
-    # NO LONGER rejected — they're lifted out into their wrapper kwargs.
-    # See test_query_impl_lifts_misplaced_tool_level_keys.
-])
-@pytest.mark.asyncio
-async def test_query_impl_rejects_unknown_top_level_field(
-    monkeypatch, offending_field, value,
-):
-    """Codex round-1: blindly forwarding ``parsed`` to slayer's MCP
-    ``query`` would TypeError on ``SlayerQuery`` fields the MCP tool
-    doesn't accept as kwargs (``main_time_dimension``, ``name``,
-    ``version``). The wrapper raises a sharp error naming the offending
-    key and the supported-field allowlist instead.
-
-    The allowlist is intentionally narrow — every key the agent puts
-    in ``query_json`` must be a SlayerQuery DSL field that slayer's MCP
-    ``query`` natively exposes as a kwarg.
-    """
-    from bird_interact_agents.agents._query import query_impl
-
-    _patch_slayer_query_fn(monkeypatch)
-    payload = {
-        "source_model": "orders",
-        "dimensions": ["status"],
-        offending_field: value,
-    }
-    with pytest.raises(ValueError) as ei:
-        await query_impl(json.dumps(payload))
-    msg = str(ei.value)
-    assert offending_field in msg, (
-        f"error message must name the offending field {offending_field!r}; "
-        f"got: {msg!r}"
-    )
-    # Error must point to alternative tools so the agent self-corrects.
-    assert "submit_query" in msg or "query_nested" in msg
-
-
-@pytest.mark.asyncio
-async def test_query_impl_rejects_list_shape(monkeypatch):
-    """Codex round-1: a nested-DAG list arrives at ``submit_query``
-    legitimately, but the single-stage preview wrapper rejects it with
-    a sharp error pointing at ``query_nested``."""
-    from bird_interact_agents.agents._query import query_impl
-
-    _patch_slayer_query_fn(monkeypatch)
-    with pytest.raises(ValueError) as ei:
-        await query_impl(json.dumps([
-            {"source_model": "orders", "name": "stage1"},
-            {"source_model": "stage1"},
-        ]))
-    msg = str(ei.value)
-    assert "query_nested" in msg
-
-
 # ---------------------------------------------------------------------------
-# query_nested — stage dict with distinct_dimension_values rides through
-# untouched. Regression pin (no impl change expected here).
+# query_impl (multi-stage list) — a stage's distinct_dimension_values
+# rides through untouched.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_query_nested_stage_with_distinct_dim_passes_through(monkeypatch):
-    from bird_interact_agents.agents import _query
+async def test_query_impl_list_stage_distinct_dim_passes_through(monkeypatch):
+    from bird_interact_agents.agents._query import query_impl
 
-    forwarded: dict[str, Any] = {}
-    async def fake(**kwargs):
-        forwarded.update(kwargs)
-        return ""
-
-    monkeypatch.setattr(
-        _query, "_get_slayer_tool_fn",
-        lambda name: fake if name == "query_nested" else None,
-    )
+    forwarded = _patch_slayer_query_fn(monkeypatch)
     stages = [
         {
             "source_model": "orders",
@@ -381,8 +217,8 @@ async def test_query_nested_stage_with_distinct_dim_passes_through(monkeypatch):
         },
         {"source_model": "orders", "dimensions": ["region"]},
     ]
-    await _query.query_nested_impl(queries=stages)
-    out_stages = forwarded["queries"]
+    await query_impl(stages)
+    out_stages = forwarded["query"]
     assert out_stages[0]["distinct_dimension_values"] is False
     # Default (omitted) stays omitted, so slayer's per-stage default fires.
     assert "distinct_dimension_values" not in out_stages[1]
@@ -646,80 +482,6 @@ def test_motley_slayer_floor_is_at_least_0_9_6():
 
 
 # ---------------------------------------------------------------------------
-# claude-sdk @tool("query", ...) registration: input schema collapsed to
-# a single `query_json` string field + tool-level options.
-# ---------------------------------------------------------------------------
-
-
-def _extract_tool_schema(tool_obj: Any) -> dict:
-    for attr in ("inputSchema", "input_schema", "schema", "args_schema"):
-        s = getattr(tool_obj, attr, None)
-        if s is not None:
-            return s
-    raise AssertionError(
-        f"could not find input schema on {tool_obj!r} via "
-        "inputSchema/input_schema/schema/args_schema"
-    )
-
-
-def test_claude_sdk_query_tool_schema_uses_structured_shape_after_unification():
-    """DEV-1555 CR r1 / O1 unification: the single ``query_json`` string
-    parameter is gone; the slayer ``query`` tool now exposes the same
-    structured shape as ``submit_query`` (single-stage via
-    ``source_model`` + projection fields OR nested-DAG via ``queries``).
-    The wrapper builds the JSON string internally and forwards it to
-    DEV-1546's ``query_impl(query_json: str, …)``.
-
-    The full per-property pin lives in
-    ``tests/test_dev1534_query_wrapper.py::test_query_wrapper_tool_schema_accepts_unified_shape``;
-    here we just lock the change from the original DEV-1546 schema."""
-    from bird_interact_agents.agents.claude_sdk import agent as agent_mod
-
-    schema = _extract_tool_schema(agent_mod.query)
-    assert isinstance(schema, dict) and "properties" in schema
-    props = schema["properties"]
-    # The unified surface adds the structured-form keys; `query_json` is gone.
-    assert "query_json" not in props
-    assert "source_model" in props
-    assert "queries" in props
-    # `required` is empty — the handler gates on source_model XOR queries.
-    assert schema.get("required") == []
-
-
-# ---------------------------------------------------------------------------
-# Prompts — _DEDUP_VS_RAW_ROWS is composed into both slayer-flavor
-# prompts, and the post-insertion str.format placeholders are unchanged.
-# ---------------------------------------------------------------------------
-
-
-def test_dedup_vs_raw_rows_constant_exists_and_nonempty():
-    from bird_interact_agents.agents._shared_otf_prompts import _DEDUP_VS_RAW_ROWS
-
-    assert isinstance(_DEDUP_VS_RAW_ROWS, str) and _DEDUP_VS_RAW_ROWS.strip()
-
-
-def test_dedup_vs_raw_rows_present_in_slayer_v0_one_shot():
-    """Structural composition pin: the live ``_DEDUP_VS_RAW_ROWS``
-    appears in the V0 snapshot byte-for-byte (V0 is the
-    origin/main-shape prompt the v0 agents render). The V1 prompts
-    teach the same guidance in a shorter inlined form rather than
-    composing the constant; that contract is covered by
-    ``test_dev1555_v0_v1_shared_prompts``."""
-    from bird_interact_agents.agents._shared_otf_prompts import (
-        _DEDUP_VS_RAW_ROWS,
-        SLAYER_OTF_ONE_SHOT_V0,
-    )
-
-    assert _DEDUP_VS_RAW_ROWS in SLAYER_OTF_ONE_SHOT_V0
-
-
-def test_dedup_vs_raw_rows_present_in_slayer_v0_ainteract():
-    from bird_interact_agents.agents._shared_otf_prompts import (
-        _DEDUP_VS_RAW_ROWS,
-        SLAYER_OTF_AINTERACT_V0,
-    )
-
-    assert _DEDUP_VS_RAW_ROWS in SLAYER_OTF_AINTERACT_V0
 
 
 def test_slayer_otf_prompts_format_placeholders_unchanged():

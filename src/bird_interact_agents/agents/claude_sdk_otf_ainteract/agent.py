@@ -184,8 +184,8 @@ def _make_ask_user_guards():
     return pre_submit_gate, post_ask_counter, post_nag
 
 
-# DEV-1534 Fix C: `query` / `query_nested` are bird-interact-tools
-# wrappers (not SLayer subprocess tools) so the agent can opt out of
+# DEV-1534 Fix C: `query` is a bird-interact-tools wrapper (not a
+# SLayer subprocess tool) so the agent can opt out of
 # filter normalization mid-flight via the `normalize_filters` parameter.
 _KNOWLEDGE_TOOLS = [
     get_all_external_knowledge_names,
@@ -606,7 +606,7 @@ class ClaudeSDKOtfAInteractAgent:
             )
         finally:
             # DEV-1654: dispose this task's in-process SLayer engine (the
-            # `query` / `query_nested` natives build one) now that the agent
+            # `query` native builds one) now that the agent
             # session is closed — before grading (its own psycopg2 path) and
             # while the loop is still alive; a reused cloud actor would
             # otherwise retain one asyncpg pool per task. No-op when no

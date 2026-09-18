@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: high_risk_bot_network
 source_queries:
-- version: 3
+- version: 4
   name: scores_per_account
   source_model: moderationaction
   measures:
@@ -17,7 +17,9 @@ source_queries:
   - name: account_id
   - name: cluster_id
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model: scores_per_account
   measures:
   - formula: bbi_v:avg
@@ -33,6 +35,8 @@ source_queries:
   dimensions:
   - name: cluster_id
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"scores_per_account.cluster_id\" AS cluster_id, \"scores_per_account.avg_bbi\"\
   \ AS avg_bbi, \"scores_per_account.avg_cbr\" AS avg_cbr, \"scores_per_account.avg_srs\"\
@@ -83,6 +87,7 @@ columns:
   sql: cluster_id
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row cluster identifier resolved through the moderationaction \u2192\
     \ contentbehavior \u2192 sessionbehavior \u2192 profile \u2192 account join chain.\
     \ Equals account.platident; per KB #80, this is the cluster identifier used to\
@@ -92,6 +97,7 @@ columns:
   sql: avg_bbi
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Bot Behavior Index (KB #3): 0.4*botlikscore + 0.3*autobehavscore +
     0.3*(1-convnatval). botlikscore observed in 0-100; KB-implied composite assumes
     0-1, so values may exceed 1.'
@@ -102,6 +108,7 @@ columns:
   sql: avg_cbr
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Coordinated Bot Risk (KB #33): BBI * CAS-coord * clustsize/100.'
   hidden: false
   format:
@@ -110,6 +117,7 @@ columns:
   sql: avg_srs
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Security Risk Score (KB #4): 0.4*riskval + 0.3*(1-trustval) + 0.3*impactval.'
   hidden: false
   format:
@@ -118,6 +126,7 @@ columns:
   sql: max_clustsize
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Size of the related account cluster.
   hidden: false
   format:
@@ -126,6 +135,7 @@ columns:
   sql: member_count
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer

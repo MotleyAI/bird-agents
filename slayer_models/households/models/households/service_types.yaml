@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: service_types
 sql_table: service_types
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: serviceref
   type: INT
   primary_key: true
+  unique: false
   description: A SERIAL primary key uniquely identifying each social service type
     or package configuration available to households. Ex. 1,2,3
   hidden: false
@@ -17,6 +18,7 @@ columns:
   sql: domestichelp
   type: TEXT
   primary_key: false
+  unique: false
   description: "Domestic worker service availability for households. Sample values\
     \ include 'No domestic workers', 'Yes, occasional', and richer free-text variants.\
     \ NULL indicates informal or undisclosed arrangements.\n\n[kb=8]\nIncludes 'Full-time'\
@@ -35,6 +37,7 @@ columns:
   sql: socsupport
   type: TEXT
   primary_key: false
+  unique: false
   description: "Social assistance program participation indicator (binary Yes/No).\
     \ Part of unique constraint combination.\n\n[kb=9]\nBinary indicator where 'Yes'\
     \ means the household accepts social assistance and 'No' means it does not. Part\
@@ -49,6 +52,7 @@ columns:
   sql: CASE WHEN LOWER(TRIM(socsupport)) = 'yes' THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "[kb=24]\nA household with social support status marked as 'Yes'. \u2014\
     \ Defines a household receiving social assistance.\n[/kb=24]"
   label: Supported Household

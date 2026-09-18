@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: vehicle_urgency_rank
 source_queries:
-- version: 3
+- version: 4
   name: mcs_per_shipment_ur
   source_model: regulatoryandmaintenance
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: shipgov
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: tbs_per_container_ur
   source_model: sensordata
   measures:
@@ -19,7 +21,9 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: lhi_per_container_ur
   source_model: datalogger
   measures:
@@ -28,33 +32,43 @@ source_queries:
   dimensions:
   - name: containlog
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: cmr_per_container_ur
   source_model:
     source_name: container
+    columns:
+    - name: cmr
+      sql: (1 - mcs_per_shipment_ur.mcs) * (1 + tbs_per_container_ur.tbs / 5.0) *
+        (1 - lhi_per_container_ur.lhi)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: mcs_per_shipment_ur
       join_pairs:
       - - shipown
         - shipgov
+      join_type: left
     - target_model: tbs_per_container_ur
       join_pairs:
       - - containregistry
         - containlink
+      join_type: left
     - target_model: lhi_per_container_ur
       join_pairs:
       - - containregistry
         - containlog
-    columns:
-    - name: cmr
-      type: DOUBLE
-      sql: (1 - mcs_per_shipment_ur.mcs) * (1 + tbs_per_container_ur.tbs / 5.0) *
-        (1 - lhi_per_container_ur.lhi)
+      join_type: left
   dimensions:
   - name: containregistry
   - name: cmr
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: days_overdue_per_vehicle
   source_model: regulatoryandmaintenance
   measures:
@@ -63,26 +77,36 @@ source_queries:
   dimensions:
   - name: vehgov
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: transportinfo
+    columns:
+    - name: urgency_score
+      sql: cmr_per_container_ur.cmr + days_overdue_per_vehicle.days_overdue / 30.0
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: urgency_rank
+      sql: RANK() OVER (ORDER BY (cmr_per_container_ur.cmr + days_overdue_per_vehicle.days_overdue
+        / 30.0) DESC)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: cmr_per_container_ur
       join_pairs:
       - - containtransit
         - containregistry
+      join_type: left
     - target_model: days_overdue_per_vehicle
       join_pairs:
       - - vehiclereg
         - vehgov
-    columns:
-    - name: urgency_score
-      type: DOUBLE
-      sql: cmr_per_container_ur.cmr + days_overdue_per_vehicle.days_overdue / 30.0
-    - name: urgency_rank
-      type: DOUBLE
-      sql: RANK() OVER (ORDER BY (cmr_per_container_ur.cmr + days_overdue_per_vehicle.days_overdue
-        / 30.0) DESC)
+      join_type: left
   dimensions:
   - name: vehiclereg
   - name: containtransit
@@ -93,6 +117,8 @@ source_queries:
   - name: urgency_score
   - name: urgency_rank
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"transportinfo.vehiclereg\" AS vehiclereg, \"transportinfo.containtransit\"\
   \ AS containtransit, \"transportinfo.cmr_per_container_ur.cmr\" AS cmr_per_container_ur__cmr,\
@@ -154,31 +180,37 @@ columns:
   sql: vehiclereg
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: containtransit
   sql: containtransit
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cmr_per_container_ur__cmr
   sql: cmr_per_container_ur__cmr
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: days_overdue_per_vehicle__days_overdue
   sql: days_overdue_per_vehicle__days_overdue
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: urgency_score
   sql: urgency_score
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: urgency_rank
   sql: urgency_rank
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

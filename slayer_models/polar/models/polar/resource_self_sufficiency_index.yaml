@@ -1,7 +1,7 @@
-version: 7
+version: 10
 name: resource_self_sufficiency_index
 source_queries:
-- version: 3
+- version: 4
   name: rec_per_eq
   source_model: thermalsolarwindandgrid
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: thermaleqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: wrmi_per_eq
   source_model: waterandwaste
   measures:
@@ -19,7 +21,9 @@ source_queries:
   dimensions:
   - name: watereqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: rec_per_eq
     joins:
@@ -27,12 +31,15 @@ source_queries:
       join_pairs:
       - - thermaleqref
         - watereqref
+      join_type: left
   measures:
   - formula: 0.6 * rec:avg + 0.4 * wrmi_per_eq.wrmi:avg
     name: rssi
   dimensions:
   - name: thermaleqref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"rec_per_eq.thermaleqref\" AS thermaleqref, \"rec_per_eq.rec_avg\"\
   \ AS rec_avg, \"rec_per_eq.rssi\" AS rssi, \"rec_per_eq.wrmi_per_eq.wrmi_avg\" AS\
@@ -70,11 +77,13 @@ columns:
   sql: thermaleqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rec_avg
   sql: rec_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Renewable Energy Contribution (KB #9): (solar+wind)/(solar+wind+fuelcell)\
     \ \xD7 100, %."
   hidden: false
@@ -84,6 +93,7 @@ columns:
   sql: rssi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -91,6 +101,7 @@ columns:
   sql: wrmi_per_eq__wrmi_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

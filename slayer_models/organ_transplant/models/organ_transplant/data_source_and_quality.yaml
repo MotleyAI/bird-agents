@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: data_source_and_quality
 sql_table: data_source_and_quality
 query_variables: {}
@@ -8,18 +8,21 @@ columns:
   sql: q_match_registry
   type: TEXT
   primary_key: true
+  unique: false
   description: FK to transplant_matching.match_rec_registry.
   hidden: false
 - name: data_src_val
   sql: data_src_val
   type: TEXT
   primary_key: false
+  unique: false
   description: Data source name (raw with case noise).
   hidden: false
 - name: dq_score_val
   sql: dq_score_val
   type: INT
   primary_key: false
+  unique: false
   description: Data quality score (0-1).
   hidden: false
   format:
@@ -28,6 +31,7 @@ columns:
   sql: dc_score_val
   type: INT
   primary_key: false
+  unique: false
   description: Data completeness score (0-1).
   hidden: false
   format:
@@ -36,30 +40,35 @@ columns:
   sql: verif_stat_val
   type: TEXT
   primary_key: false
+  unique: false
   description: Verification status (raw with case noise).
   hidden: false
 - name: last_up_ts
   sql: last_up_ts
   type: TEXT
   primary_key: false
+  unique: false
   description: Last update date (text 'yyyy/mm/dd').
   hidden: false
 - name: next_rev_dt
   sql: next_rev_dt
   type: TEXT
   primary_key: false
+  unique: false
   description: Next review date (text 'dd/mm/yyyy').
   hidden: false
 - name: q_don_ref
   sql: q_don_ref
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to demographics.
   hidden: false
 - name: q_rec_ref
   sql: q_rec_ref
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to recipients_demographics.
   hidden: false
 measures: []

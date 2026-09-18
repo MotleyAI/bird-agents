@@ -28,25 +28,19 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _DEFINE_BEFORE_REFERENCE,
     _NO_USER_TO_CONSULT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
+    _NORMALIZE_FILTERS_NOTE,
     _SAMPLE_VALUE_FILTER_MANDATE,
-    _SLAYER_SQL_ARTIFACT_CHECK,
+    _SINGLE_QUERY_NUDGE,
 )
 
 # Shared submission contract (single-stage or nested-DAG). Literal JSON
 # braces are doubled because the prompt is consumed via ``str.format``.
 _SUBMIT_CONTRACT = """\
-Call `submit_query` with your final SLayer query as structured arguments.
-Two top-level shapes (same as `query`):
-
-  * Single-stage — set `source_model` plus the usual projection
-    fields, e.g. `source_model: "orders"`,
-    `dimensions: ["status"]`, `measures: ["amount:sum"]`.
-  * Nested DAG — when one stage's MEASURE becomes the next stage's
-    DIMENSION, set `queries` to a list of stage objects. The last
-    element is the DAG root; every non-final element needs a `name`;
-    later stages reference earlier ones via
-    `source_model: "<sibling name>"`. Omit `source_model` at the top
-    level when passing `queries`.
+Call `submit_query` with your final SLayer query as the `query` argument
+(same shape `query` takes): one SlayerQuery object, or a multi-stage list of
+stage objects when one stage's MEASURE becomes the next stage's DIMENSION —
+the last element is the DAG root; every non-final element needs a `name`;
+later stages reference earlier ones via `source_model: "<sibling name>"`.
 
 You MUST call `submit_query` to finish — a prose answer is not a
 submission. If a `filters` predicate needs a computed value, encode it as
@@ -60,11 +54,9 @@ starts `KB <n> —`. The base tables are already ingested as SLayer models,
 but NOTHING is encoded yet: you encode exactly what THIS question needs,
 on the fly.
 
-YOUR TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn the
-query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
-the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`create_model` / `edit_model` to add columns and measures; `query` (single
-object OR list of stage objects for nested DAG) to test. You HOLD the
+YOUR TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn
+SLayer's query language. Use `create_model` / `edit_model` to add columns and
+measures; `query` to test. You HOLD the
 schema-introspection tools `search`, `inspect_model`, and `inspect` — call
 them DIRECTLY: `search` to find models / columns / measures, `inspect_model`
 for a whole model's columns / measures / joins, and `inspect` for a single
@@ -136,15 +128,15 @@ SLAYER_OTF_ONE_SHOT = (
     "entities instead of inlining their SQL.\n\n"
     + _NO_USER_TO_CONSULT.format(sources_desc="the memories and column\ndescriptions")
     + "\n\n"
+    + _SINGLE_QUERY_NUDGE
+    + "\n\n"
+    + _NORMALIZE_FILTERS_NOTE
+    + "\n\n"
     + _ENCODE_CORE
     + "\n\n"
     + _SAMPLE_VALUE_FILTER_MANDATE.format(sample_source="`inspect`")
     + "\n\n4. TEST candidate columns and the final query with `query` "
-      "(single object or nested-DAG `queries` list); sanity-check the "
-      "generated SQL.\n\n"
-      "   "
-    + _SLAYER_SQL_ARTIFACT_CHECK
-    + "\n\n"
+      "before submitting.\n\n"
     + _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT.format(
         submit_tool="submit_query",
         clause_b="encoded KB",

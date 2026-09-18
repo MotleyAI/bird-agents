@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: core
 sql_table: core
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: content_key
   type: INT
   primary_key: true
+  unique: false
   description: "Primary key \u2014 unique id per Hulu content item (show/movie/special)."
   hidden: false
   format:
@@ -16,18 +17,21 @@ columns:
   sql: canonical_name
   type: TEXT
   primary_key: false
+  unique: false
   description: Standardized canonical name (slug-style) for cross-platform search/matching.
   hidden: false
 - name: content_title
   sql: content_title
   type: TEXT
   primary_key: false
+  unique: false
   description: Display title shown in UI.
   hidden: false
 - name: series_id
   sql: series_id
   type: INT
   primary_key: false
+  unique: false
   description: "Franchise/series identifier \u2014 content sharing the same series_id\
     \ belongs to the same franchise (KB 13 Franchise Group). NULL = standalone content.\n\
     \n[kb=13]\nContent entries recognized as part of the same story world or universe\
@@ -43,6 +47,7 @@ columns:
   sql: studiolink
   type: INT
   primary_key: false
+  unique: false
   description: "FK to companies.entity_key \u2014 primary production studio for the\
     \ content."
   hidden: false
@@ -53,6 +58,7 @@ columns:
   sql: annotations
   type: TEXT
   primary_key: false
+  unique: false
   description: "Free-text annotation/metadata blob; populated when the content has\
     \ any extra notes (KB 38 ACR uses 'has annotation'). NULL when no annotations.\n\
     \n[kb=38]\nACR = The share of content items that include extra notes or descriptions.\
@@ -65,6 +71,7 @@ columns:
   sql: genreclass
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSONB column with content classification: User_Score (mixed format\
     \ strings \u2014 KB 1), Content_Type ('show'/'movie'/'special' \u2014 KB 0), Primary_Genre\
     \ (broad genre \u2014 KB 74), Hierarchical_Genres (delimited multi-genre string\
@@ -75,6 +82,7 @@ columns:
   sql: genreclass ->> '$.User_Score'
   type: TEXT
   primary_key: false
+  unique: false
   description: "Raw User_Score string from genreclass JSON. KB 1 documents multiple\
     \ formats: '4.35', '4.35 \u2605', '$4.35M', '4.35 RTG', etc.\n\n[kb=1]\nExamples\
     \ include raw numbers like '4.35', symbols like '4.35\u2605', monetized ratings\
@@ -91,6 +99,7 @@ columns:
     LIKE '%bp%' THEN 100.0 ELSE 1.0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Normalized User_Score as REAL \u2014 strips currency/star/RTG/bp suffixes\
     \ and divides basis points by 100 to align with the 0-5 rating scale. KB 28 (NUS\
     \ = (score-min)/(max-min)) operates row-wise on this column at query time using\
@@ -104,6 +113,7 @@ columns:
   sql: genreclass ->> '$.Content_Type'
   type: TEXT
   primary_key: false
+  unique: false
   description: "Content type label: 'show', 'movie', or 'special' (KB 0).\n\n[kb=0]\n\
     Includes 'show', 'movie', and 'special' to distinguish the type of content displayed.\
     \ \u2014 Clarifies the values used to indicate whether a piece of content is a\
@@ -116,6 +126,7 @@ columns:
   sql: genreclass ->> '$.Primary_Genre'
   type: TEXT
   primary_key: false
+  unique: false
   description: "Primary high-level genre tag (KB 74).\n\n[kb=74]\nExamples include\
     \ 'Drama', 'Comedy', 'Documentary', 'Reality', and 'Animation'. These genres can\
     \ appear in the genre metadata of content records. \u2014 Categorizes shows using\
@@ -128,6 +139,7 @@ columns:
   sql: genreclass ->> '$.Hierarchical_Genres'
   type: TEXT
   primary_key: false
+  unique: false
   description: "Delimited hierarchical-genre string using '~' for sub-genre and '|'\
     \ for alternative branches (KB 6).\n\n[kb=6]\nUses '~' for sub genres and '|'\
     \ for alternatives. Example: 'Comedy~Sitcom|Teen'. \u2014 Explains how genres\
@@ -141,6 +153,7 @@ columns:
     END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "1 when the content has any annotation text, 0 otherwise. Used by KB\
     \ 38 (ACR).\n\n[kb=38]\nACR = The share of content items that include extra notes\
     \ or descriptions. \u2014 Proportion of content items with non-empty annotation\
@@ -153,6 +166,7 @@ columns:
   sql: LENGTH(content_title)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Number of characters in content_title. KB 90 (Average Title Length\
     \ per Studio) averages this column grouped by studiolink. KB 36 (TER) uses this\
     \ in content_info.title_to_episode_ratio.\n\n[kb=90]\nWe look at how many characters\
@@ -168,6 +182,7 @@ columns:
   sql: LOWER(genreclass ->> '$.Content_Type') = 'movie'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "TRUE when content_type='movie' (one of the Movie Identifier Format\
     \ conventions \u2014 KB 5).\n\n[kb=5]\nCan appear as 'TRUE', 'FALSE', 'Y', 'N',\
     \ 'Movie', 'Series'. These values signal whether content is a movie. \u2014 Describes\
@@ -180,6 +195,7 @@ columns:
   sql: LOWER(genreclass ->> '$.Content_Type') = 'show'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: TRUE when content_type='show'.
   hidden: false
 - name: n_genre_tokens
@@ -189,6 +205,7 @@ columns:
     ''))) END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Total genre tokens in Hierarchical_Genres = 1 + count of '|' or '~'\
     \ delimiters. Used by KB 50 (GFI) and KB 39 (MGSS).\n\n[kb=39]\nMGSS = Multi-genre\
     \ spread is measured by the number of ways genres are split or combined in a show.\
@@ -202,6 +219,7 @@ columns:
     ->> '$.Hierarchical_Genres', ''), '|', ''), '~', '')))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Number of '~' or '|' delimiters in Hierarchical_Genres \u2014 used\
     \ as the GFI denominator (+1) per KB 50."
   hidden: false
@@ -214,6 +232,7 @@ columns:
     '')))) END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Genre Fragmentation Index (KB 50): n_genre_tokens / (1 + n_genre_delimiters).\
     \ Note: tokens = 1 + delimiters by construction so GFI = (1+d)/(1+d) = 1; encoded\
     \ literally per KB formula.\n\n[kb=50]\nGFI = \\frac{\\text{Number of genre tokens}}{1\
@@ -229,6 +248,7 @@ columns:
     ->> '$.Hierarchical_Genres', ''), '|', ''), '~', ''))) >= 3
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "TRUE when the show spans many genre branches (KB 44) \u2014 operationalised\
     \ as \u22653 hierarchical-genre delimiters.\n\n[kb=44]\nIf a show\u2019s genres\
     \ span many different types and combinations, it\u2019s highly diversified. \u2014\
@@ -242,6 +262,7 @@ columns:
     ->> '$.Hierarchical_Genres', ''), '|', ''), '~', ''))) > 4
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Fragmented Genre Definition (KB 62) \u2014 flagged when the genre\
     \ hierarchy uses many sub/alt delimiters (>4).\n\n[kb=62]\nShows are considered\
     \ fragmented if the number of types and subtypes listed for the show is high \u2014\
@@ -257,6 +278,7 @@ columns:
     '%Primetime Animation%' OR (genreclass ->> '$.Hierarchical_Genres') LIKE '%Sitcoms%'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Animation Families genre membership (KB 46): Primary_Genre or Hierarchical_Genres\
     \ contains 'Animation and Cartoons', 'Primetime Animation', 'Teen', 'Comedy',\
     \ or 'Sitcoms'.\n\n[kb=46]\nIncludes 'Animation and Cartoons', 'Primetime Animation',\
@@ -271,6 +293,7 @@ columns:
     LIKE '%Comedy%'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: Comedy genre membership (used by KB 43 Iconic Comedy Brands).
   hidden: false
 - name: is_highly_rated
@@ -280,6 +303,7 @@ columns:
     LIKE '%bp%' THEN 100.0 ELSE 1.0 END > 4.2
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "'Highly rated' shorthand (KB 43) \u2014 user_score > 4.2 (top of KB\
     \ 78 'High' band)."
   hidden: false
@@ -288,6 +312,7 @@ columns:
     '$.Hierarchical_Genres') LIKE '%Comedy%' THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Integer 0/1 of is_comedy.\n\n[kb=43]\nA studio is considered iconic\
     \ for comedy if it has created at least three highly-rated comedy shows. \u2014\
     \ Identifies production companies that created multiple top-rated comedy shows.\n\
@@ -303,6 +328,7 @@ columns:
     ' ', ''), ',', ''), '%', '') AS REAL) > 4.2 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Integer 0/1 indicator: highly-rated comedy show. Used by KB 43 (group\
     \ by studiolink, sum, then filter sum >= 3).\n\n[kb=43]\nA studio is considered\
     \ iconic for comedy if it has created at least three highly-rated comedy shows.\
@@ -320,6 +346,7 @@ columns:
     ' ', ''), ',', ''), '%', '') AS REAL) <= 4.2 THEN 'Medium' ELSE 'High' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Episode Rating Band (KB 78): Low (<3.5), Medium (3.5..4.2), High (>4.2).\
     \ Operationalised on user_score per row.\n\n[kb=78]\nWe calculate the average\
     \ user rating across all episodes in a show, and sort it into one of three categories:\
@@ -337,6 +364,7 @@ columns:
     ' ', ''), ',', ''), '%', '') AS REAL) >= 2 THEN 'Medium' ELSE 'Low' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Tiered User Score Coverage band (KB 83): High (4..5), Medium (2..4),\
     \ Low (0..2).\n\n[kb=83]\nEach show gets a user rating, which is then matched\
     \ to a category: Low (0\u20132), Medium (2\u20134), or High (4\u20135). We count\
@@ -354,6 +382,7 @@ columns:
     THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Integer 0/1 form of is_animation_family_genre.
   hidden: false
 - name: is_high_csi_low_acr_helper
@@ -365,6 +394,7 @@ columns:
     <> '' THEN 1 ELSE 0 END) = 0 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Incomplete High-Engagement Title (KB 63): high CSI (>100, derived\
     \ in joined content_info) AND no annotation (ACR < 0.5). Per-row indicator joining\
     \ to content_info via the auto-FK.\n\n[kb=63]\nDefined by high Content Size Index\
@@ -381,6 +411,7 @@ columns:
     ->> '$.content_volumes.Feature_Films' AS INTEGER), 0)
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Over-Fragmented Offering (KB 68): >6 nested genre delimiters AND short-form\
     \ clips > long-form features. KB 71 is a more verbose restatement of the same\
     \ predicate \u2014 documented as a duplicate in the per-DB notes file.\n\n[kb=68]\n\
@@ -395,6 +426,7 @@ columns:
   sql: canonical_name
   type: TEXT
   primary_key: false
+  unique: false
   description: "Helper for Series Title Uniformity Flag (KB 87): per-row canonical_name;\
     \ the agent computes COUNT(DISTINCT canonical_name)=1 grouped by series_id at\
     \ query time.\n\n[kb=87]\nIf every title in a series uses the exact same name,\
@@ -575,11 +607,6 @@ joins:
   join_pairs:
   - - studiolink
     - entity_key
-  join_type: left
-- target_model: content_info
-  join_pairs:
-  - - content_key
-    - content_key
   join_type: left
 filters: []
 description: One row per Hulu show / movie / special. Holds the canonical key (`content_key`),

@@ -12,9 +12,9 @@ It is PURELY DETERMINISTIC and makes NO concept-vs-answer judgment — it only f
 agent-created entities that lack a ``[kb=N]`` provenance tag (``NON_KB_ENTITY``);
 the concept-vs-answer call + ``[concept]`` tagging + demotion is an EXTERNAL step.
 
-All lineage is resolved through SLayer's OWN helpers — ``core.formula`` for
-filter/measure references, and ``engine.column_dependency`` internals for
-column-SQL references (composed with the trivial-base filter dropped so
+All lineage is resolved through SLayer's OWN helpers — ``engine.syntax`` for
+filter references, ``core.formula`` for measures, and ``sql.column_expansion``
+for column-SQL references (composed with the trivial-base filter dropped so
 scaffolding referenced by a used derived column counts as used). No hand-rolled
 SQL/formula parser (memory: ``feedback_reuse_slayer_not_reinvent``).
 """
@@ -28,18 +28,57 @@ import sqlglot
 from pydantic import BaseModel
 from sqlglot import exp
 
-from slayer.core.formula import parse_filter as _formula_parse_filter
 from slayer.core.formula import parse_formula as _parse_formula
 from slayer.core.models import Column, ModelMeasure, SlayerModel
-from slayer.engine.column_dependency import (
-    _DEPENDENCY_DIALECT,
-    _is_trivial_base,
-    _resolve_target_for_ref,
-    _root_scope_column_ids,
+from slayer.engine.column_dependency import _DEPENDENCY_DIALECT
+from slayer.engine.syntax import (
+    AggCall,
+    DottedRef,
+    Ref,
+    parse_filter_expr,
+    walk_parsed_refs,
+)
+from slayer.sql.column_expansion import (
+    is_trivial_base,
+    resolve_ref_target,
+    root_scope_column_ids,
 )
 
 _KB_RE = re.compile(r"\[kb=(\d+)\]")
 _CONCEPT_RE = re.compile(r"\[concept\]")
+
+
+def _ref_leaf_names(parsed: Any) -> set[str]:
+    """Bare column names referenced anywhere in a parsed Mode-B expression.
+
+    ``walk_parsed_refs`` yields an ``AggCall`` whole (its source/args/kwargs are
+    opaque to the binder walk), so an aggregate over an expression source
+    (``sum(amount - cost)``) or a ``partition_by=`` kwarg ref would otherwise be
+    lost — we recurse into both to recover the inner columns.
+    """
+    names: set[str] = set()
+    for node in walk_parsed_refs(parsed):
+        if isinstance(node, Ref):
+            names.add(node.name)
+        elif isinstance(node, DottedRef):
+            names.add(".".join(node.parts))
+        elif isinstance(node, AggCall):
+            names |= _ref_leaf_names(node.source)
+            for a in node.args:
+                names |= _ref_leaf_names(a)
+            for _k, v in node.kwargs:
+                names |= _ref_leaf_names(v)
+    return names
+
+
+def _filter_column_names(filter_str: str) -> set[str]:
+    """Column names a Mode-B filter references (SLayer 0.10.2 ``parse_filter_expr``
+    replacing the removed ``core.formula.parse_filter``). Unparseable → empty."""
+    try:
+        return _ref_leaf_names(parse_filter_expr(filter_str))
+    except Exception:
+        return set()
+
 
 FindingCategory = Literal[
     "UNUSED_AGENT_ENTITY",
@@ -160,7 +199,7 @@ def _all_column_refs(
         parsed = sqlglot.parse_one(column.sql, dialect=_DEPENDENCY_DIALECT)
     except Exception:
         return []
-    root_ids = _root_scope_column_ids(parsed=parsed)
+    root_ids = root_scope_column_ids(parsed=parsed)
     refs: list[tuple[str, str]] = []
     for node in parsed.find_all(exp.Column):
         if id(node) not in root_ids:
@@ -169,7 +208,10 @@ def _all_column_refs(
             continue
         table_id = node.args.get("table")
         alias = table_id.name if table_id is not None else None
-        target = _resolve_target_for_ref(table_alias=alias, host=host, reachable=reachable)
+        target = resolve_ref_target(
+            qualifiers=() if alias is None else (alias,),
+            source_model=host, models_by_name=reachable,
+        )
         if target is None:
             continue
         tcol = target.get_column(node.name)
@@ -286,7 +328,7 @@ def _dim_name(d: Any) -> str | None:
 
 def _stage_reference_names(stage: dict, model: SlayerModel) -> set[str]:
     """Raw entity names a single stage references, resolved with SLayer's own
-    parsers (dimensions/order = bare names; filters = ``core.formula.parse_filter``;
+    parsers (dimensions/order = bare names; filters = ``engine.syntax.parse_filter_expr``;
     measures = ``parse_formula`` / stored-measure-name match)."""
     names: set[str] = set()
     for d in stage.get("dimensions", []) or []:
@@ -308,7 +350,7 @@ def _stage_reference_names(stage: dict, model: SlayerModel) -> set[str]:
         if not isinstance(f, str):
             continue
         try:
-            names.update(_formula_parse_filter(f).columns or [])
+            names.update(_filter_column_names(f))
         except Exception:
             continue
     measures_by_name = _measures_by_name(model)
@@ -385,7 +427,7 @@ def _inline_query_work(winning_query: dict | list) -> list["Finding"]:
                 sig = "a CASE expression"
             else:
                 try:
-                    cols = _formula_parse_filter(f).columns or []
+                    cols = list(_filter_column_names(f))
                 except Exception:
                     cols = []
                 if len(set(cols)) >= 2 and _ARITH_RE.search(f):
@@ -716,7 +758,7 @@ async def check_models(
         is_measure = col is None
         tag, is_concept, _desc = _tag_and_desc(mname, ename)
         is_pk = bool(col.primary_key) if col is not None else False
-        is_trivial = (not is_measure) and _is_trivial_base(column=col)
+        is_trivial = (not is_measure) and is_trivial_base(column=col)
         is_derived = is_measure or (not is_trivial)
         used = (mname, ename) in used_entities
 

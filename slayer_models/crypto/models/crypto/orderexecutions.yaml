@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: orderexecutions
 sql_table: orderexecutions
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: orderexecmark
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: fillcount
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -22,6 +24,7 @@ columns:
   sql: remaincount
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -29,6 +32,7 @@ columns:
   sql: fillquote
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -36,6 +40,7 @@ columns:
   sql: fillsum
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -43,16 +48,19 @@ columns:
   sql: expirespot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cancelnote
   sql: cancelnote
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: exectune
   sql: exectune
   type: TEXT
   primary_key: false
+  unique: false
   description: "Execution-style enum (KB #29): 'Maker' = added liquidity (no immediate\
     \ match), 'Taker' = removed liquidity (immediately matched).\n\n[kb=29]\nAn enum\
     \ with values 'Maker' or 'Taker'. 'Maker' indicates the order added liquidity\
@@ -68,11 +76,13 @@ columns:
   sql: ordersmark
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: order_fill_rate
   sql: (orders.dealcount - remaincount) / NULLIF(orders.dealcount, 0) * 100
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Order Fill Rate (KB #8): (dealcount \u2212 remaincount) / dealcount\
     \ \xD7 100. Percentage of the order that has been filled.\n\n[kb=8]\nOrder Fill\
     \ Rate = \\frac{dealcount - remaincount}{dealcount} \\times 100, \\text{where\

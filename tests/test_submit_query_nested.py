@@ -3,32 +3,13 @@
 `submit_slayer_query` must accept two top-level JSON shapes:
 
 * Single-stage: a JSON object validating as a `SlayerQuery`.
-* Nested DAG: a JSON array of stage dicts; last element is the DAG root
-  (same shape `query_nested` MCP tool accepts).
+* Nested DAG: a JSON array of stage dicts; last element is the DAG root.
 
 Anything else — top-level scalar, wrapped `{queries: [...]}`,
 `{nested_queries: [...]}`, `{source_model: ..., queries: [...]}` — is
 rejected up-front with a sharp error message naming the two valid
 shapes, before `sql_sync` is ever called.
 
-The brace for slayer's HTTP path (and any future slayer refactor): when
-`client.sql_sync(list)` raises, fall back to
-`client._engine.execute_sync(query=list, dry_run=True).sql` — the engine
-has always accepted lists. The exception classes the brace must catch are
-the union of:
-
-* `AttributeError` — current slayer 0.6.8's HTTP path reaches
-  `query.model_dump(...)` on a list and crashes with
-  `AttributeError: 'list' object has no attribute 'model_dump'`. The
-  in-process path on 0.6.8 actually works (engine handles list natively),
-  but we cannot rely on that across slayer refactors.
-* `pydantic.ValidationError` — what a refactored `query_sync` is likely
-  to raise if it adds an explicit list check via Pydantic.
-* `TypeError` — what an explicit `if not isinstance(query, (dict,
-  SlayerQuery)): raise TypeError(...)` would emit.
-
-The brace is removed once `pyproject.toml`'s slayer floor bumps past
-DEV-1437.
 """
 
 from __future__ import annotations
@@ -255,80 +236,6 @@ def test_nested_list_charges_submit_budget_once():
     assert out.count("[Remaining budget:") == 1
 
 
-# ---------------------------------------------------------------------------
-# The brace: old-slayer fallback to engine.execute_sync when sql_sync rejects.
-# ---------------------------------------------------------------------------
-
-
-def test_brace_fires_on_attributeerror_for_list():
-    """Current slayer 0.6.8's HTTP path raises AttributeError when it
-    reaches `query.model_dump(...)` on a list. The brace must catch
-    that exception class — this is the real-world rejection mode."""
-    from bird_interact_agents.agents import _submit
-
-    client = _OldSlayerClient()  # default rejection = AttributeError
-    state = _FakeState()
-    payload = json.dumps([
-        {"name": "stage1", "source_model": "encounters"},
-        {"source_model": "stage1"},
-    ])
-
-    _submit.submit_slayer_query(
-        state, payload, slayer_client_factory=lambda _s: client,
-    )
-
-    assert len(client.engine_calls) == 1
-    query_passed, dry_run_flag, _ = client.engine_calls[0]
-    assert dry_run_flag is True
-    assert isinstance(query_passed, list) and len(query_passed) == 2
-    assert "engine SQL from 2 stages" in state.result["submitted_sql"]
-    assert state.result["submission_status"] == "passed_phase2"
-
-
-def test_brace_fires_on_validationerror_for_list():
-    """Forward-looking: a refactored slayer may raise ValidationError
-    instead of AttributeError. The brace must cover that class too."""
-    from bird_interact_agents.agents import _submit
-
-    client = _OldSlayerClient(raise_exc=_make_validation_error())
-    state = _FakeState()
-    payload = json.dumps([
-        {"name": "stage1", "source_model": "encounters"},
-        {"source_model": "stage1"},
-    ])
-
-    out = _submit.submit_slayer_query(
-        state, payload, slayer_client_factory=lambda _s: client,
-    )
-
-    # Brace fired — engine was called exactly once with dry_run=True.
-    assert len(client.engine_calls) == 1
-    query_passed, dry_run_flag, _ = client.engine_calls[0]
-    assert dry_run_flag is True
-    assert isinstance(query_passed, list) and len(query_passed) == 2
-    # And the SQL it returned landed on state.result.
-    assert "engine SQL from 2 stages" in state.result["submitted_sql"]
-    assert state.result["submission_status"] == "passed_phase2"
-    assert "Generated SQL" in out
-
-
-def test_brace_fires_on_typeerror_for_list():
-    """Same as above, but the old slayer raises TypeError instead. Both
-    must trigger the brace — we don't lock the precise exception class."""
-    from bird_interact_agents.agents import _submit
-
-    client = _OldSlayerClient(raise_exc=TypeError("expected SlayerQuery or dict"))
-    state = _FakeState()
-    payload = json.dumps([{"name": "a", "source_model": "x"}, {"source_model": "a"}])
-
-    _submit.submit_slayer_query(
-        state, payload, slayer_client_factory=lambda _s: client,
-    )
-
-    assert len(client.engine_calls) == 1
-    assert "engine SQL" in state.result["submitted_sql"]
-
-
 def test_brace_does_not_fire_for_dict_validationerror():
     """A dict that's not a valid SlayerQuery (real user typo / unrelated
     error) must continue to land in `translation_error` — the brace is
@@ -398,39 +305,6 @@ def test_brace_with_no_engine_returns_translation_error(raise_exc):
     # translation never reached `execute_submit_action`, so budget
     # is untouched even after multiple failed submission attempts.
     assert state.status.remaining_budget == start
-
-
-def test_brace_engine_failure_propagates_as_translation_error():
-    """If the engine ALSO fails (e.g., cycle in the DAG), the user gets
-    a translation_error with the engine's message — not an opaque crash."""
-    from bird_interact_agents.agents import _submit
-
-    class _EngineThatFails:
-        @staticmethod
-        def execute_sync(*, query, dry_run, explain=False):
-            raise ValueError("cycle detected in nested DAG: stage1 -> stage1")
-
-    class _ClientBraceAndFail:
-        _engine = _EngineThatFails
-
-        def sql_sync(self, _q):
-            raise _make_validation_error()
-
-    state = _FakeState()
-    out = _submit.submit_slayer_query(
-        state,
-        json.dumps([{"name": "stage1", "source_model": "stage1"}]),
-        slayer_client_factory=lambda _s: _ClientBraceAndFail(),
-    )
-
-    assert state.result["submission_status"] == "translation_error"
-    assert state.result["submitted_sql"] is None
-    assert "cycle detected" in out
-
-
-# ---------------------------------------------------------------------------
-# Sharp shape-error rejection — wrapped variants + non-object/non-array.
-# ---------------------------------------------------------------------------
 
 
 WRAPPED_SHAPES = [
@@ -640,10 +514,9 @@ def test_claude_sdk_slayer_prompt_teaches_nested_shape():
 
 @pytest.mark.asyncio
 async def test_claude_sdk_submit_query_routes_nested_through_helper(monkeypatch):
-    """The claude_sdk `submit_query` tool receives a dict with key
-    `query_json` and must pass the nested-array string straight into
-    `submit_slayer_query`. Mocking the slayer client lets us assert
-    the helper got the raw payload."""
+    """The claude_sdk `submit_query` tool receives `{query: <list>}` and must
+    JSON-encode the multi-stage list into `submit_slayer_query`. Mocking the
+    slayer client lets us assert the helper got the payload as a list."""
     from bird_interact_agents.agents.claude_sdk import agent as agent_mod
     from bird_interact_agents.agents import _submit
     from bird_interact_agents.harness import SampleStatus
@@ -686,12 +559,11 @@ async def test_claude_sdk_submit_query_routes_nested_through_helper(monkeypatch)
         {"name": "stage1", "source_model": "encounters"},
         {"source_model": "stage1", "measures": ["crisisint:sum"]},
     ]
-    # DEV-1555 CR r1 unification: pass nested-DAG via the structured
-    # `queries` arg (wrapper builds the JSON internally).
-    result = await agent_mod.submit_query.handler({"queries": queries})
+    # 0.10.2 unified shape: the multi-stage list is passed as the single
+    # `query` argument; the wrapper JSON-encodes it for submit_slayer_query.
+    result = await agent_mod.submit_query.handler({"query": queries})
 
-    # The wrapper built a JSON array from `queries` and forwarded it
-    # to submit_slayer_query, which parsed it as a list.
+    # submit_slayer_query parsed the payload back into a list.
     assert isinstance(seen.get("query"), list)
     assert len(seen["query"]) == 2
     text = result["content"][0]["text"]

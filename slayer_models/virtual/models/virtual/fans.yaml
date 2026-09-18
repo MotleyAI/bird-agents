@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: fans
 sql_table: fans
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: userregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: nicklabel
   sql: nicklabel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: regmoment
   sql: regmoment
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tierstep
   sql: tierstep
   type: INT
   primary_key: false
+  unique: false
   description: "Fan loyalty tier (KB #1). Starts at 1 and increases. Tiers 1-3 = Entry-level,\
     \ 4-7 = Mid-level, 8-10 = High-level, >10 = Core. Higher tiers grant new privileges\
     \ and more visibility. Missing/invalid \u2192 'Undefined' (admin review).\n\n\
@@ -44,6 +48,7 @@ columns:
   sql: ptsval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -51,6 +56,7 @@ columns:
   sql: statustag
   type: TEXT
   primary_key: false
+  unique: false
   description: "Fan account status (KB #0). 'Active' = normal user with full access;\
     \ 'VIP' = premium user with privileged services; 'Inactive' = dormant (no login\
     \ >30 days, some features restricted); 'Blocked' = banned (no platform access).\n\
@@ -69,6 +75,7 @@ columns:
   sql: personal_attributes
   type: TEXT
   primary_key: false
+  unique: false
   description: 'JSONB: demographics (agecount, gendertype, locnation, loctown), preferences
     (langpref, occupath, interestset). Sub-fields exposed as helper columns.'
   hidden: false
@@ -76,30 +83,35 @@ columns:
   sql: CAST(json_extract(personal_attributes, '$.demographics.agecount') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Fan age in years, extracted from personal_attributes.demographics.agecount.
   hidden: false
 - name: gendertype
   sql: personal_attributes ->> '$.demographics.gendertype'
   type: TEXT
   primary_key: false
+  unique: false
   description: Gender (Male / Female / Other / Undisclosed), extracted from personal_attributes.demographics.gendertype.
   hidden: false
 - name: locnation
   sql: personal_attributes ->> '$.demographics.locnation'
   type: TEXT
   primary_key: false
+  unique: false
   description: Country of residence, extracted from personal_attributes.demographics.locnation.
   hidden: false
 - name: loctown
   sql: personal_attributes ->> '$.demographics.loctown'
   type: TEXT
   primary_key: false
+  unique: false
   description: City of residence, extracted from personal_attributes.demographics.loctown.
   hidden: false
 - name: fan_langpref
   sql: personal_attributes ->> '$.preferences.langpref'
   type: TEXT
   primary_key: false
+  unique: false
   description: Fan's main language (Multiple / Korean / English / Japanese / Chinese),
     extracted from personal_attributes.preferences.langpref.
   hidden: false
@@ -107,6 +119,7 @@ columns:
   sql: personal_attributes ->> '$.preferences.occupath'
   type: TEXT
   primary_key: false
+  unique: false
   description: Fan occupation (Professional / Student / Other / Creative), extracted
     from personal_attributes.preferences.occupath.
   hidden: false
@@ -114,6 +127,7 @@ columns:
   sql: personal_attributes ->> '$.preferences.interestset'
   type: TEXT
   primary_key: false
+  unique: false
   description: Primary interest area (Technology / Anime / Art / Music / Gaming),
     extracted from personal_attributes.preferences.interestset.
   hidden: false

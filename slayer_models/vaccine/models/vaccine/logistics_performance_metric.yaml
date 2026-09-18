@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: logistics_performance_metric
 source_queries:
-- version: 3
+- version: 4
   name: trs_hqi_per_vehicle_lpm
   source_model: sensordata
   measures:
@@ -12,20 +12,26 @@ source_queries:
   dimensions:
   - name: vehsenseref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: transportinfo
+    columns:
+    - name: lpm
+      sql: (CAST(distdonekm AS REAL) / NULLIF(distdonekm + distleftkm, 0) * 100) *
+        trs_hqi_per_vehicle_lpm.hqi / NULLIF(sqrt(1 + trs_hqi_per_vehicle_lpm.trs),
+        0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: trs_hqi_per_vehicle_lpm
       join_pairs:
       - - vehiclereg
         - vehsenseref
-    columns:
-    - name: lpm
-      type: DOUBLE
-      sql: (CAST(distdonekm AS REAL) / NULLIF(distdonekm + distleftkm, 0) * 100) *
-        trs_hqi_per_vehicle_lpm.hqi / NULLIF(sqrt(1 + trs_hqi_per_vehicle_lpm.trs),
-        0)
+      join_type: left
   dimensions:
   - name: vehiclereg
   - name: rcp
@@ -35,6 +41,8 @@ source_queries:
     model: trs_hqi_per_vehicle_lpm
   - name: lpm
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"transportinfo.vehiclereg\" AS vehiclereg, \"transportinfo.rcp\"\
   \ AS rcp, \"transportinfo.trs_hqi_per_vehicle_lpm.trs\" AS trs_hqi_per_vehicle_lpm__trs,\
@@ -73,11 +81,13 @@ columns:
   sql: vehiclereg
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rcp
   sql: rcp
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Route Completion Percentage (RCP). Percentage of route completed:
     DistDoneKm / (DistDoneKm + DistLeftKm) * 100 (KB #4).'
   hidden: false
@@ -85,6 +95,7 @@ columns:
   sql: trs_hqi_per_vehicle_lpm__trs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -92,6 +103,7 @@ columns:
   sql: trs_hqi_per_vehicle_lpm__hqi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -99,6 +111,7 @@ columns:
   sql: lpm
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

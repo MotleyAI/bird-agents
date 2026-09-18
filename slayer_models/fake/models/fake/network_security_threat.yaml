@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: network_security_threat
 source_queries:
-- version: 3
+- version: 4
   name: account_scores
   source_model: moderationaction
   measures:
@@ -15,7 +15,9 @@ source_queries:
   - name: account_id
   - name: cluster_id
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: cluster_scores
   source_model: account_scores
   measures:
@@ -26,7 +28,9 @@ source_queries:
   dimensions:
   - name: cluster_id
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: account_scores
     joins:
@@ -34,6 +38,7 @@ source_queries:
       join_pairs:
       - - cluster_id
         - cluster_id
+      join_type: left
   measures:
   - formula: cluster_scores.avg_bbi:max
     name: cluster_avg_bbi
@@ -44,6 +49,8 @@ source_queries:
   - name: cluster_id
   - name: nts_v
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"account_scores.account_id\" AS account_id, \"account_scores.cluster_id\"\
   \ AS cluster_id, \"account_scores.nts_v\" AS nts_v, \"account_scores.cluster_scores.avg_bbi_max\"\
@@ -225,6 +232,7 @@ columns:
   sql: account_id
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row account identifier resolved through the moderationaction \u2192\
     \ contentbehavior \u2192 sessionbehavior \u2192 profile join chain. Convenience\
     \ handle for grouping/multistage; equals the underlying account.accindex."
@@ -233,6 +241,7 @@ columns:
   sql: cluster_id
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row cluster identifier resolved through the moderationaction \u2192\
     \ contentbehavior \u2192 sessionbehavior \u2192 profile \u2192 account join chain.\
     \ Equals account.platident; per KB #80, this is the cluster identifier used to\
@@ -242,6 +251,7 @@ columns:
   sql: nts_v
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Network Trust Score (KB #36): PCI * (1-NGV) * (1-CBR). All inlined.'
   hidden: false
   format:
@@ -250,6 +260,7 @@ columns:
   sql: cluster_scores__avg_bbi_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -257,6 +268,7 @@ columns:
   sql: cluster_scores__max_clustsize_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer

@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: slippage_impact
 source_queries:
-- version: 3
+- version: 4
   name: depth_per_pair
   source_model: marketdata
   measures:
@@ -14,23 +14,31 @@ source_queries:
   dimensions:
   - name: mktcombo
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: orders
+    columns:
+    - name: slippage_impact
+      sql: dealcount / NULLIF(CASE WHEN dealedge = 'Buy' THEN depth_per_pair.askunits_avg
+        ELSE depth_per_pair.bidunits_avg END, 0) * depth_per_pair.spreadband_avg
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: depth_per_pair
       join_pairs:
       - - mktnote
         - mktcombo
-    columns:
-    - name: slippage_impact
-      type: DOUBLE
-      sql: dealcount / NULLIF(CASE WHEN dealedge = 'Buy' THEN depth_per_pair.askunits_avg
-        ELSE depth_per_pair.bidunits_avg END, 0) * depth_per_pair.spreadband_avg
+      join_type: left
   dimensions:
   - name: recordvault
   - name: slippage_impact
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.slippage_impact\"\
   \ AS slippage_impact FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\"\
@@ -54,11 +62,13 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: slippage_impact
   sql: slippage_impact
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

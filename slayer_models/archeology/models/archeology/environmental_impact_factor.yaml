@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: environmental_impact_factor
 source_queries:
-- version: 3
+- version: 4
   name: pc_per_arcref
   source_model: scanpointcloud
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: env_per_zone
   source_model: scanenvironment
   measures:
@@ -19,7 +21,9 @@ source_queries:
   dimensions:
   - name: zoneref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: scans_keyed
   source_model:
     source_name: scans
@@ -28,10 +32,12 @@ source_queries:
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
     - target_model: env_per_zone
       join_pairs:
       - - zoneref
         - zoneref
+      join_type: left
   dimensions:
   - name: questregistry
   - name: arcref
@@ -41,13 +47,18 @@ source_queries:
   - name: esi
     model: env_per_zone
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: scans_keyed
     columns:
     - name: eif
-      type: DOUBLE
       sql: pc_per_arcref__sqs / (env_per_zone__esi + 10) * 100
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: eif:avg
     name: eif
@@ -56,6 +67,8 @@ source_queries:
   - name: arcref
   - name: zoneref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"scans_keyed.questregistry\" AS questregistry, \"scans_keyed.arcref\"\
   \ AS arcref, \"scans_keyed.zoneref\" AS zoneref, \"scans_keyed.eif\" AS eif FROM\
@@ -104,21 +117,25 @@ columns:
   sql: questregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: arcref
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: zoneref
   sql: zoneref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: eif
   sql: eif
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

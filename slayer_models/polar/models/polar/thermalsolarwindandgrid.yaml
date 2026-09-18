@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: thermalsolarwindandgrid
 sql_table: thermalsolarwindandgrid
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: thermalregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: thermaleqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: thermalcommref
   sql: thermalcommref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -27,16 +30,19 @@ columns:
   sql: thermalimagingstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: insulationstatus
   sql: insulationstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: heatlossratekwh
   sql: heatlossratekwh
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -44,21 +50,25 @@ columns:
   sql: solarpanelstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: windturbinestatus
   sql: windturbinestatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: powergridstatus
   sql: powergridstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: powerqualityindex
   sql: powerqualityindex
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -66,16 +76,19 @@ columns:
   sql: backuppowerstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: fuelcellstatus
   sql: fuelcellstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: fuelcelloutputw
   sql: fuelcelloutputw
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -83,6 +96,7 @@ columns:
   sql: fuelcellefficiencypercent
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Fuel cell efficiency %. <50 older/degraded, 50\u201370 standard modern,\
     \ >70 high-end (KB #29).\n\n[kb=29]\nFuel cell efficiency percentages typically\
     \ range from 40% to 90%. Values below 50% represent older or degraded fuel cell\
@@ -101,6 +115,7 @@ columns:
   sql: hydrogenlevelpercent
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -108,6 +123,7 @@ columns:
   sql: oxygenlevelpercent
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -115,6 +131,7 @@ columns:
   sql: thermalpowerref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -122,12 +139,14 @@ columns:
   sql: renewablemetrics
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tie
   sql: (CASE insulationstatus WHEN 'Good' THEN 0.9 WHEN 'Fair' THEN 0.6 WHEN 'Poor'
     THEN 0.3 ELSE 0.0 END) - heatlossratekwh / 10.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Thermal Insulation Efficiency (KB #6): status base (Good=0.9, Fair=0.6,\
     \ Poor=0.3) \u2212 heatlossratekwh/10.\n\n[kb=6]\nTIE = \\begin{cases} 0.9 - \\\
     frac{heatlossratekwh}{10} & \\text{if insulationstatus = 'Good'} \\\\ 0.6 - \\\
@@ -146,6 +165,7 @@ columns:
     '$.solar.output_w') + json_extract(renewablemetrics, '$.wind.output_w'), 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Renewable Energy Contribution (KB #9): (solar+wind)/(solar+wind+fuelcell)\
     \ \xD7 100, %.\n\n[kb=9]\nREC = \\frac{renewablemetrics.solar.output\\_w + renewablemetrics.wind.output\\\
     _w}{fuelcelloutputw + renewablemetrics.solar.output\\_w + renewablemetrics.wind.output\\\
@@ -163,6 +183,7 @@ columns:
     70
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Sustainable Energy Operation (KB #19) - Energy-Sustainable when REC\
     \ > 70% (KB also requires '48 hours of power reserves' which is not in schema).\n\
     \n[kb=19]\nAn operation is considered 'Energy-Sustainable' when it maintains a\
@@ -185,6 +206,7 @@ columns:
     END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Energy Sustainability Classification System (KB #52): 3-tier classification\
     \ on REC. Energy-Sustainable (REC > 70), Moderately Sustainable (50 < REC <= 70),\
     \ Low Sustainability (REC <= 50).\n\n[kb=52]\nOperations are classified into three\

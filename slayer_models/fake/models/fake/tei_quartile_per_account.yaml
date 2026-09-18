@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: tei_quartile_per_account
 source_queries:
-- version: 3
+- version: 4
   name: tei_per_account
   source_model: moderationaction
   measures:
@@ -10,18 +10,25 @@ source_queries:
   dimensions:
   - name: account_id
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: tei_per_account
     columns:
     - name: tei_quartile
-      type: DOUBLE
       sql: NTILE(4) OVER (ORDER BY tei_per_account.tei_v ASC)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: account_id
   - name: tei_v
   - name: tei_quartile
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"tei_per_account.account_id\" AS account_id, \"tei_per_account.tei_v\"\
   \ AS tei_v, \"tei_per_account.tei_quartile\" AS tei_quartile FROM (SELECT\n  tei_per_account.account_id\
@@ -48,6 +55,7 @@ columns:
   sql: account_id
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row account identifier resolved through the moderationaction \u2192\
     \ contentbehavior \u2192 sessionbehavior \u2192 profile join chain. Convenience\
     \ handle for grouping/multistage; equals the underlying account.accindex."
@@ -56,6 +64,7 @@ columns:
   sql: tei_v
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Technical Evasion Index (KB #7): 0.4*vpnratio + 0.3*proxycount/10
     + 0.3*ipcountrynum/20.'
   hidden: false
@@ -65,6 +74,7 @@ columns:
   sql: tei_quartile
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

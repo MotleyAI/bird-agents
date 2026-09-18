@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: container_risk_rank
 source_queries:
-- version: 3
+- version: 4
   name: cri_per_container
   source_model: sensordata
   measures:
@@ -9,18 +9,25 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: cri_per_container
     columns:
     - name: risk_rank
-      type: DOUBLE
       sql: RANK() OVER (ORDER BY cri_max DESC)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: containlink
   - name: cri_max
   - name: risk_rank
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"cri_per_container.containlink\" AS containlink, \"cri_per_container.cri_max\"\
   \ AS cri_max, \"cri_per_container.risk_rank\" AS risk_rank FROM (SELECT\n  cri_per_container.containlink\
@@ -42,11 +49,13 @@ columns:
   sql: containlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cri_max
   sql: cri_max
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Container Risk Index (CRI). Overall risk level for a container based
     on temperature stability and coolant status: (1 - TSS) * (1 - CoolRemainPct/100)
     (KB #2). CoolRemainPct comes from the joined container row.'
@@ -55,6 +64,7 @@ columns:
   sql: risk_rank
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

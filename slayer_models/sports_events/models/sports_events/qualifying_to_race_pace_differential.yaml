@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: qualifying_to_race_pace_differential
 sql: "SELECT\n  lt.rc_index AS rc_index,\n  lt.wheel_unit AS wheel_unit,\n  AVG(lt.msec_val\
   \ / 1000.0) AS avg_race_lap_seconds,\n  q.best_q_seconds AS best_qualifying_seconds,\n\
@@ -20,24 +20,28 @@ columns:
   sql: rc_index
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to races.
   hidden: false
 - name: wheel_unit
   sql: wheel_unit
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to drivers.
   hidden: false
 - name: avg_race_lap_seconds
   sql: avg_race_lap_seconds
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Driver's average race lap time in seconds.
   hidden: false
 - name: best_qualifying_seconds
   sql: best_qualifying_seconds
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Driver's best qualifying lap (across Q1/Q2/Q3) in seconds for this
     race.
   hidden: false
@@ -45,6 +49,7 @@ columns:
   sql: qrd
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Qualifying to Race Pace Differential (KB #34): avg_race_lap_seconds\
     \ - best_qualifying_seconds.\n\n[kb=34]\nQRD = \\bar{T}_{lap} - T_{qualifying},\
     \ \\text{where } \\bar{T}_{lap} \\text{ is the Driver's Average Lap Time and }\

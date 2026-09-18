@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: mesh_to_point_ratio
 source_queries:
-- version: 3
+- version: 4
   name: mesh_per_zone
   source_model: scanmesh
   measures:
@@ -12,7 +12,9 @@ source_queries:
   dimensions:
   - name: zoneref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: pc_per_arcref
   source_model: scanpointcloud
   measures:
@@ -21,7 +23,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: scans_keyed
   source_model:
     source_name: scans
@@ -30,10 +34,12 @@ source_queries:
       join_pairs:
       - - zoneref
         - zoneref
+      join_type: left
     - target_model: pc_per_arcref
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
   dimensions:
   - name: questregistry
   - name: arcref
@@ -45,14 +51,19 @@ source_queries:
   - name: totalpts
     model: pc_per_arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: scans_keyed
     columns:
     - name: mpr
-      type: DOUBLE
       sql: (mesh_per_zone__facetverts * 1.0 / pc_per_arcref__totalpts) * 100 * power(mesh_per_zone__mcr
         / 10.0, 0.3)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: mpr:avg
     name: mpr
@@ -61,6 +72,8 @@ source_queries:
   - name: arcref
   - name: zoneref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"scans_keyed.questregistry\" AS questregistry, \"scans_keyed.arcref\"\
   \ AS arcref, \"scans_keyed.zoneref\" AS zoneref, \"scans_keyed.mpr\" AS mpr FROM\
@@ -99,21 +112,25 @@ columns:
   sql: questregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: arcref
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: zoneref
   sql: zoneref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: mpr
   sql: mpr
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

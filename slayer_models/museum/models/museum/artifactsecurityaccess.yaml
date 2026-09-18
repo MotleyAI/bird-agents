@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: artifactsecurityaccess
 sql_table: artifactsecurityaccess
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: secrecordregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: artref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ratingref
   sql: ratingref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -27,11 +30,13 @@ columns:
   sql: loanstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: insvalueusd
   sql: insvalueusd
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -39,46 +44,55 @@ columns:
   sql: seclevel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: accessrestrictions
   sql: accessrestrictions
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: docustatus
   sql: docustatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: photodocu
   sql: photodocu
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: condreportstatus
   sql: condreportstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: conserverecstatus
   sql: conserverecstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: researchaccessstatus
   sql: researchaccessstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: digitalrecstatus
   sql: digitalrecstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_arv
   sql: insvalueusd > 1000000
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Artifact Rarity & Valuation (KB #55): InsValueUSD > $1,000,000. Note:\
     \ in current dataset insvalueusd max is ~997K, so no rows match.\n\n[kb=55]\n\
     Artifacts are categorized as ARV if their insurance value exceed $1,000,000. \u2014\
@@ -92,12 +106,14 @@ columns:
   sql: insvalueusd > 1000000
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: 'Monetary High-Value classification (KB #51): InsValueUSD > $1,000,000.'
   hidden: false
 - name: is_high_value
   sql: insvalueusd > 1000000
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High-Value Artifact (KB #11) - monetary leg only: InsValueUSD > $1,000,000.\
     \ The full KB definition also includes the 'top 10%% of HistSign + CultScore'\
     \ branch -- see is_high_value_full on the high_value_artifacts query-backed model\
@@ -115,6 +131,7 @@ columns:
     IN ('ming', 'han', 'tang')
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Dynasty Value Artifact (KB #18): ArtDynasty in {Ming, Han, Tang} AND\
     \ ResearchValRating > 8.\n\n[kb=18]\nArtifacts from 'Ming', 'Han', or 'Tang' dynasties\
     \ that also have ResearchValRating > 8. \u2014 Identifies artifacts from historically\

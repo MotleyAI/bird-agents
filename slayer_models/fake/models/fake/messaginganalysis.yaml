@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: messaginganalysis
 sql_table: messaginganalysis
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: msgkey
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: msgcntref
   sql: msgcntref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: msgnetref
   sql: msgnetref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: msgsimscore
   sql: msgsimscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -30,6 +34,7 @@ columns:
   sql: msgfreq
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -37,6 +42,7 @@ columns:
   sql: msgtgtdiv
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -44,11 +50,13 @@ columns:
   sql: resptimepat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: convnatval
   sql: convnatval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Conversation naturalness (KB #24). Range 0-1; >0.7 natural human conversation;\
     \ <0.3 automated / scripted. Component of CAS (Content Authenticity, KB #1) and\
     \ (1-convnatval) feeds BBI (KB #3).\n\n[kb=24]\nRanges from 0 to 1. Values above\
@@ -65,6 +73,7 @@ columns:
   sql: sentvar
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -72,6 +81,7 @@ columns:
   sql: langsoph
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -79,6 +89,7 @@ columns:
   sql: txtuniq
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Text uniqueness across messages. Component of CMS (KB #8): 0.3 * (1
     - txtuniq).'
   hidden: false
@@ -88,11 +99,13 @@ columns:
   sql: keypatmatch
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: topiccoh
   sql: topiccoh
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

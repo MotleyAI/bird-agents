@@ -1,19 +1,25 @@
-version: 6
+version: 10
 name: customer_with_clv_quartile
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: credit_accounts_and_history
     columns:
     - name: clv_quartile
-      type: DOUBLE
       sql: NTILE(4) OVER (ORDER BY credit_accounts_and_history.custlifeval DESC)
-    - name: is_high_value_customer
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: is_high_value_customer
       sql: CASE WHEN NTILE(4) OVER (ORDER BY credit_accounts_and_history.custlifeval
         DESC) = 1 AND credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.tenureyrs
         > 5 AND credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.crossratio
         > 0.5 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: histcompref
   - name: clv_quartile
@@ -24,6 +30,8 @@ source_queries:
     model: credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record
   - name: custlifeval
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"credit_accounts_and_history.histcompref\" AS histcompref,\
   \ \"credit_accounts_and_history.clv_quartile\" AS clv_quartile, \"credit_accounts_and_history.is_high_value_customer\"\
@@ -61,21 +69,25 @@ columns:
   sql: histcompref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: clv_quartile
   sql: clv_quartile
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_high_value_customer
   sql: is_high_value_customer
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record__tenureyrs
   sql: credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record__tenureyrs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -83,6 +95,7 @@ columns:
   sql: credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record__crossratio
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -90,6 +103,7 @@ columns:
   sql: custlifeval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Customer Lifetime Value (CLV). Total worth of customer over the relationship;
     factors product usage, tenure, profitability, expected future transactions.
   hidden: false

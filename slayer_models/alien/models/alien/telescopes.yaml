@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: telescopes
 sql_table: telescopes
 query_variables: {}
@@ -8,26 +8,31 @@ columns:
   sql: telescregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: observstation
   sql: observstation
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: equipstatus
   sql: equipstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: calibrstatus
   sql: calibrstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: pointaccarc
   sql: pointaccarc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -35,6 +40,7 @@ columns:
   sql: trackaccarc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -42,11 +48,13 @@ columns:
   sql: focusquality
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: detecttempk
   sql: detecttempk
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -54,26 +62,31 @@ columns:
   sql: coolsysstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: powerstatus
   sql: powerstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: datastorstatus
   sql: datastorstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: netstatus
   sql: netstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: bandusagepct
   sql: bandusagepct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -81,6 +94,7 @@ columns:
   sql: procqueuestatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: oqf
   sql: (observatories.atmostransparency * (1 - observatories.humidityrate / 100.0)
@@ -89,6 +103,7 @@ columns:
     2 THEN 1 ELSE 2.0 / pointaccarc END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Observation Quality Factor (OQF) = AOI * (1 - LIF) * (PointAccArc\
     \ < 2 ? 1 : 2/PointAccArc). Combines atmospheric AOI (=AtmosTransparency*(1-HumidityRate/100)*(1-0.02*WindSpeedMs)),\
     \ lunar interference LIF (=(1-LunarDistDeg/180)*(1-AtmosTransparency)), and telescope\
@@ -113,6 +128,7 @@ columns:
     END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Observational Confidence Level (OCL) tier: 'High' (AOI>0.8 AND EquipStatus='Operational'\
     \ AND CalibrStatus='Current'), 'Medium' (AOI in 0.5-0.8 with minor issues), 'Low'\
     \ (AOI<0.5 or significant equipment problems). AOI inlined as AtmosTransparency*(1-HumidityRate/100)*(1-0.02*WindSpeedMs).\n\
@@ -130,6 +146,7 @@ columns:
     <> 'Normal' THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Equipment Problems: a telescope has an equipment problem whenever\
     \ any of its key subsystem states are not in their nominal condition: EquipStatus<>'Operational',\
     \ CalibrStatus<>'Current', or CoolSysStatus<>'Normal'.\n\n[kb=55]\nA telescope\

@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: shipment_quality_index
 source_queries:
-- version: 3
+- version: 4
   name: tss_per_container_sqi
   source_model: sensordata
   measures:
@@ -14,19 +14,25 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vaccinedetails
+    columns:
+    - name: sqi
+      sql: ((julianday(expireday) - julianday('now')) * tss_per_container_sqi.tss)
+        / 365.0 * tss_per_container_sqi.hqi * (1 - tss_per_container_sqi.cri)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: tss_per_container_sqi
       join_pairs:
       - - containvac
         - containlink
-    columns:
-    - name: sqi
-      type: DOUBLE
-      sql: ((julianday(expireday) - julianday('now')) * tss_per_container_sqi.tss)
-        / 365.0 * tss_per_container_sqi.hqi * (1 - tss_per_container_sqi.cri)
+      join_type: left
   dimensions:
   - name: vacregistry
   - name: containvac
@@ -38,6 +44,8 @@ source_queries:
     model: tss_per_container_sqi
   - name: sqi
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
   \ AS containvac, \"vaccinedetails.tss_per_container_sqi.tss\" AS tss_per_container_sqi__tss,\
@@ -74,6 +82,7 @@ columns:
   sql: vacregistry
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -81,11 +90,13 @@ columns:
   sql: containvac
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tss_per_container_sqi__tss
   sql: tss_per_container_sqi__tss
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -93,6 +104,7 @@ columns:
   sql: tss_per_container_sqi__hqi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -100,6 +112,7 @@ columns:
   sql: tss_per_container_sqi__cri
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -107,6 +120,7 @@ columns:
   sql: sqi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

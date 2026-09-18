@@ -522,8 +522,8 @@ of every projected dimension with NO aggregate functions (or only trivial \
 MAX/MIN over the grouped key), silently deduplicating raw rows. Signature: \
 submitted_sql has GROUP BY but no real aggregates, the gold has no GROUP BY, \
 and predicted row count is at or below gold's. Remediation: agent should \
-have used mcp__slayer__query_nested (or disabled SLayer's default \
-dimension-dedup) when raw per-record rows were required
+have disabled SLayer's default dimension-dedup \
+(distinct_dimension_values=false) when raw per-record rows were required
 - exhausted_budget_guessing: agent used all turns on exploratory attempts \
 without converging
 - other: doesn't fit the above (describe in other_details)"""
@@ -542,8 +542,8 @@ of every projected dimension with NO aggregate functions (or only trivial \
 MAX/MIN over the grouped key), silently deduplicating raw rows. Signature: \
 submitted_sql has GROUP BY but no real aggregates, the gold has no GROUP BY, \
 and predicted row count is at or below gold's. Remediation: agent should \
-have used mcp__slayer__query_nested (or disabled SLayer's default \
-dimension-dedup) when raw per-record rows were required
+have disabled SLayer's default dimension-dedup \
+(distinct_dimension_values=false) when raw per-record rows were required
 - exhausted_budget_guessing: agent used all turns on exploratory attempts \
 without converging
 - other: doesn't fit the above (describe in other_details)"""

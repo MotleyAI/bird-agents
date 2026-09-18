@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: smart_money_accuracy
 source_queries:
-- version: 3
+- version: 4
   name: midquote_with_lead
   source_model: marketdata
   measures:
@@ -16,7 +16,9 @@ source_queries:
       name: timetrack
     granularity: hour
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: flow_per_pair_hour
   source_model: analyticsindicators
   measures:
@@ -35,9 +37,23 @@ source_queries:
       model: marketdata
     granularity: hour
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: midquote_with_lead
+    columns:
+    - name: is_correct
+      sql: CASE WHEN (flow_per_pair_hour.smartforce_avg > flow_per_pair_hour.retailflow_avg
+        AND flow_per_pair_hour.smartforce_avg > flow_per_pair_hour.instflow_avg AND
+        midquote_with_lead.midquote_next_4h > midquote_with_lead.midquote_now) OR
+        (flow_per_pair_hour.smartforce_avg < flow_per_pair_hour.retailflow_avg AND
+        flow_per_pair_hour.smartforce_avg < flow_per_pair_hour.instflow_avg AND midquote_with_lead.midquote_next_4h
+        < midquote_with_lead.midquote_now) THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: flow_per_pair_hour
       join_pairs:
@@ -45,15 +61,7 @@ source_queries:
         - marketdata__mktcombo
       - - timetrack
         - marketdata__timetrack
-    columns:
-    - name: is_correct
-      type: DOUBLE
-      sql: CASE WHEN (flow_per_pair_hour.smartforce_avg > flow_per_pair_hour.retailflow_avg
-        AND flow_per_pair_hour.smartforce_avg > flow_per_pair_hour.instflow_avg AND
-        midquote_with_lead.midquote_next_4h > midquote_with_lead.midquote_now) OR
-        (flow_per_pair_hour.smartforce_avg < flow_per_pair_hour.retailflow_avg AND
-        flow_per_pair_hour.smartforce_avg < flow_per_pair_hour.instflow_avg AND midquote_with_lead.midquote_next_4h
-        < midquote_with_lead.midquote_now) THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: mktcombo
   - name: timetrack
@@ -61,6 +69,8 @@ source_queries:
   - name: midquote_next_4h
   - name: is_correct
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"midquote_with_lead.mktcombo\" AS mktcombo, \"midquote_with_lead.timetrack\"\
   \ AS timetrack, \"midquote_with_lead.midquote_now\" AS midquote_now, \"midquote_with_lead.midquote_next_4h\"\
@@ -115,18 +125,21 @@ columns:
   sql: mktcombo
   type: TEXT
   primary_key: false
+  unique: false
   description: Trading pair (e.g. BTC-USDT).
   hidden: false
 - name: timetrack
   sql: timetrack
   type: TIMESTAMP
   primary_key: false
+  unique: false
   description: Timestamp the snapshot was recorded.
   hidden: false
 - name: midquote_now
   sql: midquote_now
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Midpoint price.
   hidden: false
   format:
@@ -135,6 +148,7 @@ columns:
   sql: midquote_next_4h
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -142,23 +156,9 @@ columns:
   sql: is_correct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
-measures:
-- formula: is_correct:avg
-  name: smart_money_accuracy
-  label: Smart Money Accuracy
-  description: "Smart Money Accuracy (KB #51): mean of the per-(pair, hour) is_correct\
-    \ boolean. Aggregates to the proportion of (pair, hour) buckets where Smart Money\
-    \ Flow direction agreed with the 4-hour-ahead midquote movement.\n\n[kb=51]\n\
-    The proportion of times the Smart Money Flow direction matches the 4-hour price\
-    \ movement direction, calculated as: $$ \\frac{\\text{COUNT(CASE WHEN (smartforce\
-    \ > retailflow AND smartforce > instflow AND next\\_price\\_4h > mid\\_price)\
-    \ OR (smartforce < retailflow AND smartforce < instflow AND next\\_price\\_4h\
-    \ < mid\\_price) THEN 1 ELSE 0 END)}}{\\text{COUNT(*)}} $$ \u2014 Measures the\
-    \ success rate of smart money flow in predicting the 4-hour price movement direction.\n\
-    [/kb=51]"
-  meta:
-    kb_id: 51
+measures: []
 aggregations: []
 joins: []
 filters: []

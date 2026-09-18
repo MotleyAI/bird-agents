@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: trusted_account
 source_queries:
-- version: 3
+- version: 4
   name: pci_per_account
   source_model: moderationaction
   measures:
@@ -10,19 +10,23 @@ source_queries:
   dimensions:
   - name: account_id
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: recent_detections_per_account
   source_model:
     source_name: securitydetection
-    filters:
-    - detecttime > date('now', '-180 days')
   measures:
   - formula: '*:count'
     name: n_recent
   dimensions:
   - name: account_id
+  filters:
+  - detecttime > date('now', '-180 days')
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: pci_per_account
     joins:
@@ -30,6 +34,7 @@ source_queries:
       join_pairs:
       - - account_id
         - account_id
+      join_type: left
   measures:
   - formula: recent_detections_per_account.n_recent:max
     name: recent_count
@@ -37,6 +42,8 @@ source_queries:
   - name: account_id
   - name: pci_v
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"pci_per_account.account_id\" AS account_id, \"pci_per_account.pci_v\"\
   \ AS pci_v, \"pci_per_account.recent_detections_per_account.n_recent_max\" AS recent_detections_per_account__n_recent_max\
@@ -76,6 +83,7 @@ columns:
   sql: account_id
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row account identifier resolved through the moderationaction \u2192\
     \ contentbehavior \u2192 sessionbehavior \u2192 profile join chain. Convenience\
     \ handle for grouping/multistage; equals the underlying account.accindex."
@@ -84,6 +92,7 @@ columns:
   sql: pci_v
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Profile Credibility Index (KB #5): 0.3*credscore + 0.3*reputscore
     + 0.4*completeness.'
   hidden: false
@@ -93,6 +102,7 @@ columns:
   sql: recent_detections_per_account__n_recent_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer

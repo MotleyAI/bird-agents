@@ -1,7 +1,7 @@
-version: 7
+version: 10
 name: critical_infrastructure_protection_level
 source_queries:
-- version: 3
+- version: 4
   name: ssf_p_eq_cipl
   source_model: weatherandstructure
   measures:
@@ -11,7 +11,9 @@ source_queries:
   - name: opmainteqref
     model: operationmaintenance
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: loss_p_eq_cipl
   source_model: operationmaintenance
   measures:
@@ -20,7 +22,9 @@ source_queries:
   dimensions:
   - name: opmainteqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: ospi_p_eq_cipl
   source_model: equipment
   measures:
@@ -29,7 +33,9 @@ source_queries:
   dimensions:
   - name: equipmentcode
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: joined_cipl
   source_model:
     source_name: ospi_p_eq_cipl
@@ -38,10 +44,12 @@ source_queries:
       join_pairs:
       - - equipmentcode
         - operationmaintenance__opmainteqref
+      join_type: left
     - target_model: loss_p_eq_cipl
       join_pairs:
       - - equipmentcode
         - opmainteqref
+      join_type: left
   measures:
   - formula: ospi:avg
     name: ospi_v
@@ -52,18 +60,25 @@ source_queries:
   dimensions:
   - name: equipmentcode
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: joined_cipl
     columns:
     - name: cipl_level
-      type: TEXT
       sql: CASE WHEN ssf_v > 0.8 AND loss_v > 0.85 AND ospi_v > 0.9 THEN 'A' WHEN
         ssf_v > 0.7 AND loss_v > 0.75 AND ospi_v > 0.8 THEN 'B' ELSE 'C' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: equipmentcode
   - name: cipl_level
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"joined_cipl.equipmentcode\" AS equipmentcode, \"joined_cipl.cipl_level\"\
   \ AS cipl_level FROM (SELECT\n  joined_cipl.equipmentcode AS \"joined_cipl.equipmentcode\"\
@@ -127,11 +142,13 @@ columns:
   sql: equipmentcode
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cipl_level
   sql: cipl_level
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

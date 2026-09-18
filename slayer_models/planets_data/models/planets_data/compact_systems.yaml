@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: compact_systems
 source_queries:
-- version: 3
+- version: 4
   name: max_ratio_per_host
   source_model: adjacent_planet_period_ratios
   measures:
@@ -9,7 +9,9 @@ source_queries:
   dimensions:
   - name: hostlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: max_ratio_per_host
     joins:
@@ -17,6 +19,7 @@ source_queries:
       join_pairs:
       - - hostlink
         - stellarref
+      join_type: left
   dimensions:
   - name: hostlink
   - name: hostplname
@@ -28,6 +31,8 @@ source_queries:
   - stars.compcount > 1
   - period_ratio_max < 3
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"max_ratio_per_host.hostlink\" AS hostlink, \"max_ratio_per_host.stars.hostplname\"\
   \ AS stars__hostplname, \"max_ratio_per_host.stars.compcount\" AS stars__compcount,\
@@ -70,16 +75,19 @@ columns:
   sql: hostlink
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: stars__hostplname
   sql: stars__hostplname
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: stars__compcount
   sql: stars__compcount
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -87,6 +95,7 @@ columns:
   sql: period_ratio_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

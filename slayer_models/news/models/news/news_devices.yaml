@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: news_devices
 sql_table: devices
 query_variables: {}
@@ -8,24 +8,28 @@ columns:
   sql: devkey
   type: INT
   primary_key: true
+  unique: false
   description: Primary key.
   hidden: false
 - name: devtype
   sql: devtype
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Device type enum: iOS, Windows, MacOS, Android.'
   hidden: false
 - name: brwtype
   sql: brwtype
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Browser: Safari, Edge, Chrome, Firefox.'
   hidden: false
 - name: osver
   sql: osver
   type: TEXT
   primary_key: false
+  unique: false
   description: "OS version (KB #21 illustrates: values like 'Windows10.0.19042' provide\
     \ insights into compatibility and performance benchmarks).\n\n[kb=21]\nOS version\
     \ details like 'Windows10.0.19042' provide insights into potential compatibility\
@@ -39,6 +43,7 @@ columns:
   sql: appver
   type: TEXT
   primary_key: false
+  unique: false
   description: "App version (KB #25 illustrates: versions like 'v3.1.2' suggest iterative\
     \ improvements that enhance UI performance and stability).\n\n[kb=25]\nVersions\
     \ such as 'v3.1.2' suggest iterative improvements that enhance user interface\
@@ -53,6 +58,7 @@ columns:
   sql: scrres
   type: TEXT
   primary_key: false
+  unique: false
   description: "Screen resolution (KB #20 illustrates: values like '1920x1080' indicate\
     \ clarity and detail of the display, impacting readability and visual appeal).\n\
     \n[kb=20]\nScreen resolution values such as '1920x1080' indicate the clarity and\
@@ -66,18 +72,21 @@ columns:
   sql: vpsize
   type: TEXT
   primary_key: false
+  unique: false
   description: Viewport size in the browser/app.
   hidden: false
 - name: conntype
   sql: conntype
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Connection type: Cable, 5G, 4G, WiFi.'
   hidden: false
 - name: netspd
   sql: netspd
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Network speed in Mbps. KB #23 illustrates: speeds (e.g. 25.75 Mbps)\
     \ help assess buffering, latency and overall delivery quality.\n\n[kb=23]\nNetwork\
     \ speeds measured in Mbps (for example, 25.75 Mbps) help assess potential buffering,\
@@ -91,6 +100,7 @@ columns:
   sql: uselink
   type: INT
   primary_key: false
+  unique: false
   description: FK to news_users.userkey.
   hidden: false
 measures: []

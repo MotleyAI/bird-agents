@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: profile
 sql_table: profile
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: profkey
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: profaccref
   sql: profaccref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: profile_composition
   sql: profile_composition
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSONB column. Consolidates username, picture, bio, location, and contact-credibility\
     \ attributes for profile-quality checks. completeness sub-field extracted as column;\
     \ see KB #26.\n\n[kb=26]\nRanges from 0 to 1. Values above 0.8 indicate well-maintained\
@@ -31,6 +34,7 @@ columns:
   sql: json_extract(profile_composition, '$.completeness')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Profile completeness score (KB #26). Range 0-1; >0.8 well-maintained,
     <0.4 placeholder / abandoned. Component of PCI (KB #5).'
   hidden: false

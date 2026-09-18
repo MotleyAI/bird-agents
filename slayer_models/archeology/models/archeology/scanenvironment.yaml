@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: scanenvironment
 sql_table: scanenvironment
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: airregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,16 +16,19 @@ columns:
   sql: zoneref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: equipref
   sql: equipref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ambictemp
   sql: ambictemp
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -32,6 +36,7 @@ columns:
   sql: humepct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -39,6 +44,7 @@ columns:
   sql: illumelux
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -46,26 +52,31 @@ columns:
   sql: geosignal
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: trackstatus
   sql: trackstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: linkstatus
   sql: linkstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: photomap
   sql: photomap
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: imgcount
   sql: imgcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -74,6 +85,7 @@ columns:
     / (illumelux + 100)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Environmental Suitability Index (ESI, KB #7): 100 - 2.5*|AmbicTemp-20|\
     \ - |(HumePct-50)/2|^1.5 - 600/(IllumeLux+100). Higher = more ideal scanning conditions.\n\
     \n[kb=7]\nESI = 100 - 2.5 \\times \\left|AmbicTemp - 20\\right| - \\left|\\frac{HumePct\
@@ -90,6 +102,7 @@ columns:
     1.5) - 600.0 / (illumelux + 100)) > 85 THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Optimal Scanning Conditions (KB #15): ESI > 85 \u2014 moderate temperature,\
     \ humidity ~50%, good illumination minimize environmental interference.\n\n[kb=15]\n\
     Conditions with ESI > 85, where ESI is the Environmental Suitability Index (knowledge\
@@ -111,6 +124,7 @@ columns:
     END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Environmental Condition Classification System (ECCS, KB #50): four-tier\
     \ ESI classification \u2014 Optimal (>85), Good (70-85), Acceptable (50-70), Challenging\
     \ (<50).\n\n[kb=50]\nA four-tier classification where 'Optimal Scanning Conditions'\

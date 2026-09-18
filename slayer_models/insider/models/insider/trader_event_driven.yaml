@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: trader_event_driven
 sql: "SELECT\n  tr.trdref AS tradereg,\n  SUM(CASE WHEN sf.corpeventprx IS NOT NULL\
   \ THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(sf.sentreg), 0) AS event_share,\n  COUNT(sf.sentreg)\
@@ -11,22 +11,26 @@ columns:
   sql: tradereg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: event_share
   sql: event_share
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Share of trader's transactions with non-null corpeventprx.
   hidden: false
 - name: n_transactions_with_sentiment
   sql: n_transactions_with_sentiment
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_event_driven_trader
   sql: event_share > 0.30
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: 'Event-Driven Trader (KB #17): >30% of transactions linked to a corporate
     event.'
   hidden: false

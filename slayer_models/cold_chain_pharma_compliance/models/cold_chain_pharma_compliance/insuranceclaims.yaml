@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: insuranceclaims
 sql_table: insuranceclaims
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: reckeyclaim
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: claimneed
   sql: claimneed
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: claimstat
   sql: claimstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: claimusd
   sql: claimusd
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -30,6 +34,7 @@ columns:
   sql: costimpactusd
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -37,6 +42,7 @@ columns:
   sql: respparty
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

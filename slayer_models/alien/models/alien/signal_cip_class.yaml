@@ -1,27 +1,33 @@
-version: 7
+version: 10
 name: signal_cip_class
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
-    joins:
-    - target_model: signalclassification
-      join_pairs:
-      - - signalregistry
-        - signalref
     columns:
     - name: cip_class
-      type: TEXT
       sql: CASE WHEN ((1 - ABS(freqdrifthzs) / (freqmhz * 1000.0)) * sigdursec / (1
         + doppshifthz / 1000.0)) > 0.8 AND signalclassification.entropyval BETWEEN
         0.4 AND 0.8 AND modindex > 0.5 THEN 'Coherent Information Pattern Detected'
         WHEN ((1 - ABS(freqdrifthzs) / (freqmhz * 1000.0)) * sigdursec / (1 + doppshifthz
         / 1000.0)) > 0.6 AND signalclassification.entropyval BETWEEN 0.3 AND 0.9 THEN
         'Potential Information Pattern' ELSE 'No Clear Pattern' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: cip_class
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.cip_class\"\
   \ AS cip_class FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
@@ -42,11 +48,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cip_class
   sql: cip_class
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

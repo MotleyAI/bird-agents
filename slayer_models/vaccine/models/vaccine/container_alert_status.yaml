@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: container_alert_status
 source_queries:
-- version: 3
+- version: 4
   name: agg_per_container_cas
   source_model: sensordata
   measures:
@@ -14,28 +14,39 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vaccinedetails
+    columns:
+    - name: ces
+      sql: ser * agg_per_container_cas.cei * (1 - agg_per_container_cas.cri)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: is_container_alert
+      sql: CASE WHEN (ser * agg_per_container_cas.cei * (1 - agg_per_container_cas.cri))
+        < 0.4 AND agg_per_container_cas.trs > 0.7 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: agg_per_container_cas
       join_pairs:
       - - containvac
         - containlink
-    columns:
-    - name: ces
-      type: DOUBLE
-      sql: ser * agg_per_container_cas.cei * (1 - agg_per_container_cas.cri)
-    - name: is_container_alert
-      type: BOOLEAN
-      sql: CASE WHEN (ser * agg_per_container_cas.cei * (1 - agg_per_container_cas.cri))
-        < 0.4 AND agg_per_container_cas.trs > 0.7 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: vacregistry
   - name: containvac
   - name: ces
   - name: is_container_alert
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
   \ AS containvac, \"vaccinedetails.ces\" AS ces, \"vaccinedetails.is_container_alert\"\
@@ -82,6 +93,7 @@ columns:
   sql: vacregistry
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -89,16 +101,19 @@ columns:
   sql: containvac
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ces
   sql: ces
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_container_alert
   sql: is_container_alert
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

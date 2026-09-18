@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: dataprofile
 sql_table: dataprofile
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: profiletrace
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: flowsign
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: riskjoin
   sql: riskjoin
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -27,21 +30,25 @@ columns:
   sql: recordregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: datatype
   sql: datatype
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: datasense
   sql: datasense
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: volgb
   sql: volgb
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Approximate data volume in gigabytes. KB #22: 1000 = large dataset,\
     \ 0.1 typical for small logs.\n\n[kb=22]\nRanges from 0 to millions. A VolGB of\
     \ 1000 might represent a large dataset, while 0.1 is typical for small logs, from\
@@ -56,6 +63,7 @@ columns:
   sql: rectally
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -63,6 +71,7 @@ columns:
   sql: subjtally
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -70,6 +79,7 @@ columns:
   sql: retdays
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -77,11 +87,13 @@ columns:
   sql: formattype
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: qltyscore
   sql: qltyscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -89,27 +101,32 @@ columns:
   sql: intcheck
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: csumverify
   sql: csumverify
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: srcvalstate
   sql: srcvalstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: destvalstate
   sql: destvalstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: dsi
   sql: volgb * CASE datasense WHEN 'High' THEN 3 WHEN 'Medium' THEN 2 WHEN 'Low' THEN
     1 ELSE 1 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Data Sensitivity Index (DSI) \u2014 KB #4: VolGB \xD7 (3=High, 2=Medium,\
     \ 1=Low). 'Critical' values fall through to 1 by KB; only High/Medium/Low are\
     \ pinned.\n\n[kb=4]\nDSI = \\text{VolGB} \\times \\begin{cases} 3 & \\text{if\
@@ -122,10 +139,11 @@ columns:
     kb_id: 4
 - name: cdvr
   sql: (riskmanagement.riskassess * 1.0 / NULLIF(riskmanagement.ctrleff, 0)) * CASE
-    WHEN riskmanagement__dataflow.orignation != riskmanagement__dataflow.destnation
+    WHEN riskmanagement.dataflow.orignation <> riskmanagement.dataflow.destnation
     THEN 2 ELSE 1 END * volgb
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Cross-Border Data Volume Risk (CDVR) \u2014 KB #33: CBRF \xD7 VolGB.\n\
     \n[kb=33]\nCDVR = \\text{CBRF} \\times \\text{VolGB} \u2014 Assesses risk from\
     \ large cross-border data volumes.\n[/kb=33]"
@@ -139,6 +157,7 @@ columns:
     1 ELSE 1 END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Bandwidth Risk Factor (BRF) \u2014 KB #37: BSI \xD7 DSI.\n\n[kb=37]\n\
     BRF = \\text{BSI} \\times \\text{DSI} \u2014 Evaluates risk from bandwidth overuse\
     \ in sensitive data flows.\n[/kb=37]"
@@ -151,6 +170,7 @@ columns:
     THEN 1 ELSE 1 END) * retdays * 1.0 / 365
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Data Retention Risk Score (DRRS) \u2014 KB #56: DSI \xD7 RetDays/365.\n\
     \n[kb=56]\nDRRS = \\text{DSI} \\times \\frac{\\text{RetDays}}{365} \u2014 Evaluates\
     \ risk from prolonged data retention relative to sensitivity.\n[/kb=56]"
@@ -163,6 +183,7 @@ columns:
     'Failed' THEN 1 ELSE 0 END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Integrity Failure Count (IFC) \u2014 KB #72: 1 if IntCheck='Failed'\
     \ + 1 if CsumVerify='Failed'.\n\n[kb=72]\nIFC = \\begin{cases} 1 & \\text{if IntCheck\
     \ = 'Failed'} \\\\ 0 & \\text{otherwise} \\end{cases} + \\begin{cases} 1 & \\\
@@ -178,6 +199,7 @@ columns:
     WHEN csumverify = 'Failed' THEN 'Checksum Verification' ELSE '' END)
   type: TEXT
   primary_key: false
+  unique: false
   description: "Failure Types List (KB #73): comma-separated list of failed integrity\
     \ checks.\n\n[kb=73]\nA comma-separated string listing failure types: 'Integrity\
     \ Check' if IntCheck = 'Failed', 'Checksum Verification' if CsumVerify = 'Failed'.\
@@ -191,6 +213,7 @@ columns:
   sql: intcheck = 'Failed' OR csumverify = 'Failed'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Data Integrity Failure (KB #17): IntCheck='Failed' OR CsumVerify='Failed'.\n\
     \n[kb=17]\nA data profile where IntCheck = 'Failed' or CsumVerify = 'Failed' \u2014\
     \ Identifies data profiles with failed integrity checks.\n[/kb=17]"
@@ -204,6 +227,7 @@ columns:
     THEN 1 ELSE 1 END) > 100
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High-Risk Data Flow (KB #10): RES > 0.7 AND DSI > 100.\n\n[kb=10]\n\
     A data flow where RES > 0.7 and DSI > 100 \u2014 Identifies data flows with elevated\
     \ risk based on risk exposure and sensitivity.\n[/kb=10]"
@@ -218,6 +242,7 @@ columns:
     0)) > 0.7
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Bandwidth-Constrained Risk (KB #47): BRF > 100 AND RES > 0.7.\n\n\
     [kb=47]\nA data flow where BRF > 100 and RES > 0.7 \u2014 Identifies data flows\
     \ where bandwidth saturation amplifies risk.\n[/kb=47]"
@@ -232,6 +257,7 @@ columns:
     1 ELSE 1 END) > 100)
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Incident-Prone Data Flow (KB #49): IRE < 0.5 AND High-Risk Data Flow.\n\
     \n[kb=49]\nA data flow where IRE < 0.5 and High-Risk Data Flow \u2014 Flags data\
     \ flows with poor incident resolution and high risk.\n[/kb=49]"
@@ -245,6 +271,7 @@ columns:
     'High' THEN 3 WHEN 'Medium' THEN 2 WHEN 'Low' THEN 1 ELSE 1 END) > 100
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Excessive Retention Risk (KB #62): DRRS > 50 AND DSI > 100.\n\n[kb=62]\n\
     A data profile where DRRS > 50 and DSI > 100 \u2014 Highlights data profiles with\
     \ prolonged retention and high sensitivity.\n[/kb=62]"

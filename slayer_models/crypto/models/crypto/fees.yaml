@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: fees
 sql_table: fees
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: feesnode
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: feerange
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: feerate
   sql: feerate
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -27,6 +30,7 @@ columns:
   sql: feetotal
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -34,11 +38,13 @@ columns:
   sql: feecoin
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rebrate
   sql: rebrate
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -46,6 +52,7 @@ columns:
   sql: rebtotal
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -53,6 +60,7 @@ columns:
   sql: orderslink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

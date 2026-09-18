@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: real_time_session_efficiency
 source_queries:
-- version: 3
+- version: 4
   name: cie_per_session
   source_model: news_interactions
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: seshlink2
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: news_sessions
     joins:
@@ -18,12 +20,15 @@ source_queries:
       join_pairs:
       - - seshkey
         - seshlink2
+      join_type: left
   measures:
   - formula: cie_per_session.cie:avg / session_bounce_rate_adjustment:avg
     name: rtse
   dimensions:
   - name: seshkey
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"news_sessions.seshkey\" AS seshkey, \"news_sessions.session_bounce_rate_adjustment_avg\"\
   \ AS session_bounce_rate_adjustment_avg, \"news_sessions.rtse\" AS rtse, \"news_sessions.cie_per_session.cie_avg\"\
@@ -51,12 +56,14 @@ columns:
   sql: seshkey
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Primary key.
   hidden: false
 - name: session_bounce_rate_adjustment_avg
   sql: session_bounce_rate_adjustment_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Session Bounce Rate Adjustment (SBRA, KB #3) = bncrate \xD7 (1 - ctrval/100)."
   hidden: false
   format:
@@ -65,6 +72,7 @@ columns:
   sql: rtse
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -72,6 +80,7 @@ columns:
   sql: cie_per_session__cie_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

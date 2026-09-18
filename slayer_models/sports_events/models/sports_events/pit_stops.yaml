@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: pit_stops
 sql_table: pit_stops
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: matchidx
   type: INT
   primary_key: true
+  unique: false
   description: Foreign key to races.
   hidden: false
   format:
@@ -16,6 +17,7 @@ columns:
   sql: wunit
   type: INT
   primary_key: true
+  unique: false
   description: Foreign key to drivers.
   hidden: false
   format:
@@ -24,6 +26,7 @@ columns:
   sql: pause_no
   type: INT
   primary_key: true
+  unique: false
   description: Sequence number of this pit stop for the driver in the race.
   hidden: false
   format:
@@ -32,6 +35,7 @@ columns:
   sql: moment
   type: INT
   primary_key: false
+  unique: false
   description: Lap/moment within the race when the pit stop occurred.
   hidden: false
   format:
@@ -40,18 +44,21 @@ columns:
   sql: attime
   type: TEXT
   primary_key: false
+  unique: false
   description: Wall-clock timestamp of the pit stop.
   hidden: false
 - name: durtxt
   sql: durtxt
   type: TEXT
   primary_key: false
+  unique: false
   description: Pit stop duration as a free-form text label.
   hidden: false
 - name: ms_count
   sql: ms_count
   type: INT
   primary_key: false
+  unique: false
   description: Pit stop duration in milliseconds (the car-stationary time).
   hidden: false
   format:
@@ -60,6 +67,7 @@ columns:
   sql: ms_count / 1000.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Pit Stop Duration in Seconds (KB #22): D_seconds = D_milliseconds\
     \ / 1000.\n\n[kb=22]\nD_{seconds} = \\frac{D_{milliseconds}}{1000} \u2014 Converts\
     \ pit stop duration from milliseconds to a more human-readable seconds format.\n\
@@ -72,6 +80,7 @@ columns:
   sql: ms_count < 2500
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Efficient Pit Stop (KB #17): TRUE iff total stationary time < 2.5\
     \ s.\n\n[kb=17]\nAn Efficient Pit Stop is a pit stop where the total time the\
     \ car is stationary is less than 2.5 seconds, indicating outstanding performance\

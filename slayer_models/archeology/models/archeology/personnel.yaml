@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: personnel
 sql_table: personnel
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: crewregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: crewlabel
   sql: crewlabel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: leadregistry
   sql: leadregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: leadlabel
   sql: leadlabel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

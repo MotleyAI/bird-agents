@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: rl_products
 sql_table: products
 query_variables: {}
@@ -8,32 +8,38 @@ columns:
   sql: itemcode
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: itemcategory
   sql: itemcategory
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: subcat
   sql: subcat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: unit_value
   sql: unit_value
   type: INT
   primary_key: false
+  unique: false
   hidden: false
 - name: product_traceability
   sql: product_traceability
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: regulatory_compliance
   sql: TRIM(json_extract(product_traceability, '$.compliance.regulatory_compliance'),
     '"')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Regulatory Compliance Statuses \u2014 'Compliant' (meeting all relevant\
     \ safety/environmental standards) or 'Non-compliant' (failing certification, recall\
     \ notice, or missing documentation, triggering quarantine or disposal penalty).\n\

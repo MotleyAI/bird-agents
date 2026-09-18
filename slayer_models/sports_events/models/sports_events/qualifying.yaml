@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: qualifying
 sql_table: qualifying
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: qualkey
   type: INT
   primary_key: true
+  unique: false
   description: Unique qualifying record identifier.
   hidden: false
   format:
@@ -16,6 +17,7 @@ columns:
   sql: rbind
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key to races.
   hidden: false
   format:
@@ -24,6 +26,7 @@ columns:
   sql: pilotrec
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key to drivers.
   hidden: false
   format:
@@ -32,6 +35,7 @@ columns:
   sql: corptag
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key to constructors.
   hidden: false
   format:
@@ -40,6 +44,7 @@ columns:
   sql: regno
   type: INT
   primary_key: false
+  unique: false
   description: Driver registration number for the event.
   hidden: false
   format:
@@ -48,6 +53,7 @@ columns:
   sql: px_pos
   type: INT
   primary_key: false
+  unique: false
   description: 'Final qualifying position (1 = Pole Position, KB #10).'
   hidden: false
   format:
@@ -56,6 +62,7 @@ columns:
   sql: q1_r
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Q1 qualifying time as ''M:SS.fff'' string. NULL = no Q1 time recorded
     (KB #1).'
   hidden: false
@@ -63,6 +70,7 @@ columns:
   sql: q2_r
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Q2 qualifying time as ''M:SS.fff'' string. NULL = driver did not advance
     to Q2 or no time recorded (KB #1).'
   hidden: false
@@ -70,6 +78,7 @@ columns:
   sql: q3_r
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Q3 qualifying time as ''M:SS.fff'' string. NULL = driver did not advance
     to Q3 (KB #1).'
   hidden: false
@@ -77,6 +86,7 @@ columns:
   sql: px_pos = 1
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Pole Position (KB #10): TRUE iff the driver set the fastest qualifying\
     \ time (px_pos = 1).\n\n[kb=10]\nA driver achieves Pole Position by setting the\
     \ fastest lap time during the final stage of the Qualifying Format Explained.\
@@ -91,6 +101,7 @@ columns:
     1) AS REAL) END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Q1 time converted from ''M:SS.fff'' to seconds (KB #21).'
   hidden: false
 - name: q2_seconds
@@ -99,6 +110,7 @@ columns:
     1) AS REAL) END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Q2 time converted from ''M:SS.fff'' to seconds (KB #21).'
   hidden: false
 - name: q3_seconds
@@ -107,6 +119,7 @@ columns:
     1) AS REAL) END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Q3 time converted from ''M:SS.fff'' to seconds (KB #21).'
   hidden: false
 - name: best_qualifying_seconds
@@ -120,6 +133,7 @@ columns:
     AS REAL) END, 1e18))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Driver''s best qualifying time (across Q1/Q2/Q3) in seconds. Used
     as T_driver in KB #28 Qualifying Time Deficit to Pole.'
   hidden: false

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: lap_times
 sql_table: lap_times
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: rc_index
   type: INT
   primary_key: true
+  unique: false
   description: Foreign key to races.
   hidden: false
   format:
@@ -16,6 +17,7 @@ columns:
   sql: wheel_unit
   type: INT
   primary_key: true
+  unique: false
   description: Foreign key to drivers.
   hidden: false
   format:
@@ -24,6 +26,7 @@ columns:
   sql: lapval
   type: INT
   primary_key: true
+  unique: false
   description: Lap number.
   hidden: false
   format:
@@ -32,6 +35,7 @@ columns:
   sql: pp
   type: INT
   primary_key: false
+  unique: false
   description: Driver's position at this lap.
   hidden: false
   format:
@@ -40,6 +44,7 @@ columns:
   sql: tmdesc
   type: TEXT
   primary_key: false
+  unique: false
   description: Lap time as 'M:SS.fff' string. NULL = lap time was not captured or
     is invalid.
   hidden: false
@@ -47,6 +52,7 @@ columns:
   sql: msec_val
   type: INT
   primary_key: false
+  unique: false
   description: Lap time in milliseconds.
   hidden: false
   format:
@@ -55,6 +61,7 @@ columns:
   sql: msec_val / 1000.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Lap Time in Seconds (KB #21): T_seconds = T_milliseconds / 1000.\n\
     \n[kb=21]\nT_{seconds} = \\frac{T_{milliseconds}}{1000} \u2014 Converts lap time\
     \ measurements from milliseconds to seconds.\n[/kb=21]"
@@ -66,6 +73,7 @@ columns:
   sql: msec_val / 1000.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Helper anchor for KB #23 Driver's Average Lap Time (exposed as the\
     \ average_lap_seconds measure).\n\n[kb=23]\n\\bar{T}_{lap} = \\frac{\\sum_{i=1}^{n}\
     \ T_{lap_i}}{n}, \\text{where } T_{lap_i} \\text{ is the Lap Time in Seconds for\
@@ -80,6 +88,7 @@ columns:
   sql: msec_val / 1000.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Helper anchor for KB #32 Lap Time Consistency (exposed as the lap_time_consistency\
     \ measure).\n\n[kb=32]\nLTC = \\sqrt{\\frac{\\sum (T_{lap_i} - \\bar{T}_{lap})^2}{n}},\
     \ \\text{where } \\bar{T}_{lap} \\text{ is the driver's Driver's Average Lap Time.}\

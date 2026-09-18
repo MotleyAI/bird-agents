@@ -96,12 +96,10 @@ logger = logging.getLogger(__name__)
 
 
 # SLayer query tools that satisfy the pre-submit verification gate.
-# Any `query` or `query_nested` call immediately before `submit_query`
-# is treated as the required output-inspection step.
-#
-# DEV-1534 Fix C: these now point at our bird-interact-tools wrappers
-# (which forward to SLayer's MCP query/query_nested but with the
-# `normalize_filters` opt-out), NOT at the raw subprocess MCP tools.
+# A `query` call immediately before `submit_query` is treated as the
+# required output-inspection step. This points at our bird-interact-tools
+# wrapper (forwarding to SLayer's MCP `query` with the `normalize_filters`
+# opt-out), NOT the raw subprocess MCP tool.
 SLAYER_QUERY_TOOLS: frozenset[str] = frozenset(
     {
         "mcp__bird-interact-tools__query",
@@ -111,7 +109,7 @@ SLAYER_QUERY_TOOLS: frozenset[str] = frozenset(
 
 def _make_query_before_submit_guard():
     """Enforce that the last completed tool call before ``submit_query``
-    is a SLayer ``query`` or ``query_nested`` call.
+    is a SLayer ``query`` call.
 
     Returns ``(pre_submit_gate, post_tool_tracker)`` sharing a single
     per-task ``state`` closure. The factory MUST be invoked inside
@@ -225,7 +223,6 @@ _KB_NATIVE_BARE = [
 # owns the introspection tools (+ ``query`` so it can profile sample values).
 _MAIN_NATIVE_BARE = [
     "query",
-    "query_nested",
     "submit_query",
     "recommend_root_model",
     # DEV-1629: the main loop nails down query details itself — `search` /

@@ -1,18 +1,23 @@
-version: 7
+version: 10
 name: life_support_reliability_classification
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: life_support_system_reliability
     columns:
     - name: lsrc_class
-      type: TEXT
       sql: CASE WHEN lssr >= 0.8 THEN 'High Reliability' WHEN lssr >= 0.6 THEN 'Moderate
         Reliability' ELSE 'Low Reliability' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: opmainteqref
   - name: lsrc_class
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"life_support_system_reliability.opmainteqref\" AS opmainteqref,\
   \ \"life_support_system_reliability.lsrc_class\" AS lsrc_class FROM (SELECT\n  life_support_system_reliability.opmainteqref\
@@ -61,11 +66,13 @@ columns:
   sql: opmainteqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lsrc_class
   sql: lsrc_class
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: conditionassessments
 sql_table: conditionassessments
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: conditionassessregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,16 +16,19 @@ columns:
   sql: artrefexamined
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: showcaserefexamined
   sql: showcaserefexamined
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lightreadrefobserved
   sql: lightreadrefobserved
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -32,6 +36,7 @@ columns:
   sql: condassessscore
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -39,11 +44,13 @@ columns:
   sql: conserveassessdate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: nextassessdue
   sql: nextassessdue
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

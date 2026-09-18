@@ -1,13 +1,15 @@
-version: 6
+version: 10
 name: resource_intensive_high_risk_patients
 source_queries:
-- version: 3
+- version: 4
   name: ccn_patients
   source_model: complex_care_needs_patients
   dimensions:
   - name: asrkey
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: treatmentbasics
     joins:
@@ -15,6 +17,7 @@ source_queries:
       join_pairs:
       - - encounters.abref
         - asrkey
+      join_type: left
   dimensions:
   - name: txkey
   - name: abref
@@ -24,6 +27,8 @@ source_queries:
   - is_frequent_crisis = TRUE
   - encounters.abref = ccn_patients.asrkey
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"treatmentbasics.txkey\" AS txkey, \"treatmentbasics.encounters.abref\"\
   \ AS encounters__abref, \"treatmentbasics.is_frequent_crisis\" AS is_frequent_crisis\
@@ -292,6 +297,7 @@ columns:
   sql: txkey
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -299,11 +305,13 @@ columns:
   sql: encounters__abref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_frequent_crisis
   sql: is_frequent_crisis
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: 'Frequent Crisis Patient (KB #17): individual crisisint > 2 (per-row
     interpretation, matching KB #47).'
   hidden: false

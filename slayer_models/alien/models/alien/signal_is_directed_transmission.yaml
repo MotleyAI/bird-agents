@@ -1,29 +1,36 @@
-version: 7
+version: 10
 name: signal_is_directed_transmission
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
+    columns:
+    - name: is_directed_transmission
+      sql: CASE WHEN signaldynamics.spatstab = 'Moderate' AND polarmode = 'Linear'
+        AND (signalprobabilities.techsigprob * (1 - signalprobabilities.natsrcprob)
+        * signalprobabilities.sigunique * (0.5 + signalprobabilities.anomscore / 10.0))
+        > 0.85 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: signalprobabilities
       join_pairs:
       - - signalregistry
         - signalref
+      join_type: left
     - target_model: signaldynamics
       join_pairs:
       - - signalregistry
         - signalref
-    columns:
-    - name: is_directed_transmission
-      type: BOOLEAN
-      sql: CASE WHEN signaldynamics.spatstab = 'Moderate' AND polarmode = 'Linear'
-        AND (signalprobabilities.techsigprob * (1 - signalprobabilities.natsrcprob)
-        * signalprobabilities.sigunique * (0.5 + signalprobabilities.anomscore / 10.0))
-        > 0.85 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: is_directed_transmission
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_directed_transmission\"\
   \ AS is_directed_transmission FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
@@ -41,11 +48,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_directed_transmission
   sql: is_directed_transmission
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

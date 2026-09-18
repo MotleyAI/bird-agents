@@ -1,18 +1,23 @@
-version: 6
+version: 10
 name: margin_call_risk
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: margin_utilization
     columns:
     - name: is_margin_call_risk
-      type: BOOLEAN
       sql: mu_value > 80
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: recordvault
   - name: userlink
   - name: is_margin_call_risk
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"margin_utilization.recordvault\" AS recordvault, \"margin_utilization.userlink\"\
   \ AS userlink, \"margin_utilization.is_margin_call_risk\" AS is_margin_call_risk\
@@ -39,16 +44,19 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: userlink
   sql: userlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_margin_call_risk
   sql: is_margin_call_risk
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

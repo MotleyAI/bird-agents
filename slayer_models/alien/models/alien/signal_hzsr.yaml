@@ -1,31 +1,38 @@
-version: 7
+version: 10
 name: signal_hzsr
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
-    joins:
-    - target_model: signalprobabilities
-      join_pairs:
-      - - signalregistry
-        - signalref
-    - target_model: sourceproperties
-      join_pairs:
-      - - signalregistry
-        - signalref
     columns:
     - name: hzsr
-      type: DOUBLE
       sql: (signalprobabilities.techsigprob * (1 - signalprobabilities.natsrcprob)
         * signalprobabilities.sigunique * (0.5 + signalprobabilities.anomscore / 10.0))
         * (CASE WHEN sourceproperties.objtype = 'Dwarf' THEN (CASE WHEN sourceproperties.objmasssol
         BETWEEN 0.7 AND 1.4 THEN (CASE WHEN (sourceproperties.sourcedistly / (CASE
         WHEN sourceproperties.objmasssol > 0 THEN sourceproperties.objmasssol ELSE
         1 END)) BETWEEN 0.8 AND 1.7 THEN 2 ELSE 0.5 END) ELSE 0.3 END) ELSE 0.1 END)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
+    - target_model: sourceproperties
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: hzsr
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.hzsr\"\
   \ AS hzsr FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\",\n\
@@ -49,11 +56,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: hzsr
   sql: hzsr
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: scan_time_efficiency
 source_queries:
-- version: 3
+- version: 4
   name: pc_per_arcref
   source_model: scanpointcloud
   measures:
@@ -12,7 +12,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: scans_per_arcref
   source_model: scans
   measures:
@@ -23,7 +25,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: merged
   source_model:
     source_name: pc_per_arcref
@@ -32,6 +36,7 @@ source_queries:
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
   dimensions:
   - name: arcref
   - name: sqs
@@ -41,19 +46,26 @@ source_queries:
   - name: scancount
     model: scans_per_arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: merged
     columns:
     - name: ste
-      type: DOUBLE
       sql: sqs * sqrt(coverpct) / (scans_per_arcref__spanmin * sqrt(scans_per_arcref__scancount))
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: ste:avg
     name: ste
   dimensions:
   - name: arcref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"merged.arcref\" AS arcref, \"merged.ste\" AS ste FROM\
   \ (SELECT\n  merged.arcref AS \"merged.arcref\",\n  AVG(\n    merged.sqs * SQRT(merged.coverpct)\
@@ -97,11 +109,13 @@ columns:
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ste
   sql: ste
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

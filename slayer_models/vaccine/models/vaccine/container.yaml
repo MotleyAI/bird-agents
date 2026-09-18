@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: container
 sql_table: container
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: containregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: containmodel
   sql: containmodel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: volliters
   sql: volliters
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -25,6 +28,7 @@ columns:
   sql: masskg
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -32,11 +36,13 @@ columns:
   sql: containflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: coolkind
   sql: coolkind
   type: TEXT
   primary_key: false
+  unique: false
   description: "Coolant type. 'Phase Change Material' uses paraffin-based material\
     \ with a 2-8 C phase transition point and 200 kJ/kg latent heat capacity for temperature\
     \ stabilization (KB #24).\n\n[kb=24]\nUses paraffin-based material with 2-8\xB0\
@@ -50,6 +56,7 @@ columns:
   sql: coolmass
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -57,6 +64,7 @@ columns:
   sql: coolremainpct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -64,6 +72,7 @@ columns:
   sql: coolrefills
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -71,16 +80,19 @@ columns:
   sql: refilllatest
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: refillnext
   sql: refillnext
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: batterypct
   sql: batterypct
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -88,22 +100,26 @@ columns:
   sql: pwrfeed
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: pwrbackupflag
   sql: pwrbackupflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: shipown
   sql: shipown
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cdr
   sql: (100 - coolremainpct) / NULLIF(julianday('now') - julianday(refilllatest),
     0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Coolant Depletion Rate (CDR). How quickly coolant is being depleted,\
     \ in percentage points per day: (100 - CoolRemainPct) / (Current_Date - RefillLatest)\
     \ (KB #1).\n\n[kb=1]\nCDR = \\frac{100 - CoolRemainPct}{(Current_Date - RefillLatest)}\
@@ -117,6 +133,7 @@ columns:
     0)) > 1 AND coolremainpct < 30 THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Coolant Critical flag. True when CDR > 1 AND CoolRemainPct < 30 (KB\
     \ #17).\n\n[kb=17]\nA condition where CDR > 1 and CoolRemainPct < 30 \u2014 Identifies\
     \ critical coolant conditions.\n[/kb=17]"

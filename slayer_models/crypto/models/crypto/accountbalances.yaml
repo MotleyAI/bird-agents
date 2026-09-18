@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: accountbalances
 sql_table: accountbalances
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: accountbalancesnode
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: walletsum
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -22,6 +24,7 @@ columns:
   sql: availsum
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -29,6 +32,7 @@ columns:
   sql: frozensum
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -36,6 +40,7 @@ columns:
   sql: margsum
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -43,6 +48,7 @@ columns:
   sql: unrealline
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -50,6 +56,7 @@ columns:
   sql: realline
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -57,11 +64,13 @@ columns:
   sql: usertag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: positive_realline
   sql: realline
   type: INT
   primary_key: false
+  unique: false
   description: "Helper for Profit Factor (KB #34): realline filtered to positive PnL\
     \ rows.\n\n[kb=34]\nProfit Factor = \\frac{\\sum positive\\ realline}{|\\sum negative\\\
     \ realline|}, \\text{where } realline \\text{ is the realized PnL, calculated\
@@ -76,6 +85,7 @@ columns:
   sql: realline
   type: INT
   primary_key: false
+  unique: false
   description: "Helper for Profit Factor (KB #34): realline filtered to negative PnL\
     \ rows.\n\n[kb=34]\nProfit Factor = \\frac{\\sum positive\\ realline}{|\\sum negative\\\
     \ realline|}, \\text{where } realline \\text{ is the realized PnL, calculated\

@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: true_cost_of_execution
 source_queries:
-- version: 3
+- version: 4
   name: depth_per_pair
   source_model: marketdata
   measures:
@@ -14,28 +14,37 @@ source_queries:
   dimensions:
   - name: mktcombo
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: orders
+    columns:
+    - name: tcoe
+      sql: fees.feetotal + (dealcount * dealquote * (dealcount / NULLIF(CASE WHEN
+        dealedge = 'Buy' THEN depth_per_pair.askunits_avg ELSE depth_per_pair.bidunits_avg
+        END, 0) * depth_per_pair.spreadband_avg) * 0.01)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: fees
       join_pairs:
       - - recordvault
         - orderslink
+      join_type: left
     - target_model: depth_per_pair
       join_pairs:
       - - mktnote
         - mktcombo
-    columns:
-    - name: tcoe
-      type: DOUBLE
-      sql: fees.feetotal + (dealcount * dealquote * (dealcount / NULLIF(CASE WHEN
-        dealedge = 'Buy' THEN depth_per_pair.askunits_avg ELSE depth_per_pair.bidunits_avg
-        END, 0) * depth_per_pair.spreadband_avg) * 0.01)
+      join_type: left
   dimensions:
   - name: recordvault
   - name: tcoe
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.tcoe\"\
   \ AS tcoe FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\",\n  fees.feetotal\
@@ -61,11 +70,13 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tcoe
   sql: tcoe
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

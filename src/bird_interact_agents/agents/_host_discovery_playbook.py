@@ -15,7 +15,7 @@ underspecifies the join graph. Used by:
 The text has no ``str.format`` placeholders so it can be concatenated
 into any prompt body without breaking the call site's ``.format(...)``.
 
-DEV-1591: the search-vs-inspect discipline (``_COMPACT_SEARCH_DISCIPLINE``)
+DEV-1591: the search-vs-inspect discipline
 is imported from ``_shared_otf_prompts`` and embedded inline so the rule
 lives in exactly one place. `search` is discovery-only (hardwired compact);
 every targeted detail read in this playbook uses the ``inspect`` point-lookup
@@ -24,9 +24,6 @@ no ``cypher_filter``. The constant is param-free and brace-free, so the
 no-``.format()``-placeholder contract still holds.
 """
 
-from bird_interact_agents.agents._shared_otf_prompts import (
-    _COMPACT_SEARCH_DISCIPLINE,
-)
 
 HOST_DISCOVERY_PLAYBOOK = (
     """\
@@ -82,12 +79,8 @@ HOW TO READ COLUMN DESCRIPTIONS via SLayer MCP:
     is union semantics); the tantivy + dense-embedding channels then
     rank all column / model / measure descriptions and return a unified
     `results` list of entity hits. This is a BROAD search — it returns
-    one-line descriptions only; you never pass `compact` (see
-    SEARCH-vs-INSPECT DISCIPLINE below).
+    one-line descriptions only; you never pass `compact`.
 
-"""
-    + _COMPACT_SEARCH_DISCIPLINE
-    + """
 
 HOW TO FIND CANDIDATE HOSTS for a target table T (the table whose
 columns the KB references):

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: treatmentbasics
 sql_table: treatmentbasics
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: txkey
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,31 +16,37 @@ columns:
   sql: encref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: curmed
   sql: curmed
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: medadh
   sql: medadh
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: medside
   sql: medside
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: medchg
   sql: medchg
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: crisisint
   sql: crisisint
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Crisis intervention count for this treatment record. 0 = no interventions,\
     \ higher (e.g. 3) = frequent interventions.\n\n[kb=27]\nA numeric value indicating\
     \ the number of crisis interventions. A value of 0 indicates no interventions,\
@@ -55,11 +62,13 @@ columns:
   sql: therapy_details
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: therapy_engagement
   sql: therapy_details ->> '$.engagement'
   type: TEXT
   primary_key: false
+  unique: false
   description: "Therapy engagement enum (Non-compliant, Low, Medium, High). Non-compliant\
     \ = no participation, Low = minimal, Medium = regular, High = active engagement.\n\
     \n[kb=23]\nRanges from Non-compliant to High. Non-compliant indicates no participation,\
@@ -74,24 +83,28 @@ columns:
   sql: therapy_details ->> '$.type'
   type: TEXT
   primary_key: false
+  unique: false
   description: Therapy modality enum (DBT, Group, Psychodynamic, CBT).
   hidden: false
 - name: therapy_frequency
   sql: therapy_details ->> '$.frequency'
   type: TEXT
   primary_key: false
+  unique: false
   description: Therapy frequency enum (Weekly, Biweekly, Monthly).
   hidden: false
 - name: therapy_duration_months
   sql: CAST(therapy_details ->> '$.duration_months' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Therapy duration in months.
   hidden: false
 - name: therapy_changes
   sql: therapy_details ->> '$.changes'
   type: TEXT
   primary_key: false
+  unique: false
   description: Therapy changes enum (Frequency Change, Modality Change, Therapist
     Change).
   hidden: false
@@ -100,6 +113,7 @@ columns:
     2 WHEN 'Low' THEN 1 WHEN 'Non-compliant' THEN 0 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric therapy-engagement score: High=3, Medium=2, Low=1, Non-compliant=0.\
     \ Used in TES.\n\n[kb=4]\nTES = \\frac{\\sum_{i \\in treatmentbasics} (therapy\\\
     _details_i['engagement\\_score'])} {|treatmentbasics|}, \\text{where } engagement\\\
@@ -117,6 +131,7 @@ columns:
   sql: crisisint > 2
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Frequent Crisis Patient (KB #17): individual crisisint > 2 (per-row\
     \ interpretation, matching KB #47).\n\n[kb=17]\nA patient with CIF > 2 \u2014\
     \ Identifies patients with frequent crisis interventions.\n[/kb=17]"
@@ -131,6 +146,7 @@ columns:
     tox.txeng IN ('Low', 'Non-compliant'))
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Low Engagement Risk (KB #14): per-row engagement_score < 1.5 AND linked\
     \ treatmentoutcomes.txeng in {Low, Non-compliant}.\n\n[kb=14]\nA patient with\
     \ TES < 1.5 and txeng \\in \\{Low, Non-compliant\\} \u2014 Identifies patients\

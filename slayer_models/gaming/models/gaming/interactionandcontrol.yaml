@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: interactionandcontrol
 sql_table: interactionandcontrol
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: interactregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: interactphysref
   sql: interactphysref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: interactdevref
   sql: interactdevref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: amblight
   sql: amblight
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -30,6 +34,7 @@ columns:
   sql: tempsense
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -37,6 +42,7 @@ columns:
   sql: accelsense
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -44,6 +50,7 @@ columns:
   sql: gyrosense
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -51,11 +58,13 @@ columns:
   sql: hapfeed
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: hapstr
   sql: hapstr
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -63,6 +72,7 @@ columns:
   sql: vibmodes
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -70,11 +80,13 @@ columns:
   sql: forcefeed
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: trigres
   sql: trigres
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -82,6 +94,7 @@ columns:
   sql: trigtravmm
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -89,6 +102,7 @@ columns:
   sql: joydead
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -96,6 +110,7 @@ columns:
   sql: joyprec
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -103,6 +118,7 @@ columns:
   sql: btnspcmm
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -110,6 +126,7 @@ columns:
   sql: btnszmm
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -117,11 +134,13 @@ columns:
   sql: dpadvar
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: dpadacc
   sql: dpadacc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -129,11 +148,13 @@ columns:
   sql: astickvar
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: driftres
   sql: driftres
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Drift resistance 1-10 (KB #27: <5 prone to drift, 6-8 good, 9-10 Hall\
     \ Effect/magnetic eliminating drift).\n\n[kb=27]\nRated on a scale of 1-10, where\
     \ values below 5 indicate susceptibility to developing drift over time, 6-8 represents\
@@ -149,10 +170,11 @@ columns:
   meta:
     kb_id: 27
 - name: rai
-  sql: ((joyprec + dpadacc) * 1.0 / 20) * (1 - deviceidentity__testsessions.inplagms
+  sql: ((joyprec + dpadacc) * 1.0 / 20) * (1 - deviceidentity.testsessions.inplagms
     * 1.0 / 10) * 10
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Response Accuracy Index (RAI) = ((JoyPrec + DpadAcc)/20) \xD7 (1 -\
     \ InpLagMs/10) \xD7 10. Reaches InpLagMs via deviceidentity\u2192testsessions.\n\
     \n[kb=31]\nRAI = \\left(\\frac{JoyPrec + DpadAcc}{20}\\right) \\times \\left(1\
@@ -168,6 +190,7 @@ columns:
     1.0 / 20)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Haptic Feedback Quality (HFQ) = (HapStr/10) \xD7 (1 + VibModes/10)\
     \ \xD7 (1 + ForceFeed_length/20). ForceFeed_length is the string length of the\
     \ ForceFeed descriptor.\n\n[kb=34]\nHFQ = \\left(\\frac{HapStr}{10}\\right) \\\
@@ -179,11 +202,12 @@ columns:
   meta:
     kb_id: 34
 - name: is_pro_esports_controller
-  sql: ((deviceidentity__testsessions.pollratehz * 1.0 / 100) * (1 - (deviceidentity__testsessions.inplagms
-    + deviceidentity__testsessions.resptimems) * 1.0 / 30) * 10) > 8.0 AND joyprec
+  sql: ((deviceidentity.testsessions.pollratehz * 1.0 / 100) * (1 - (deviceidentity.testsessions.inplagms
+    + deviceidentity.testsessions.resptimems) * 1.0 / 30) * 10) > 8.0 AND joyprec
     > 9.0 AND driftres > 9.5 AND trigres >= 5 AND hapstr > 8
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Professional Esports Controller (KB #14): IRS > 8.0 AND JoyPrec >\
     \ 9.0 AND DriftRes > 9.5 AND TrigRes >= 5 AND HapStr > 8.\n\n[kb=14]\nA controller\
     \ with IRS > 8.0, JoyPrec > 9.0, DriftRes > 9.5, TrigRes \u2265 5, and HapStr\
@@ -195,13 +219,14 @@ columns:
   meta:
     kb_id: 14
 - name: is_ultra_responsive
-  sql: ((deviceidentity__testsessions.pollratehz * 1.0 / 100) * (1 - (deviceidentity__testsessions.inplagms
-    + deviceidentity__testsessions.resptimems) * 1.0 / 30) * 10) > 9.0 AND (((joyprec
-    + dpadacc) * 1.0 / 20) * (1 - deviceidentity__testsessions.inplagms * 1.0 / 10)
-    * 10) > 8.5 AND deviceidentity__testsessions.latms < 1.0 AND physicaldurability__performance.clklat
+  sql: ((deviceidentity.testsessions.pollratehz * 1.0 / 100) * (1 - (deviceidentity.testsessions.inplagms
+    + deviceidentity.testsessions.resptimems) * 1.0 / 30) * 10) > 9.0 AND (((joyprec
+    + dpadacc) * 1.0 / 20) * (1 - deviceidentity.testsessions.inplagms * 1.0 / 10)
+    * 10) > 8.5 AND deviceidentity.testsessions.latms < 1.0 AND physicaldurability.performance.clklat
     < 0.5
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Ultra-Responsive Gaming Device (KB #43): IRS > 9.0 AND RAI > 8.5 AND\
     \ LatMs < 1.0 AND ClkLat < 0.5. Reaches ClkLat via physicaldurability\u2192performance.\n\
     \n[kb=43]\nA device with IRS > 9.0, RAI > 8.5, LatMs < 1.0, and ClkLat < 0.5,\
@@ -214,11 +239,12 @@ columns:
   meta:
     kb_id: 43
 - name: is_pro_control_consistency
-  sql: (((joyprec + dpadacc) * 1.0 / 20) * (1 - deviceidentity__testsessions.inplagms
-    * 1.0 / 10) * 10) > 8.5 AND physicaldurability__rgb__mechanical.swtchcons > 9.0
+  sql: (((joyprec + dpadacc) * 1.0 / 20) * (1 - deviceidentity.testsessions.inplagms
+    * 1.0 / 10) * 10) > 8.5 AND physicaldurability.rgb.mechanical.swtchcons > 9.0
     AND joyprec > 9.0 AND driftres > 9.0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Professional-Grade Control Consistency (KB #46): RAI > 8.5 AND SwtchCons\
     \ > 9.0 AND JoyPrec > 9.0 AND DriftRes > 9.0. Reaches SwtchCons via physicaldurability\u2192\
     rgb\u2192mechanical (multi-hop).\n\n[kb=46]\nA device with RAI > 8.5, SwtchCons\
@@ -235,11 +261,6 @@ columns:
 measures: []
 aggregations: []
 joins:
-- target_model: deviceidentity
-  join_pairs:
-  - - interactdevref
-    - devregistry
-  join_type: left
 - target_model: physicaldurability
   join_pairs:
   - - interactphysref

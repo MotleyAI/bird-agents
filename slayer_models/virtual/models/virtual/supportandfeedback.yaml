@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: supportandfeedback
 sql_table: supportandfeedback
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: supportreg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: supportinteractpivot
   sql: supportinteractpivot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: supportprefpivot
   sql: supportprefpivot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: techissuerpt
   sql: techissuerpt
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -30,6 +34,7 @@ columns:
   sql: supptix
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -37,6 +42,7 @@ columns:
   sql: fbsubs
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -44,16 +50,19 @@ columns:
   sql: survpart
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: betapart
   sql: betapart
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: featreqsubs
   sql: featreqsubs
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -61,6 +70,7 @@ columns:
   sql: bugsubs
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -68,6 +78,7 @@ columns:
   sql: satrate
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -75,6 +86,7 @@ columns:
   sql: npsval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer

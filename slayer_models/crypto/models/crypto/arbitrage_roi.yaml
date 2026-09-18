@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: arbitrage_roi
 source_queries:
-- version: 3
+- version: 4
   name: aos_per_pair
   source_model: analyticsindicators
   measures:
@@ -11,26 +11,35 @@ source_queries:
   - name: mktcombo
     model: marketdata
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: orders
+    columns:
+    - name: arbitrage_roi
+      sql: aos_per_pair.aos_avg * dealquote / NULLIF(fees.feetotal * 2, 0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: fees
       join_pairs:
       - - recordvault
         - orderslink
+      join_type: left
     - target_model: aos_per_pair
       join_pairs:
       - - mktnote
         - marketdata__mktcombo
-    columns:
-    - name: arbitrage_roi
-      type: DOUBLE
-      sql: aos_per_pair.aos_avg * dealquote / NULLIF(fees.feetotal * 2, 0)
+      join_type: left
   dimensions:
   - name: recordvault
   - name: arbitrage_roi
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.arbitrage_roi\"\
   \ AS arbitrage_roi FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\"\
@@ -55,11 +64,13 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: arbitrage_roi
   sql: arbitrage_roi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

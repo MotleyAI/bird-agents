@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: critical_route_status
 source_queries:
-- version: 3
+- version: 4
   name: trs_cei_hqi_per_vehicle_crs
   source_model: sensordata
   measures:
@@ -14,32 +14,46 @@ source_queries:
   dimensions:
   - name: vehsenseref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: transportinfo
+    columns:
+    - name: rrf
+      sql: (1 - rcp / 100.0) * trs_cei_hqi_per_vehicle_crs.trs * (1 - trs_cei_hqi_per_vehicle_crs.cei)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: tsr
+      sql: rcp / 100.0 * (1 - trs_cei_hqi_per_vehicle_crs.trs) * trs_cei_hqi_per_vehicle_crs.hqi
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: is_critical_route_status
+      sql: CASE WHEN ((1 - rcp / 100.0) * trs_cei_hqi_per_vehicle_crs.trs * (1 - trs_cei_hqi_per_vehicle_crs.cei))
+        > 0.8 AND (rcp / 100.0 * (1 - trs_cei_hqi_per_vehicle_crs.trs) * trs_cei_hqi_per_vehicle_crs.hqi)
+        < 0.3 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: trs_cei_hqi_per_vehicle_crs
       join_pairs:
       - - vehiclereg
         - vehsenseref
-    columns:
-    - name: rrf
-      type: DOUBLE
-      sql: (1 - rcp / 100.0) * trs_cei_hqi_per_vehicle_crs.trs * (1 - trs_cei_hqi_per_vehicle_crs.cei)
-    - name: tsr
-      type: DOUBLE
-      sql: rcp / 100.0 * (1 - trs_cei_hqi_per_vehicle_crs.trs) * trs_cei_hqi_per_vehicle_crs.hqi
-    - name: is_critical_route_status
-      type: BOOLEAN
-      sql: CASE WHEN ((1 - rcp / 100.0) * trs_cei_hqi_per_vehicle_crs.trs * (1 - trs_cei_hqi_per_vehicle_crs.cei))
-        > 0.8 AND (rcp / 100.0 * (1 - trs_cei_hqi_per_vehicle_crs.trs) * trs_cei_hqi_per_vehicle_crs.hqi)
-        < 0.3 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: vehiclereg
   - name: rrf
   - name: tsr
   - name: is_critical_route_status
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"transportinfo.vehiclereg\" AS vehiclereg, \"transportinfo.rrf\"\
   \ AS rrf, \"transportinfo.tsr\" AS tsr, \"transportinfo.is_critical_route_status\"\
@@ -87,21 +101,25 @@ columns:
   sql: vehiclereg
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rrf
   sql: rrf
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: tsr
   sql: tsr
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_critical_route_status
   sql: is_critical_route_status
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

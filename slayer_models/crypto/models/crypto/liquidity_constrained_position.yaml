@@ -1,17 +1,22 @@
-version: 6
+version: 10
 name: liquidity_constrained_position
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: market_depth_ratio
     columns:
     - name: is_liquidity_constrained
-      type: BOOLEAN
       sql: mdr_value < 2.0
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: recordvault
   - name: is_liquidity_constrained
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"market_depth_ratio.recordvault\" AS recordvault, \"market_depth_ratio.is_liquidity_constrained\"\
   \ AS is_liquidity_constrained FROM (SELECT\n  market_depth_ratio.recordvault AS\
@@ -51,11 +56,13 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_liquidity_constrained
   sql: is_liquidity_constrained
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

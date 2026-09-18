@@ -1,17 +1,22 @@
-version: 7
+version: 10
 name: extreme_operating_conditions
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: extreme_climate_adaptation_coefficient
     columns:
     - name: is_eoc_flag
-      type: DOUBLE
       sql: CASE WHEN ssf_avg > 0.65 AND ecac > 0.8 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: operationmaintenance__opmainteqref
   - name: is_eoc_flag
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"extreme_climate_adaptation_coefficient.operationmaintenance__opmainteqref\"\
   \ AS operationmaintenance__opmainteqref, \"extreme_climate_adaptation_coefficient.is_eoc_flag\"\
@@ -75,11 +80,13 @@ columns:
   sql: operationmaintenance__opmainteqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_eoc_flag
   sql: is_eoc_flag
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []
