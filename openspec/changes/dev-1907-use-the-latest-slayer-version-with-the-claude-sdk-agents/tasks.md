@@ -38,3 +38,4 @@
 - [x] 7.1 Run the full non-integration suite via the CLAUDE.md command and verify 0 failures / 0 errors.
 - [x] 7.2 Add a "SLayer 0.10.2" note to the project `CLAUDE.md` (one `query` argument, no `query_nested`/`help`, prompts must not restate tool docs, reference at schema 10 + migration procedure). Verify the note is present.
 - [ ] 7.3 Run the two opus-4.8 local smokes (`claude_sdk_otf` and `claude_sdk_otf_v1`, one mini-interact task each, creds from `/home/james/GitHub/SLayer/.env.agents`); verify each reaches evaluation (a `Generated SQL:` + `Result:` observation, `submission_status` not a json/translation/dry-run/infrastructure error) with no tool-not-found / schema / `HermeticEnvError` entry, and record the outcome in the PR.
+  - NOTE: live setup verified on 0.10.2 (correct 20-tool surface, no `query_nested`/`help`, hermetic session + OTF cache/storage clean); full evaluation blocked by the opus-4.8 subscription 7-day rate limit — re-run after reset.
