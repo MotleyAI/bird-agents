@@ -127,82 +127,12 @@ much cheaper than a new join or KB re-read."""
 # fabricated names (per project convention) but mirrors the structural
 # shape of real overaggregation misses — dim-only ask, optional LIMIT,
 # no measures.
-_DEDUP_VS_RAW_ROWS = """\
-DEDUP vs RAW ROWS. By default SLayer auto-DEDUPLICATES dimension-only
-queries: when `measures` is empty, it wraps every projected column in a
-top-level `GROUP BY`, collapsing rows that share the same dimension
-tuple. To emit raw per-record rows instead, set
-`distinct_dimension_values: false` inside the query JSON — flat
-`SELECT <dims/td> FROM ... WHERE ... ORDER BY ... LIMIT`, no top-level
-`GROUP BY`. The field lives INSIDE the SlayerQuery JSON (alongside
-`source_model`, `dimensions`, etc.), same shape for `query` / `submit_query`.
-
-Decide BEFORE writing the query:
-
-  * Use `distinct_dimension_values: false` when the question asks for a
-    PER-RECORD listing (e.g. "list each <X>'s <a> and <b>; if two
-    <X>s share the same <a>, <b>, return BOTH rows").
-  * Keep the default `true` when the question asks for the distinct
-    <a>, <b> COMBINATIONS (or for an aggregation grouped by them).
-  * If you need BOTH a per-record listing and a count, keep the
-    default and add `*:count` as a measure (or restructure as a
-    nested-DAG stage with `*:count`).
-
-Validation: `distinct_dimension_values: false` requires
-  * `measures` empty (the flag asks for raw rows, not aggregations),
-  * at least one of `dimensions` / `time_dimensions` non-empty
-    (something must be projected),
-  * no measure reference in `filters` / `order`.
-SLayer raises a `DistinctDimensionValuesError` otherwise.
-
-Synthetic example (fabricated names — your DB uses different
-identifiers):
-
-  Q: "List the first 10 (workshop_id, district) pairs in the workshops
-     table. If two workshops share the same (workshop_id, district),
-     return BOTH rows."
-
-  WRONG (default — silently dedups when two workshops share the
-  tuple):
-    {{"source_model": "workshops",
-     "dimensions": ["workshop_id", "district"],
-     "limit": 10}}
-
-  RIGHT (raw rows):
-    {{"source_model": "workshops",
-     "dimensions": ["workshop_id", "district"],
-     "limit": 10,
-     "distinct_dimension_values": false}}
-"""
 
 # DEV-1534 Fix D / DEV-1546 — slayer-mode only (one-shot + a-interact).
 # No format params. The `normalize_filters` opt-out applies to `query`,
 # AND `submit_query`; the `distinct_dimension_values`
 # field lives INSIDE the JSON DSL (see _DEDUP_VS_RAW_ROWS above for
 # the proactive rule + synthetic example).
-_SLAYER_SQL_ARTIFACT_CHECK = """\
-SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` returns, inspect the rendered SQL for these patterns
-before submitting:
-
-  1. GROUP BY on every projected column with NO aggregate functions —
-     SLayer's default dim-only auto-dedup. If the question asks for
-     raw per-record rows, fix by setting
-     `distinct_dimension_values: false` INSIDE the query JSON (see
-     the DEDUP vs RAW ROWS rule above). If you DO need a count
-     alongside the rows, keep the default and add `*:count` as a
-     measure — or restructure as a nested-DAG stage with a `*:count`
-     measure.
-  2. `lower(trim(col)) = '<lowercase literal>'` on string equality
-     filters — wrapped automatically by default. When the gold answer
-     requires exact-case equality (proper-noun categories with
-     known-fixed casing), pass `normalize_filters=false` as a SEPARATE
-     parameter on the offending `query` / `submit_query`
-     call (the flag lives OUTSIDE the JSON DSL).
-  3. Broken operator precedence on WHERE arithmetic:
-     `expr1*w1 + expr2*w2 > threshold` without outer parens — the
-     comparator binds only to the last additive term. Fix: push the
-     score into a HAVING on a nested-stage measure rather than a WHERE
-     on a raw formula."""
 
 # DEV-1534 Fix E — a-interact only (one-shot variants get exactly ONE
 # submission, so the "after 3 failed" trigger never fires). Format
@@ -392,47 +322,6 @@ bit, not to keep submitting near-identical queries."""
 # (SLAYER_A_INTERACT / SLAYER_C_INTERACT and the `.format()`-rendered v0/v1
 # templates) would break on a stray brace. All examples are synthetic — no
 # real eval-set DB / model / column names.
-_COMPACT_SEARCH_DISCIPLINE = """\
-SEARCH-vs-INSPECT DISCIPLINE. Two different jobs; keeping them separate is
-what keeps context cheap. `search` is for broad DISCOVERY — finding candidate
-entity ids by relevance. `inspect` is for DETAIL — reading the full body of
-ids you have already pinned down. ("Discovery" here is the activity of finding
-candidates, not any particular agent.) Choosing the query root / `source_model`
-/ encoding host is a SEPARATE decision — where your tool surface offers
-`recommend_root_model`, use that for it. `search` and `inspect` here are only
-for finding candidate ids and reading their details, never for selecting the
-root or host.
-
-  * DISCOVER with `search(question="…")`. It returns each hit's one-line
-    `description` — enough to choose candidates. Treat broad search as
-    compact-only: never pass `compact`, and don't try to pull per-entity
-    Type / Description / Sample values / SQL out of `search`. (A broad
-    `compact=False` search drags tens of thousands of characters of full
-    renders into cached context on every later turn for no added signal —
-    so the detail belongs in `inspect`, below.)
-
-  * NARROW THE DISCOVERY BY KIND with `cypher_filter`, so the `max_results`
-    slots are spent on the kind you actually want instead of an RRF-fused
-    mix of memories + columns + measures + models. Pass a
-    `MATCH … RETURN n.id AS id` constraint (multi-label is union semantics):
-      - only KB memories:        cypher_filter='MATCH (n:Memory) RETURN n.id AS id'
-      - only entity definitions: cypher_filter='MATCH (n:ModelColumn:Measure:Aggregation:Model) RETURN n.id AS id'
-      - only columns:            cypher_filter='MATCH (n:ModelColumn) RETURN n.id AS id'
-    Use the `ModelColumn` label, NOT `Column` (`Column` is a reserved keyword
-    in LadybugDB ≥0.15 and only matches on the naive fallback path;
-    `ModelColumn` works on naive AND graph-backed installs).
-
-  * INSPECT for the full body once you have a SMALL, chosen set of known
-    ids. `inspect(reference=[…], entity_type="…", compact=False)` is a clean
-    point-lookup — no RRF fusion, no bundled memories — so it needs NO
-    `cypher_filter` and no `max_results` budgeting. Batch ids of the SAME
-    kind in one call:
-      - columns:  inspect(reference=["<db>.<model>.<col>", …], entity_type="column", compact=False)
-      - memories: inspect(reference=["memory:<id>", …], entity_type="memory", compact=False)
-
-Rule of thumb: `search(question=…)` to FIND ids (compact + a `cypher_filter`
-kind constraint); `inspect(reference=[ids], entity_type=…, compact=False)` to
-READ them."""
 
 
 _RAW_HOST_PATH_PRINCIPLE = """\
@@ -563,44 +452,6 @@ def _slayer_tools_tail(*, lean_introspection: bool, readonly_mode: bool) -> str:
     return _TOOLS_TAIL_FULL
 
 
-_SLAYER_TOOLS_BLOCK = (
-    """\
-The database's domain knowledge is pre-loaded as SLayer MEMORIES — one per
-knowledge-base (KB) item, with ids like `{db_name}_kb_<n>` whose body
-starts `KB <n> —`. The base tables are already ingested as SLayer models,
-but NOTHING is encoded yet: you encode exactly what THIS question needs,
-on the fly.
-
-SLAYER TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn the
-query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
-the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-`search` to DISCOVER relevant memories and existing entities (it returns
-one-line descriptions only); `inspect` to read the FULL body of specific
-entities you have already pinned down — columns, measures, or memories — by
-reference; """
-    + _tools_tail
-    + """
-
-READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
-filter, projection, or join key — `inspect` the column reference
-(`<db>.<model>.<col>`) to read its `Description:` and `Sample values:`
-(single-entity point lookup).
-The truncated `Sample values:` line is your authoritative source of
-which literal forms actually occur in this column — case variants,
-whitespace forms, abbreviations, alternate phrasings of the same
-concept. Use it BEFORE writing any IN-set (see rule 3 below).
-
-READ A KNOWN MEMORY'S FULL BODY when you need the verbatim KB content for
-a memory id you've already identified — `inspect(reference=["memory:<id>"],
-entity_type="memory", compact=False)` returns the full `learning` body
-(single-entity point lookup).
-
-"""
-    + _COMPACT_SEARCH_DISCIPLINE
-    + """
-
-ENCODE-THEN-QUERY DISCIPLINE:"""
-)
 
 
 # DEV-1623: cut submit-verify thrash on noisy categorical columns. A single
@@ -651,6 +502,25 @@ confirm it returns a non-zero, plausible rowset with the expected casing and
 whitespace on string values. A `submit_query` that is not directly preceded
 by a matching `query` is rejected and wastes the turn — never submit an
 unvalidated query."""
+
+
+# DEV-1907: SLayer 0.10.2 expresses multistage work in ONE query — the tool docs
+# teach the shape; the prompt only nudges toward a single query.
+_SINGLE_QUERY_NUDGE = """\
+SLayer expresses multistage aggregations, computed (re-aggregating) dimensions,
+ranking, and cross-model joins INSIDE ONE query — write a single query. Reserve
+a multi-stage list (a list of stage objects) for the exception: when a whole
+result SET must be re-queried or joined, not merely re-aggregated."""
+
+# DEV-1907: the automatic filter normalisation the query/submit path applies —
+# the ACTUAL normaliser subset, not "every filter".
+_NORMALIZE_FILTERS_NOTE = """\
+FILTER NORMALISATION (automatic). A filter comparing a plain column with
+`==` / `!=` / `in` / `not in` against a string literal (or an all-string list)
+is auto-wrapped `lower(trim(col))` with the literal lowercased, so case /
+whitespace variants match. Pass `normalize_filters=false` — a sibling argument
+on `query` / `submit_query`, never a field inside the query — when the gold
+answer needs exact-case equality."""
 
 
 # DEV-1646 mode B (reference-before-define): the agent writes a `filter` /
@@ -808,14 +678,17 @@ starts `KB <n> —`. The base tables are already ingested as SLayer models,
 but NOTHING is encoded yet: you encode exactly what THIS question needs,
 on the fly.
 
-SLAYER TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn the
-query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
-the `source_model` / `dimensions` / `measures` / `filters` schema. Use
+SLAYER TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn
+SLayer's query language. Use
 `search` to DISCOVER relevant memories and existing entities (it returns
 one-line descriptions only); `inspect` to read the FULL body of specific
 entities you have already pinned down — columns, measures, or memories — by
 reference; """
     + _tools_tail
+    + "\n\n"
+    + _SINGLE_QUERY_NUDGE
+    + "\n\n"
+    + _NORMALIZE_FILTERS_NOTE
     + """
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
@@ -833,7 +706,6 @@ entity_type="memory", compact=False)` returns the full `learning` body
 (single-entity point lookup).
 
 """
-    + _COMPACT_SEARCH_DISCIPLINE
     + """
 
 ENCODE-THEN-QUERY DISCIPLINE:
@@ -843,52 +715,6 @@ ENCODE-THEN-QUERY DISCIPLINE:
    column, filter, grouping, unit, rounding and ordering hint is a
    separate block that MUST be represented. Write the list out before
    encoding.
-
-DEDUP vs RAW ROWS. By default SLayer auto-DEDUPLICATES dimension-only
-queries: when `measures` is empty, it wraps every projected column in a
-top-level `GROUP BY`, collapsing rows that share the same dimension
-tuple. To emit raw per-record rows instead, set
-`distinct_dimension_values: false` inside the query JSON — flat
-`SELECT <dims/td> FROM ... WHERE ... ORDER BY ... LIMIT`, no top-level
-`GROUP BY`. The field lives INSIDE the SlayerQuery JSON (alongside
-`source_model`, `dimensions`, etc.), same shape for `query` / `submit_query`.
-
-Decide BEFORE writing the query:
-
-  * Use `distinct_dimension_values: false` when the question asks for a
-    PER-RECORD listing (e.g. "list each <X>'s <a> and <b>; if two
-    <X>s share the same <a>, <b>, return BOTH rows").
-  * Keep the default `true` when the question asks for the distinct
-    <a>, <b> COMBINATIONS (or for an aggregation grouped by them).
-  * If you need BOTH a per-record listing and a count, keep the
-    default and add `*:count` as a measure (or restructure as a
-    nested-DAG stage with `*:count`).
-
-Validation: `distinct_dimension_values: false` requires
-  * `measures` empty (the flag asks for raw rows, not aggregations),
-  * at least one of `dimensions` / `time_dimensions` non-empty
-    (something must be projected),
-  * no measure reference in `filters` / `order`.
-SLayer raises a `DistinctDimensionValuesError` otherwise.
-
-Synthetic example (fabricated names — your DB uses different
-identifiers):
-
-  Q: "List the first 10 (workshop_id, district) pairs in the workshops
-     table. If two workshops share the same (workshop_id, district),
-     return BOTH rows."
-
-  WRONG (default — silently dedups when two workshops share the
-  tuple):
-    {{"source_model": "workshops",
-     "dimensions": ["workshop_id", "district"],
-     "limit": 10}}
-
-  RIGHT (raw rows):
-    {{"source_model": "workshops",
-     "dimensions": ["workshop_id", "district"],
-     "limit": 10,
-     "distinct_dimension_values": false}}
 
 2. For each block, `search` for the relevant KB memory and any entity
    that already encodes it. A `memory:<id>` token inside a KB body means
@@ -937,32 +763,9 @@ identifiers):
     )
     + """
 
-4. TEST candidate columns and the final query with `query`; sanity-check the generated SQL.
+4. TEST candidate columns and the final query with `query` before submitting.
 
-   SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` returns, inspect the rendered SQL for these patterns
-before submitting:
-
-  1. GROUP BY on every projected column with NO aggregate functions —
-     SLayer's default dim-only auto-dedup. If the question asks for
-     raw per-record rows, fix by setting
-     `distinct_dimension_values: false` INSIDE the query JSON (see
-     the DEDUP vs RAW ROWS rule above). If you DO need a count
-     alongside the rows, keep the default and add `*:count` as a
-     measure — or restructure as a nested-DAG stage with a `*:count`
-     measure.
-  2. `lower(trim(col)) = '<lowercase literal>'` on string equality
-     filters — wrapped automatically by default. When the gold answer
-     requires exact-case equality (proper-noun categories with
-     known-fixed casing), pass `normalize_filters=false` as a SEPARATE
-     parameter on the offending `query` / `submit_query`
-     call (the flag lives OUTSIDE the JSON DSL).
-  3. Broken operator precedence on WHERE arithmetic:
-     `expr1*w1 + expr2*w2 > threshold` without outer parens — the
-     comparator binds only to the last additive term. Fix: push the
-     score into a HAVING on a nested-stage measure rather than a WHERE
-     on a raw formula.
-
-5. PRE-SUBMIT MUTATION CHECK. Before calling `submit_query`, audit every
+   PRE-SUBMIT MUTATION CHECK. Before calling `submit_query`, audit every
    TRIM, LOWER, UPPER, ROUND, CAST, dedup, canonicalize-via-CASE, and
    output-shape choice in the FINAL query. Each one MUST be either
    (a) explicitly named in the user's question or (b) required by an
@@ -1072,14 +875,17 @@ starts `KB <n> —`. The base tables are already ingested as SLayer models,
 but NOTHING is encoded yet: you encode exactly what THIS question needs,
 on the fly.
 
-SLAYER TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn the
-query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
-the `source_model` / `dimensions` / `measures` / `filters` schema. Use
+SLAYER TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn
+SLayer's query language. Use
 `search` to DISCOVER relevant memories and existing entities (it returns
 one-line descriptions only); `inspect` to read the FULL body of specific
 entities you have already pinned down — columns, measures, or memories — by
 reference; """
     + _tools_tail
+    + "\n\n"
+    + _SINGLE_QUERY_NUDGE
+    + "\n\n"
+    + _NORMALIZE_FILTERS_NOTE
     + """
 
 READ A KNOWN COLUMN'S FULL DESCRIPTION before committing to it as a
@@ -1097,7 +903,6 @@ entity_type="memory", compact=False)` returns the full `learning` body
 (single-entity point lookup).
 
 """
-    + _COMPACT_SEARCH_DISCIPLINE
     + """
 
 ENCODE-THEN-QUERY DISCIPLINE:
@@ -1107,52 +912,6 @@ ENCODE-THEN-QUERY DISCIPLINE:
    column, filter, grouping, unit, rounding and ordering hint is a
    separate block that MUST be represented. Write the list out before
    encoding.
-
-DEDUP vs RAW ROWS. By default SLayer auto-DEDUPLICATES dimension-only
-queries: when `measures` is empty, it wraps every projected column in a
-top-level `GROUP BY`, collapsing rows that share the same dimension
-tuple. To emit raw per-record rows instead, set
-`distinct_dimension_values: false` inside the query JSON — flat
-`SELECT <dims/td> FROM ... WHERE ... ORDER BY ... LIMIT`, no top-level
-`GROUP BY`. The field lives INSIDE the SlayerQuery JSON (alongside
-`source_model`, `dimensions`, etc.), same shape for `query` / `submit_query`.
-
-Decide BEFORE writing the query:
-
-  * Use `distinct_dimension_values: false` when the question asks for a
-    PER-RECORD listing (e.g. "list each <X>'s <a> and <b>; if two
-    <X>s share the same <a>, <b>, return BOTH rows").
-  * Keep the default `true` when the question asks for the distinct
-    <a>, <b> COMBINATIONS (or for an aggregation grouped by them).
-  * If you need BOTH a per-record listing and a count, keep the
-    default and add `*:count` as a measure (or restructure as a
-    nested-DAG stage with `*:count`).
-
-Validation: `distinct_dimension_values: false` requires
-  * `measures` empty (the flag asks for raw rows, not aggregations),
-  * at least one of `dimensions` / `time_dimensions` non-empty
-    (something must be projected),
-  * no measure reference in `filters` / `order`.
-SLayer raises a `DistinctDimensionValuesError` otherwise.
-
-Synthetic example (fabricated names — your DB uses different
-identifiers):
-
-  Q: "List the first 10 (workshop_id, district) pairs in the workshops
-     table. If two workshops share the same (workshop_id, district),
-     return BOTH rows."
-
-  WRONG (default — silently dedups when two workshops share the
-  tuple):
-    {{"source_model": "workshops",
-     "dimensions": ["workshop_id", "district"],
-     "limit": 10}}
-
-  RIGHT (raw rows):
-    {{"source_model": "workshops",
-     "dimensions": ["workshop_id", "district"],
-     "limit": 10,
-     "distinct_dimension_values": false}}
 
 2. For each block, `search` for the relevant KB memory and any entity
    that already encodes it. A `memory:<id>` token inside a KB body means
@@ -1244,32 +1003,9 @@ varying surface parameters and:
   4. Test each surviving hypothesis exactly once — never re-submit a
      query structurally identical to a prior attempt.
 
-5. TEST candidate columns and the final query with `query`; sanity-check the generated SQL.
+5. TEST candidate columns and the final query with `query` before submitting.
 
-   SANITY-CHECK THE GENERATED SQL FOR SLAYER ARTIFACTS. After `query` returns, inspect the rendered SQL for these patterns
-before submitting:
-
-  1. GROUP BY on every projected column with NO aggregate functions —
-     SLayer's default dim-only auto-dedup. If the question asks for
-     raw per-record rows, fix by setting
-     `distinct_dimension_values: false` INSIDE the query JSON (see
-     the DEDUP vs RAW ROWS rule above). If you DO need a count
-     alongside the rows, keep the default and add `*:count` as a
-     measure — or restructure as a nested-DAG stage with a `*:count`
-     measure.
-  2. `lower(trim(col)) = '<lowercase literal>'` on string equality
-     filters — wrapped automatically by default. When the gold answer
-     requires exact-case equality (proper-noun categories with
-     known-fixed casing), pass `normalize_filters=false` as a SEPARATE
-     parameter on the offending `query` / `submit_query`
-     call (the flag lives OUTSIDE the JSON DSL).
-  3. Broken operator precedence on WHERE arithmetic:
-     `expr1*w1 + expr2*w2 > threshold` without outer parens — the
-     comparator binds only to the last additive term. Fix: push the
-     score into a HAVING on a nested-stage measure rather than a WHERE
-     on a raw formula.
-
-6. PRE-SUBMIT MUTATION CHECK. Before calling `submit_query`, audit every
+   PRE-SUBMIT MUTATION CHECK. Before calling `submit_query`, audit every
    TRIM, LOWER, UPPER, ROUND, CAST, dedup, canonicalize-via-CASE, and
    output-shape choice in the FINAL query. Each one MUST be either
    (a) explicitly named in the user's question, (b) explicitly named OR
@@ -1390,18 +1126,6 @@ ONE batched call per kind (one call for every column, one call for every memory)
 never a separate single-reference `inspect` per entity. Each avoided round-trip
 is a whole turn off the bill."""
 
-# DEV-1670 baseline trim: the compact dedup rule for the readonly discover
-# templates — the actionable instruction only, WITHOUT the full
-# `_DEDUP_VS_RAW_ROWS` synthetic WRONG/RIGHT example (~300 tok dropped). Kept as a
-# named block so the artifact-check's "(see the DEDUP vs RAW ROWS rule above)"
-# cross-reference still resolves.
-_DEDUP_VS_RAW_ROWS_COMPACT = """\
-DEDUP vs RAW ROWS. A dimension-only query (empty `measures`) auto-GROUP BYs every
-projected column, collapsing rows that share the same dimension tuple. When the
-question wants raw PER-RECORD rows, set `distinct_dimension_values: false` inside
-the query JSON (validation: `measures` empty, at least one dimension projected)."""
-
-
 # Shared submission-shape contract for the readonly discover templates (JSON
 # braces doubled for `str.format`). Finding #3: "reference an already-encoded
 # named column, or build the value inline" — no `create_model` write-tool wording.
@@ -1461,7 +1185,6 @@ memory id you've already identified — `inspect(reference=["memory:<id>"],
 entity_type="memory", compact=False)` returns the full `learning` body.
 
 """
-    + _COMPACT_SEARCH_DISCIPLINE
 )
 
 
@@ -1506,10 +1229,8 @@ _READONLY_DISCOVER_STEP3 = """\
 _READONLY_HELP_INTRO_AT_QUERY = """\
 4. LEARN THE QUERY SYNTAX, THEN TEST. Before you write your first query, call
    `inspect(reference="memory:help.intro", entity_type="memory", compact=False)`
-   ONCE to learn the query DSL — the colon-aggregation form (`revenue:sum`,
-   `*:count`) and the `source_model` / `dimensions` / `measures` / `filters`
-   schema. Then run the final query with `query` (single object or nested-DAG
-   `queries` list) and sanity-check the generated SQL."""
+   ONCE to learn SLayer's query language. Then run the final query with `query`
+   and sanity-check the generated SQL."""
 
 
 def _build_oneshot_v0_readonly(*, lean_introspection: bool) -> str:
@@ -1536,10 +1257,11 @@ the query from the base columns.
         )
         + "\n\n"
         + _readonly_tools_block(lean_introspection=lean_introspection)
+        + "\n\n"
+        + _SINGLE_QUERY_NUDGE
         + "\n\nDISCOVER-THEN-QUERY DISCIPLINE:\n\n"
         + _DECOMPOSE_DISCIPLINE
         + "\n\n"
-        + _DEDUP_VS_RAW_ROWS_COMPACT
         + "\n\n"
         + _READONLY_DISCOVER_STEP3
         + "\n\n"
@@ -1549,7 +1271,6 @@ the query from the base columns.
         + "\n\n"
         + _READONLY_HELP_INTRO_AT_QUERY
         + "\n\n   "
-        + _SLAYER_SQL_ARTIFACT_CHECK
         + "\n\n"
         + _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT.format(
             submit_tool="submit_query",
@@ -1604,10 +1325,11 @@ it inline in the query from the base columns.
         )
         + "\n\n"
         + _readonly_tools_block(lean_introspection=lean_introspection)
+        + "\n\n"
+        + _SINGLE_QUERY_NUDGE
         + "\n\nDISCOVER-THEN-QUERY DISCIPLINE:\n\n"
         + _DECOMPOSE_DISCIPLINE
         + "\n\n"
-        + _DEDUP_VS_RAW_ROWS_COMPACT
         + "\n\n"
         + _READONLY_DISCOVER_STEP3
         + "\n\n"
@@ -1635,7 +1357,6 @@ it inline in the query from the base columns.
         + "\n\n"
         + _READONLY_HELP_INTRO_AT_QUERY.replace("4. LEARN", "5. LEARN")
         + "\n\n   "
-        + _SLAYER_SQL_ARTIFACT_CHECK
         + "\n\n"
         + _PRE_SUBMIT_MUTATION_CHECK_AINTERACT.format(
             submit_tool="submit_query",

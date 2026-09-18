@@ -6,7 +6,7 @@ strategy, and budget constraints only.
 
 In SLayer mode, agents connect to the actual `slayer mcp` server over
 stdio and see SLayer's authentic tool descriptions. The prompt mandates
-they call `help` first to learn the query syntax.
+they read the SLayer tool descriptions first to learn the query syntax.
 """
 
 # DEV-1591: search-vs-inspect discipline, shared single source (search is
@@ -14,7 +14,7 @@ they call `help` first to learn the query syntax.
 # constant is param-free and brace-free, so concatenating it into these
 # ``str.format``-consumed templates is safe.
 from bird_interact_agents.agents._shared_otf_prompts import (
-    _COMPACT_SEARCH_DISCIPLINE,
+    _SINGLE_QUERY_NUDGE,
 )
 
 # ---------------------------------------------------------------------------
@@ -30,13 +30,12 @@ domain-specific business knowledge for this database is already encoded
 into the SLayer models and memories.
 
 REQUIRED FIRST STEPS — do these before submitting anything:
-   1. Call `help` (no arguments) to learn SLayer's query syntax. Pay close
-   attention to the colon-aggregation form (e.g. `revenue:sum`,
-   `*:count`) and the `source_model` / `dimensions` / `measures` /
-   `filters` schema.
+   1. Read the SLayer tool descriptions and the `help.intro` memory
+   (`inspect(reference="memory:help.intro", entity_type="memory")`) to
+   learn SLayer's query language.
    
 """
-    + _COMPACT_SEARCH_DISCIPLINE
+    + _SINGLE_QUERY_NUDGE
     + """
 
 2. Decompose the user's question into logical blocks, in particular
@@ -210,7 +209,7 @@ MUST FULLY REPRESENT THE QUESTION. Every adjective
    **Nested DAG** — when one stage's MEASURE becomes the next stage's
    DIMENSION (e.g. ranking groups by a computed score, or computing
    per-group stability then filtering on it), submit a JSON ARRAY of
-   stage objects — the same shape `query_nested` accepts. The last
+   stage objects (the multi-stage list the `query` tool takes). The last
    element is the DAG root; every non-final element must have `name`,
    and later stages reference earlier ones via `source_model: "<sibling
    name>"`. Example for "best clinician per facility by stability":
@@ -402,7 +401,7 @@ REQUIRED FIRST STEPS:
 4. Call `submit_query` with your final SLayer query JSON.
 
 """
-    + _COMPACT_SEARCH_DISCIPLINE
+    + _SINGLE_QUERY_NUDGE
     + """
 
 Budget: {budget} bird-coins. inspect_model, inspect and query cost 0.5-1,

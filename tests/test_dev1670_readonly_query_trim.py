@@ -9,7 +9,7 @@ The lean+readonly+``--apply-edited-models`` QUERY agent renders
   (``ENCODE_HOST_GUIDANCE``), while the query-quality blocks and DEV-1672's
   ``_NO_REDERIVE_READONLY`` survive the DISCOVER reframe.
 * R1/R2 — the new readonly-only nudges are wired into the readonly branch ONLY,
-  and do NOT leak into the shared ``_COMPACT_SEARCH_DISCIPLINE`` block, the
+  and stay out of the non-readonly + v1 surfaces, the
   pre-encoded templates, or the v1 OTF prompts.
 * Format/brace safety + non-readonly byte identity are preserved.
 
@@ -110,32 +110,6 @@ def test_nudges_survive_lean_gating(builder, const_name) -> None:
     nudge = getattr(sp, const_name, None)
     assert nudge, f"expected DEV-1670 feature constant {const_name} to exist"
     assert nudge in builder(readonly_mode=True, lean_introspection=True)
-
-
-# ---------------------------------------------------------------------------
-# Scope guards (Codex finding #2): R2 is an ADDED readonly-only sentence, NOT an
-# edit to the shared _COMPACT_SEARCH_DISCIPLINE; nudges stay out of the
-# pre-encoded + v1 surfaces.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("builder", _BUILDERS)
-def test_shared_compact_search_block_present_in_both_branches(builder) -> None:
-    # The shared block must remain present in BOTH branches — the reframe must
-    # not have dropped it from the readonly discover flow.
-    assert sp._COMPACT_SEARCH_DISCIPLINE in builder(readonly_mode=True)
-    assert sp._COMPACT_SEARCH_DISCIPLINE in builder(readonly_mode=False)
-
-
-@pytest.mark.parametrize("const_name", _NUDGE_CONSTS)
-def test_r2_nudge_is_not_an_edit_to_shared_compact_search(const_name) -> None:
-    # Codex finding #2: R2 must be an ADDED readonly-only sentence, NOT an
-    # in-place edit of the shared _COMPACT_SEARCH_DISCIPLINE (which feeds
-    # non-readonly + v1 surfaces). Mutating the shared block would leave the
-    # nudge text INSIDE it — assert it is not there.
-    nudge = getattr(sp, const_name, None)
-    assert nudge, f"expected DEV-1670 feature constant {const_name} to exist"
-    assert nudge not in sp._COMPACT_SEARCH_DISCIPLINE
 
 
 def test_nudges_absent_from_pre_encoded_and_v1_surfaces() -> None:

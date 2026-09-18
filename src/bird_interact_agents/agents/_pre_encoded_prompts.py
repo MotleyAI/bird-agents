@@ -26,8 +26,9 @@ from bird_interact_agents.agents._shared_otf_prompts import (
     _PIVOT_AFTER_REPEATED_FAILURES,
     _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
     _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
+    _NORMALIZE_FILTERS_NOTE,
     _RULE_0_ASK_BEFORE,
-    _SLAYER_SQL_ARTIFACT_CHECK,
+    _SINGLE_QUERY_NUDGE,
     _USER_SIM_TRUST_CALIBRATION,
 )
 
@@ -36,18 +37,11 @@ from bird_interact_agents.agents._shared_otf_prompts import (
 # (Same contract the OTF flavors use, restated here so the pre-encoded
 # prompts are self-contained and the frozen OTF modules stay untouched.)
 _SUBMIT_CONTRACT = """\
-Call `submit_query` with your final SLayer query as structured arguments.
-Two top-level shapes (same as `query`):
-
-  * Single-stage — set `source_model` plus the usual projection
-    fields, e.g. `source_model: "orders"`,
-    `dimensions: ["status"]`, `measures: ["amount:sum"]`.
-  * Nested DAG — when one stage's MEASURE becomes the next stage's
-    DIMENSION, set `queries` to a list of stage objects. The last
-    element is the DAG root; every non-final element needs a `name`;
-    later stages reference earlier ones via
-    `source_model: "<sibling name>"`. Omit `source_model` at the top
-    level when passing `queries`.
+Call `submit_query` with your final SLayer query as the `query` argument
+(same shape `query` takes): one SlayerQuery object, or a multi-stage list of
+stage objects when one stage's MEASURE becomes the next stage's DIMENSION —
+the last element is the DAG root; every non-final element needs a `name`;
+later stages reference earlier ones via `source_model: "<sibling name>"`.
 
 You MUST call `submit_query` to finish — a prose answer is not a
 submission. If a `filters` predicate needs a computed value, prefer an
@@ -66,13 +60,10 @@ description. The base tables and these encoded entities are already
 ingested — you do NOT (and CANNOT) create or edit models; your job is to
 DISCOVER the entities the question needs and QUERY off them.
 
-SLAYER TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn the
-query syntax — the colon-aggregation form (`revenue:sum`, `*:count`) and
-the `source_model` / `dimensions` / `measures` / `filters` schema. Use
-{inventory_tools}`search` to find the encoded entities and KB-derived columns
-relevant to the question; `inspect_model` to see a model's columns / measures
-/ joins; `query` (single object OR list of stage objects for a nested DAG) to
-test before submitting. There are no model-mutation tools — if an entity you expected
+SLAYER TOOLS (read their own descriptions). Call `inspect(reference="memory:help.intro", entity_type="memory", compact=False)` FIRST to learn
+SLayer's query language. Use {inventory_tools}`search` to find the encoded
+entities and KB-derived columns relevant to the question; `inspect_model` to
+see a model's columns / measures / joins; `query` to test before submitting. There are no model-mutation tools — if an entity you expected
 is missing, search for an equivalent or build the logic INSIDE your query
 referencing existing columns; never assume a column you have not confirmed.
 
@@ -177,6 +168,10 @@ SLAYER_PRE_ENCODED_ONE_SHOT = (
         sources_desc="the encoded columns/measures and their\ndescriptions"
     )
     + "\n\n"
+    + _SINGLE_QUERY_NUDGE
+    + "\n\n"
+    + _NORMALIZE_FILTERS_NOTE
+    + "\n\n"
     + _PRE_ENCODED_TOOLS_BLOCK.format(inventory_tools=_V0_INVENTORY)
     + "\n\nDISCOVER-THEN-QUERY DISCIPLINE:\n\n"
     + _DECOMPOSE_DISCIPLINE
@@ -184,11 +179,7 @@ SLAYER_PRE_ENCODED_ONE_SHOT = (
     + _PRE_ENCODED_DISCIPLINE
     + "\n"
     + _DEFERRED_KB_FALLBACK_ONE_SHOT
-    + "\n\n4. TEST the final query with `query` (single object or nested-DAG "
-      "`queries` list); sanity-check the generated SQL.\n\n"
-      "   "
-    + _SLAYER_SQL_ARTIFACT_CHECK
-    + "\n\n"
+    + "\n\n4. TEST the final query with `query` before submitting.\n\n"
     + _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT.format(
         submit_tool="submit_query",
         clause_b="encoded column / measure you are querying",
@@ -224,6 +215,10 @@ SLAYER_PRE_ENCODED_AINTERACT = (
         submit_tool="submit_query",
     )
     + "\n\n"
+    + _SINGLE_QUERY_NUDGE
+    + "\n\n"
+    + _NORMALIZE_FILTERS_NOTE
+    + "\n\n"
     + _PRE_ENCODED_TOOLS_BLOCK.format(inventory_tools=_V0_INVENTORY)
     + "\n\nDISCOVER-THEN-QUERY DISCIPLINE:\n\n"
     + _DECOMPOSE_DISCIPLINE
@@ -249,11 +244,7 @@ SLAYER_PRE_ENCODED_AINTERACT = (
     )
     + "\n\n   "
     + _AFTER_REJECTED_DISCIPLINE
-    + "\n\n5. TEST the final query with `query` (single object or nested-DAG "
-      "`queries` list); sanity-check the generated SQL.\n\n"
-      "   "
-    + _SLAYER_SQL_ARTIFACT_CHECK
-    + "\n\n"
+    + "\n\n5. TEST the final query with `query` before submitting.\n\n"
     + _PRE_SUBMIT_MUTATION_CHECK_AINTERACT.format(
         submit_tool="submit_query",
         clause_c="encoded column / measure you are querying",

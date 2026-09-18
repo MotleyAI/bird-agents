@@ -23,6 +23,7 @@ agent.
 import contextvars
 import copy
 import functools
+import json
 import inspect
 import logging
 from types import SimpleNamespace
@@ -579,9 +580,7 @@ async def submit_query(args: dict) -> dict:
             "multi-stage array (a list of stage objects); got "
             f"{type(query).__name__}."
         )
-    import json as _json
-
-    payload_str = _json.dumps(query)
+    payload_str = json.dumps(query)
     normalize_filters = bool(args.get("normalize_filters", True))
     observation = submit_slayer_query(
         state, payload_str, lambda _s: _slayer_client(),

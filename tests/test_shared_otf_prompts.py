@@ -83,11 +83,11 @@ import pytest
 # from the removed `help` tool to
 # `inspect(reference="memory:help.intro", entity_type="memory", compact=False)`
 # (the only byte change vs the prior snapshot).
-_ONE_SHOT_SHA256 = "157efb9d19e961cbb1973e001e69516b799c495b01833ca4a90bc9f1d31e988d"
+_ONE_SHOT_SHA256 = "317ca7030eb3481d5cd21c03e66783a7fcdcb9345dc0ff8d777892ccf7c64996"
 # DEV-1668 (CodeRabbit): the a-interact_v1 template's redundant second "FIRST"
 # (ask_discovery) was reworded to "BEFORE building" to remove the double-first
 # ordering ambiguity vs the inspect(memory:help.intro) syntax-onboarding line.
-_AINTERACT_SHA256 = "15cba676c84ecff666397e15ce7e88962ded3d63eaa9bc8f68edee20e1c6cc45"
+_AINTERACT_SHA256 = "87c069a4d17ec5b370a077d63287ee3f4040c69ad08aff52da2ff4ae028b73cf"
 
 
 def test_slayer_otf_one_shot_unchanged():
@@ -136,8 +136,6 @@ def test_shared_constants_all_nonempty():
         _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT,
         _PRE_SUBMIT_MUTATION_CHECK_AINTERACT,
         _COLUMN_NAMES_DONT_AFFECT_GRADING,
-        _COMPACT_SEARCH_DISCIPLINE,
-        _SLAYER_SQL_ARTIFACT_CHECK,
         _PIVOT_AFTER_REPEATED_FAILURES,
         _USER_SIM_TRUST_CALIBRATION,
     )
@@ -150,8 +148,6 @@ def test_shared_constants_all_nonempty():
         ("_PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT", _PRE_SUBMIT_MUTATION_CHECK_ONE_SHOT),
         ("_PRE_SUBMIT_MUTATION_CHECK_AINTERACT", _PRE_SUBMIT_MUTATION_CHECK_AINTERACT),
         ("_COLUMN_NAMES_DONT_AFFECT_GRADING", _COLUMN_NAMES_DONT_AFFECT_GRADING),
-        ("_COMPACT_SEARCH_DISCIPLINE", _COMPACT_SEARCH_DISCIPLINE),
-        ("_SLAYER_SQL_ARTIFACT_CHECK", _SLAYER_SQL_ARTIFACT_CHECK),
         ("_PIVOT_AFTER_REPEATED_FAILURES", _PIVOT_AFTER_REPEATED_FAILURES),
         ("_USER_SIM_TRUST_CALIBRATION", _USER_SIM_TRUST_CALIBRATION),
     ]:

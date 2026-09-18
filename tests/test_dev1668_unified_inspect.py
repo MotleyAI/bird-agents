@@ -214,7 +214,7 @@ def test_encoder_drops_only_help_rest_preserved():
     assert set(SLAYER_MCP_TOOLS) == {
         "create_model", "edit_model", "save_memory", "validate_models",
         "search", "models_summary", "inspect_model", "inspect",
-        "recommend_root_model", "query", "query_nested",
+        "recommend_root_model", "query",
     }
     assert "help" not in SLAYER_MCP_TOOLS
 

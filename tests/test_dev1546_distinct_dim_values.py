@@ -484,42 +484,6 @@ def test_motley_slayer_floor_is_at_least_0_9_6():
 # ---------------------------------------------------------------------------
 
 
-# ---------------------------------------------------------------------------
-# Prompts — _DEDUP_VS_RAW_ROWS is composed into both slayer-flavor
-# prompts, and the post-insertion str.format placeholders are unchanged.
-# ---------------------------------------------------------------------------
-
-
-def test_dedup_vs_raw_rows_constant_exists_and_nonempty():
-    from bird_interact_agents.agents._shared_otf_prompts import _DEDUP_VS_RAW_ROWS
-
-    assert isinstance(_DEDUP_VS_RAW_ROWS, str) and _DEDUP_VS_RAW_ROWS.strip()
-
-
-def test_dedup_vs_raw_rows_present_in_slayer_v0_one_shot():
-    """Structural composition pin: the live ``_DEDUP_VS_RAW_ROWS``
-    appears in the V0 snapshot byte-for-byte (V0 is the
-    origin/main-shape prompt the v0 agents render). The V1 prompts
-    teach the same guidance in a shorter inlined form rather than
-    composing the constant; that contract is covered by
-    ``test_dev1555_v0_v1_shared_prompts``."""
-    from bird_interact_agents.agents._shared_otf_prompts import (
-        _DEDUP_VS_RAW_ROWS,
-        SLAYER_OTF_ONE_SHOT_V0,
-    )
-
-    assert _DEDUP_VS_RAW_ROWS in SLAYER_OTF_ONE_SHOT_V0
-
-
-def test_dedup_vs_raw_rows_present_in_slayer_v0_ainteract():
-    from bird_interact_agents.agents._shared_otf_prompts import (
-        _DEDUP_VS_RAW_ROWS,
-        SLAYER_OTF_AINTERACT_V0,
-    )
-
-    assert _DEDUP_VS_RAW_ROWS in SLAYER_OTF_AINTERACT_V0
-
-
 def test_slayer_otf_prompts_format_placeholders_unchanged():
     """Both slayer-flavor prompts still take exactly ``{budget}``,
     ``{db_name}``, ``{user_query}`` via ``str.format`` — no new

@@ -24,17 +24,17 @@
 
 ## 5. Prompt cleanup
 
-- [ ] 5.1 `_shared_otf_prompts.py`: remove the tool-covered blocks; add `_SINGLE_QUERY_NUDGE`, `_SLAYER_ONBOARDING` (gated tail), `_NORMALIZE_FILTERS_NOTE` (actual-subset wording), `_QUERY_ROOT_POINTER`, `_ENCODE_HOST_POINTER`, the one-clause define-before-reference, `_SUBMIT_CONTRACT`; recompose the four v0 builders. Verify the re-blessed SHA/presence tests and `tests/data/dev1603` goldens pass.
-- [ ] 5.2 `claude_sdk_otf_v1` + `claude_sdk_otf_ainteract_v1` prompts, `_pre_encoded_prompts.py`, `claude_sdk_otf_encode/prompts.py`, `claude_sdk/partition.py`: apply the same removals/additions, keeping the v1-only and pre-encoded-only lines. Verify the v1/encoder/pre-encoded prompt tests pass.
-- [ ] 5.3 Clean `SLAYER_A_INTERACT` / `SLAYER_C_INTERACT` in `claude_sdk/prompts.py` by the same rules (they still name the removed `help` tool). Verify `tests/test_prompt_parity.py` / `tests/test_prompt_kb_descriptions.py` pass.
+- [x] 5.1 `_shared_otf_prompts.py`: remove the tool-covered blocks; add `_SINGLE_QUERY_NUDGE`, `_SLAYER_ONBOARDING` (gated tail), `_NORMALIZE_FILTERS_NOTE` (actual-subset wording), `_QUERY_ROOT_POINTER`, `_ENCODE_HOST_POINTER`, the one-clause define-before-reference, `_SUBMIT_CONTRACT`; recompose the four v0 builders. Verify the re-blessed SHA/presence tests and `tests/data/dev1603` goldens pass.
+- [x] 5.2 `claude_sdk_otf_v1` + `claude_sdk_otf_ainteract_v1` prompts, `_pre_encoded_prompts.py`, `claude_sdk_otf_encode/prompts.py`, `claude_sdk/partition.py`: apply the same removals/additions, keeping the v1-only and pre-encoded-only lines. Verify the v1/encoder/pre-encoded prompt tests pass.
+- [x] 5.3 Clean `SLAYER_A_INTERACT` / `SLAYER_C_INTERACT` in `claude_sdk/prompts.py` by the same rules (they still name the removed `help` tool). Verify `tests/test_prompt_parity.py` / `tests/test_prompt_kb_descriptions.py` pass.
 
 ## 6. Tests (new coverage, written in the spec-tests stage)
 
-- [ ] 6.1 Add: dependency floor is 0.10.2; advertised surface == the 20 0.10.2 tools; `query`/`submit_query` native schemas validate as JSON Schema and accept representative payloads (computed dimension, inline ModelExtension, multi-stage list, `month(col)`); the KB-checker aggregate-source case; the reference round-trip guard; the three fixed models carry no top-level measures and `fake/trusted_account` applies its window.
-- [ ] 6.2 Add per-prompt-family assertions: each family contains its kept blocks and the nudge/onboarding/note, and none of the removed markers (`query_nested`, `help`, colon syntax, dedup/search-vs-inspect/artifact blocks); raw prompts byte-identical. Verify all new tests fail before implementation and pass after.
+- [x] 6.1 Add: dependency floor is 0.10.2; advertised surface == the 20 0.10.2 tools; `query`/`submit_query` native schemas validate as JSON Schema and accept representative payloads (computed dimension, inline ModelExtension, multi-stage list, `month(col)`); the KB-checker aggregate-source case; the reference round-trip guard; the three fixed models carry no top-level measures and `fake/trusted_account` applies its window.
+- [x] 6.2 Add per-prompt-family assertions: each family contains its kept blocks and the nudge/onboarding/note, and none of the removed markers (`query_nested`, `help`, colon syntax, dedup/search-vs-inspect/artifact blocks); raw prompts byte-identical. Verify all new tests fail before implementation and pass after.
 
 ## 7. Suite, docs, smoke
 
-- [ ] 7.1 Run the full non-integration suite via the CLAUDE.md command and verify 0 failures / 0 errors.
-- [ ] 7.2 Add a "SLayer 0.10.2" note to the project `CLAUDE.md` (one `query` argument, no `query_nested`/`help`, prompts must not restate tool docs, reference at schema 10 + migration procedure). Verify the note is present.
+- [x] 7.1 Run the full non-integration suite via the CLAUDE.md command and verify 0 failures / 0 errors.
+- [x] 7.2 Add a "SLayer 0.10.2" note to the project `CLAUDE.md` (one `query` argument, no `query_nested`/`help`, prompts must not restate tool docs, reference at schema 10 + migration procedure). Verify the note is present.
 - [ ] 7.3 Run the two opus-4.8 local smokes (`claude_sdk_otf` and `claude_sdk_otf_v1`, one mini-interact task each, creds from `/home/james/GitHub/SLayer/.env.agents`); verify each reaches evaluation (a `Generated SQL:` + `Result:` observation, `submission_status` not a json/translation/dry-run/infrastructure error) with no tool-not-found / schema / `HermeticEnvError` entry, and record the outcome in the PR.

@@ -178,7 +178,7 @@ async def test_static_query_handler_stashes_and_disposes(monkeypatch):
     _query.attach_storage(None)
     csdk._ctx_var.set({"_slayer_storage": {"id": "s"}})
 
-    await csdk.query.handler({"source_model": "orders"})
+    await csdk.query.handler({"query": {"source_model": "orders"}})
 
     stash = csdk._ctx.get("_slayer_mcps")
     assert stash and server in stash.values()
