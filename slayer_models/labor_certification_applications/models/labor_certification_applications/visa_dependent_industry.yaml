@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: visa_dependent_industry
 source_queries:
-- version: 3
+- version: 4
   name: industry_apps
   source_model: cases
   measures:
@@ -10,22 +10,32 @@ source_queries:
   dimensions:
   - name: naics_code
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: industry_apps
     columns:
     - name: industry_share
       sql: _count * 1.0 / SUM(_count) OVER ()
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: is_visa_dependent
       sql: _count * 1.0 / SUM(_count) OVER () > 0.15
       type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: naics_code
   - name: _count
   - name: industry_share
   - name: is_visa_dependent
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"industry_apps.naics_code\" AS naics_code, \"industry_apps._count\"\
   \ AS _count, \"industry_apps.industry_share\" AS industry_share, \"industry_apps.is_visa_dependent\"\
@@ -45,12 +55,14 @@ columns:
   sql: naics_code
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Employer NAICS code (KB #6) resolved via the employer join.'
   hidden: false
 - name: _count
   sql: _count
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -58,11 +70,13 @@ columns:
   sql: industry_share
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_visa_dependent
   sql: is_visa_dependent
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

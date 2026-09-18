@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: rollups
 sql_table: rollups
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: tierkey
   type: INT
   primary_key: true
+  unique: false
   description: PK for the tier.
   hidden: false
   format:
@@ -16,6 +17,7 @@ columns:
   sql: tiertype
   type: TEXT
   primary_key: false
+  unique: false
   description: "Tier label (KB 3): 'free', 'subscriber', 'current', 'free_on_web',\
     \ 'subscriber_on_device', 'auth_on_web', 'showtime'.\n\n[kb=3]\nCommon values\
     \ include 'free', 'subscriber', 'current', 'free on website', 'auth on website',\
@@ -29,6 +31,7 @@ columns:
   sql: LOWER(tiertype) = 'showtime'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: TRUE iff tiertype='showtime' (used by KB 18 / KB 42 with the show-rollup
     join).
   hidden: false

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: sites
 sql_table: sites
 query_variables: {}
@@ -8,26 +8,31 @@ columns:
   sql: zoneregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: zonelabel
   sql: zonelabel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: digunit
   sql: digunit
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: gridtrace
   sql: gridtrace
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: geox
   sql: geox
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -35,6 +40,7 @@ columns:
   sql: geoy
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -42,6 +48,7 @@ columns:
   sql: heightm
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -49,6 +56,7 @@ columns:
   sql: depthc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -56,6 +64,7 @@ columns:
   sql: phasefactor
   type: TEXT
   primary_key: false
+  unique: false
   description: "Cultural / Historical Period (KB #25). Examples: 'Neolithic' (10,000-4,500\
     \ BCE), 'Bronze Age' (3,300-1,200 BCE), 'Roman' (27 BCE-476 CE), 'Medieval' (476-1453\
     \ CE). Determines applicable research methodologies, conservation approaches,\
@@ -73,6 +82,7 @@ columns:
   sql: guessdate
   type: TEXT
   primary_key: false
+  unique: false
   description: "Estimated Date (KB #29). Free-form labels like '3500-3000 BCE', '1st\
     \ c. CE', or 'ca. 1450 CE' for chronological placement. Precision varies from\
     \ specific years to century-level estimates.\n\n[kb=29]\nValues like '3500-3000\
@@ -89,46 +99,55 @@ columns:
   sql: typesite
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: presstat
   sql: presstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: guardhint
   sql: guardhint
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: entrystat
   sql: entrystat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: saferank
   sql: saferank
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: insurstat
   sql: insurstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: riskeval
   sql: riskeval
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: healtheval
   sql: healtheval
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: envhaz
   sql: envhaz
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

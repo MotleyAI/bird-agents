@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: risk_adjusted_return
 source_queries:
-- version: 3
+- version: 4
   name: realline_per_user
   source_model: accountbalances
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: usertag
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: vol_per_pair
   source_model: marketstats
   measures:
@@ -20,33 +22,43 @@ source_queries:
   - name: mktcombo
     model: marketdata
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: orders
+    columns:
+    - name: rar_value
+      sql: realline_per_user.realline_total / NULLIF((riskandmargin.risk_margin_profile
+        ->> '$.position.possum') * vol_per_pair.vol_avg * 0.01 * (riskandmargin.risk_margin_profile
+        ->> '$.position.posriskrate'), 0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: vol_per_pair
       join_pairs:
       - - mktnote
         - marketdata__mktcombo
+      join_type: left
     - target_model: realline_per_user
       join_pairs:
       - - userlink
         - usertag
+      join_type: left
     - target_model: riskandmargin
       join_pairs:
       - - recordvault
         - ordervault
-    columns:
-    - name: rar_value
-      type: DOUBLE
-      sql: realline_per_user.realline_total / NULLIF((riskandmargin.risk_margin_profile
-        ->> '$.position.possum') * vol_per_pair.vol_avg * 0.01 * (riskandmargin.risk_margin_profile
-        ->> '$.position.posriskrate'), 0)
+      join_type: left
   dimensions:
   - name: recordvault
   - name: userlink
   - name: rar_value
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.userlink\"\
   \ AS userlink, \"orders.rar_value\" AS rar_value FROM (SELECT\n  orders.recordvault\
@@ -75,16 +87,19 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: userlink
   sql: userlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rar_value
   sql: rar_value
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

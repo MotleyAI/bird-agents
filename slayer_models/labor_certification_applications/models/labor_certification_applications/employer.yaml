@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: employer
 sql_table: employer
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: corphandle
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: zipref
   sql: zipref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: employer_contact_info
   sql: employer_contact_info
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSON column with employer phone, address, naics_code, alternate_name.\
     \ NAICS (KB #6) is a 6-digit North American Industry Classification System code\
     \ identifying the employer's primary industry sector.\n\n[kb=6]\nThe North American\
@@ -36,6 +39,7 @@ columns:
   sql: CAST(employer_contact_info ->> '$.naics_code' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "NAICS code (KB #6) extracted from employer_contact_info JSON.\n\n\
     [kb=6]\nThe North American Industry Classification System (NAICS) code is a 6-digit\
     \ code that identifies the employer's primary industry sector. For example, code\
@@ -53,6 +57,7 @@ columns:
     1, 2)
   type: TEXT
   primary_key: false
+  unique: false
   description: "First two digits of NAICS code (industry sector).\n\n[kb=6]\nThe North\
     \ American Industry Classification System (NAICS) code is a 6-digit code that\
     \ identifies the employer's primary industry sector. For example, code 541511\
@@ -69,18 +74,21 @@ columns:
   sql: employer_contact_info ->> '$.address.city'
   type: TEXT
   primary_key: false
+  unique: false
   description: Employer city extracted from JSON.
   hidden: false
 - name: state
   sql: employer_contact_info ->> '$.address.state'
   type: TEXT
   primary_key: false
+  unique: false
   description: Employer state extracted from JSON.
   hidden: false
 - name: alternate_name
   sql: employer_contact_info ->> '$.alternate_name'
   type: TEXT
   primary_key: false
+  unique: false
   description: Alternate (trade) name of the employer.
   hidden: false
 measures: []

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: bank_and_transactions
 sql_table: bank_and_transactions
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: bankexpref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: banktxfreq
   sql: banktxfreq
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: banktxamt
   sql: banktxamt
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -25,6 +28,7 @@ columns:
   sql: bankrelscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -32,11 +36,13 @@ columns:
   sql: ovrfreq
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: bouncecount
   sql: bouncecount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -44,11 +50,13 @@ columns:
   sql: inscoverage
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lifeinsval
   sql: lifeinsval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -56,11 +64,13 @@ columns:
   sql: hlthinsstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: fraudrisk
   sql: fraudrisk
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -68,6 +78,7 @@ columns:
   sql: idverscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -75,21 +86,25 @@ columns:
   sql: docverstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: kycstat
   sql: kycstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: amlresult
   sql: amlresult
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: chaninvdatablock
   sql: chaninvdatablock
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Channel/investment JSON: onlineuse, mobileuse (High/Medium/Low), autopay,
     depostat (Yes/No), and invcluster {investport, investexp, tradeact}.'
   hidden: false
@@ -98,6 +113,7 @@ columns:
   sql: json_extract(chaninvdatablock, '$.onlineuse')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Online banking usage: High/Medium/Low (extracted from chaninvdatablock
     JSON).'
   hidden: false
@@ -106,6 +122,7 @@ columns:
   sql: json_extract(chaninvdatablock, '$.mobileuse')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Mobile banking usage: High/Medium/Low (extracted from chaninvdatablock
     JSON).'
   hidden: false
@@ -114,6 +131,7 @@ columns:
   sql: json_extract(chaninvdatablock, '$.autopay')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Automatic-payments flag: Yes/No (extracted from chaninvdatablock JSON).'
   hidden: false
   meta: {}
@@ -121,6 +139,7 @@ columns:
   sql: json_extract(chaninvdatablock, '$.depostat')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Direct-deposit flag: Yes/No (extracted from chaninvdatablock JSON).'
   hidden: false
   meta: {}
@@ -128,6 +147,7 @@ columns:
   sql: json_extract(chaninvdatablock, '$.invcluster.investport')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Investment portfolio style: Conservative/Moderate/Aggressive (extracted
     from chaninvdatablock JSON).'
   hidden: false
@@ -136,6 +156,7 @@ columns:
   sql: json_extract(chaninvdatablock, '$.invcluster.investexp')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Investment experience: Limited/Moderate/Extensive (extracted from
     chaninvdatablock JSON).'
   hidden: false
@@ -144,6 +165,7 @@ columns:
   sql: json_extract(chaninvdatablock, '$.invcluster.tradeact')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Trading activity: Low/Medium/High (extracted from chaninvdatablock
     JSON).'
   hidden: false

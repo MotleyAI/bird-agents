@@ -1,25 +1,11 @@
-version: 7
+version: 10
 name: signal_is_technosig_high_conf
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
-    joins:
-    - target_model: signaldecoding
-      join_pairs:
-      - - signalregistry
-        - signalref
-    - target_model: signalclassification
-      join_pairs:
-      - - signalregistry
-        - signalref
-    - target_model: signalprobabilities
-      join_pairs:
-      - - signalregistry
-        - signalref
     columns:
     - name: is_technosig_high_conf
-      type: BOOLEAN
       sql: CASE WHEN signalprobabilities.techsigprob > 0.7 AND signalprobabilities.natsrcprob
         < 0.3 AND signalprobabilities.artsrcprob < 50 AND (bwhz / (centerfreqmhz *
         1000000.0)) < 0.001 AND signalclassification.infodense > 0.8 AND ((1 - signalprobabilities.falseposprob)
@@ -32,10 +18,32 @@ source_queries:
         * (signalprobabilities.techsigprob * (1 - signalprobabilities.natsrcprob)
         * signalprobabilities.sigunique * (0.5 + signalprobabilities.anomscore / 10.0)))
         / (1 + signalprobabilities.natsrcprob)) > 0.8 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: signaldecoding
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: is_technosig_high_conf
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_technosig_high_conf\"\
   \ AS is_technosig_high_conf FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
@@ -69,11 +77,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_technosig_high_conf
   sql: is_technosig_high_conf
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

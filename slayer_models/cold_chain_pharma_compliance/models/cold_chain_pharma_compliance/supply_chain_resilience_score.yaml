@@ -1,30 +1,38 @@
-version: 6
+version: 10
 name: supply_chain_resilience_score
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: art_avg
+    columns:
+    - name: scrs
+      sql: 0.4 * art_score_avg + 0.3 * rrd_avg.rrd_score_avg + 0.2 * sbp_avg.sbp_score_avg
+        + 0.1 * smc_avg.smc_score_avg
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: rrd_avg
       join_pairs:
       - - k
         - k
+      join_type: left
     - target_model: sbp_avg
       join_pairs:
       - - k
         - k
+      join_type: left
     - target_model: smc_avg
       join_pairs:
       - - k
         - k
-    columns:
-    - name: scrs
-      type: DOUBLE
-      sql: 0.4 * art_score_avg + 0.3 * rrd_avg.rrd_score_avg + 0.2 * sbp_avg.sbp_score_avg
-        + 0.1 * smc_avg.smc_score_avg
+      join_type: left
   dimensions:
   - name: scrs
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"art_avg.scrs\" AS scrs FROM (SELECT\n  0.4 * art_score_avg\
   \ + 0.3 * rrd_avg.rrd_score_avg + 0.2 * sbp_avg.sbp_score_avg + 0.1 * smc_avg.smc_score_avg\
@@ -64,6 +72,7 @@ columns:
   sql: scrs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

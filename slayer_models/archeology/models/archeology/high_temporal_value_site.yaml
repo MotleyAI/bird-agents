@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: high_temporal_value_site
 source_queries:
-- version: 3
+- version: 4
   name: cons_per_zone
   source_model: scanconservation
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: zoneref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: scans_keyed
   source_model:
     source_name: scans
@@ -19,6 +21,7 @@ source_queries:
       join_pairs:
       - - zoneref
         - zoneref
+      join_type: left
   dimensions:
   - name: questregistry
   - name: arcref
@@ -28,14 +31,19 @@ source_queries:
   - name: cpi
     model: cons_per_zone
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: scans_keyed
     columns:
     - name: is_high_temporal_value_site
-      type: BOOLEAN
       sql: CASE WHEN CAST(sites__guessdate AS REAL) < 500 AND cons_per_zone__cpi >
         60 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: cons_per_zone__cpi:avg
     name: cpi
@@ -45,6 +53,8 @@ source_queries:
   - name: zoneref
   - name: is_high_temporal_value_site
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"scans_keyed.questregistry\" AS questregistry, \"scans_keyed.arcref\"\
   \ AS arcref, \"scans_keyed.zoneref\" AS zoneref, \"scans_keyed.is_high_temporal_value_site\"\
@@ -109,26 +119,31 @@ columns:
   sql: questregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: arcref
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: zoneref
   sql: zoneref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_high_temporal_value_site
   sql: is_high_temporal_value_site
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 - name: cpi
   sql: cpi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

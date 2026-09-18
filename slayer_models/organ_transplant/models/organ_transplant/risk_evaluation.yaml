@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: risk_evaluation
 sql_table: risk_evaluation
 query_variables: {}
@@ -8,12 +8,14 @@ columns:
   sql: risk_eval_registry
   type: TEXT
   primary_key: true
+  unique: false
   description: FK to transplant_matching.match_rec_registry.
   hidden: false
 - name: org_qual_val
   sql: org_qual_val
   type: INT
   primary_key: false
+  unique: false
   description: Organ quality score.
   hidden: false
   format:
@@ -22,6 +24,7 @@ columns:
   sql: egs_val
   type: INT
   primary_key: false
+  unique: false
   description: "Expected Graft Survival (EGS) probability stored upstream (0-1). Predictive\
     \ score per KB formula based on Immunological Compatibility Score and donor age.\n\
     \n[kb=13]\nA predictive score based on factors like the Immunological Compatibility\
@@ -38,6 +41,7 @@ columns:
   sql: eps_val
   type: INT
   primary_key: false
+  unique: false
   description: Expected patient survival score.
   hidden: false
   format:
@@ -46,6 +50,7 @@ columns:
   sql: surg_cmpl_val
   type: INT
   primary_key: false
+  unique: false
   description: Surgical complexity (proxy for KB C_procedure).
   hidden: false
   format:
@@ -54,6 +59,7 @@ columns:
   sql: surg_risk_val
   type: INT
   primary_key: false
+  unique: false
   description: "Surgical Risk Score (KB) as stored. Note: ~has random NULLs; use COALESCE\
     \ when composing. KB Surgical Risk Score.\n\n[kb=16]\nA composite score derived\
     \ from the recipient's comorbidities and the inherent complexity of the surgical\
@@ -70,6 +76,7 @@ columns:
   sql: res_avail_val
   type: INT
   primary_key: false
+  unique: false
   description: Resource availability score.
   hidden: false
   format:
@@ -78,6 +85,7 @@ columns:
   sql: cntr_exp_val
   type: INT
   primary_key: false
+  unique: false
   description: Center experience score.
   hidden: false
   format:
@@ -86,6 +94,7 @@ columns:
   sql: cntr_vol_val
   type: INT
   primary_key: false
+  unique: false
   description: Center transplant volume score (KB V_transplants in Center Performance
     Score).
   hidden: false
@@ -95,6 +104,7 @@ columns:
   sql: cntr_out_val
   type: INT
   primary_key: false
+  unique: false
   description: Center outcomes/success rate score (KB R_success in Center Performance
     Score).
   hidden: false
@@ -104,6 +114,7 @@ columns:
   sql: qol_val
   type: INT
   primary_key: false
+  unique: false
   description: Quality of life assessment score.
   hidden: false
   format:
@@ -112,6 +123,7 @@ columns:
   sql: cost_eff_val
   type: INT
   primary_key: false
+  unique: false
   description: Cost-effectiveness score (0-1) from upstream system.
   hidden: false
   format:
@@ -120,6 +132,7 @@ columns:
   sql: alloc_prio_val
   type: INT
   primary_key: false
+  unique: false
   description: Allocation priority score from upstream.
   hidden: false
   format:
@@ -128,18 +141,21 @@ columns:
   sql: donor_ref_reg
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to demographics.contrib_registry.
   hidden: false
 - name: recip_ref_reg
   sql: recip_ref_reg
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to recipients_demographics.recip_registry.
   hidden: false
 - name: riskmetrics
   sql: riskmetrics
   type: TEXT
   primary_key: false
+  unique: false
   description: 'JSON: {Immun_Risk, Infect_Risk, Reject_Risk, Cmpl_Risk, Readmit_Risk,
     Mort_Risk}.'
   hidden: false
@@ -147,6 +163,7 @@ columns:
   sql: cost_qaly
   type: TEXT
   primary_key: false
+  unique: false
   description: "Cost-effectiveness per QALY text, e.g. '53700 USD/QALY'. Data carrier\
     \ \u2014 the parsed numeric is in cost_per_qaly_usd (KB 12 CER formula) and the\
     \ band is in cost_effectiveness_band (KB 48 thresholds)."
@@ -157,12 +174,14 @@ columns:
   sql: resource_consumption
   type: TEXT
   primary_key: false
+  unique: false
   description: Resource consumption text, e.g. '11.34 units/day'.
   hidden: false
 - name: staff
   sql: staff
   type: TEXT
   primary_key: false
+  unique: false
   description: Staff hours text, e.g. '15.47 hrs/case'.
   hidden: false
 - name: surg_risk_score_computed
@@ -172,6 +191,7 @@ columns:
     + 1) END) / 5.0 + 0.4 * COALESCE(surg_cmpl_val, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Surgical Risk Score = 0.6*N_comorbidities/5 + 0.4*C_procedure (KB;\
     \ N_comorbidities/5 used as a 0-1 normalization with 5 conditions considered max).\
     \ Pulls comorbidity count from clinical via recip join.\n\n[kb=16]\nA composite\
@@ -187,6 +207,7 @@ columns:
   sql: 0.6 * COALESCE(cntr_vol_val, 0) + 0.4 * COALESCE(cntr_out_val, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Center Performance Score = 0.6*V_transplants + 0.4*R_success (KB).\n\
     \n[kb=15]\nA weighted average of a center's transplant volume and its post-transplant\
     \ success rates. Formula: $S_{center} = 0.6 \\times V_{transplants} + 0.4 \\times\
@@ -200,36 +221,42 @@ columns:
   sql: CAST(json_extract(riskmetrics, '$.Immun_Risk') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Immunological risk parsed from riskmetrics.
   hidden: false
 - name: infect_risk
   sql: CAST(json_extract(riskmetrics, '$.Infect_Risk') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Infection risk parsed from riskmetrics.
   hidden: false
 - name: reject_risk
   sql: CAST(json_extract(riskmetrics, '$.Reject_Risk') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Rejection risk parsed from riskmetrics.
   hidden: false
 - name: cmpl_risk
   sql: CAST(json_extract(riskmetrics, '$.Cmpl_Risk') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Complication risk parsed from riskmetrics.
   hidden: false
 - name: readmit_risk
   sql: CAST(json_extract(riskmetrics, '$.Readmit_Risk') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Readmission risk parsed from riskmetrics.
   hidden: false
 - name: mort_risk
   sql: CAST(json_extract(riskmetrics, '$.Mort_Risk') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Mortality risk parsed from riskmetrics.
   hidden: false
 - name: readmission_risk_index
@@ -239,6 +266,7 @@ columns:
     + 1) END) + 0.2 * COALESCE(surg_risk_val, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Readmission Risk Index = 0.1 + 0.05*N_conditions + 0.2*S_surgical\
     \ (KB).\n\n[kb=19]\nA risk index calculated from the number of pre-existing medical\
     \ conditions and the Surgical Risk Score. Formula: $I_{readmission} = 0.1 + (0.05\
@@ -253,6 +281,7 @@ columns:
   sql: CAST(substr(cost_qaly, 1, instr(cost_qaly, ' ') - 1) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Cost per QALY in USD parsed from cost_qaly. KB Cost-Effectiveness\
     \ Ratio = Cost_net / QALY_gained.\n\n[kb=12]\nThe ratio of the net cost of an\
     \ intervention to its net health gain. Formula: $CER = \\frac{Cost_{net}}{QALY_{gained}}$\
@@ -268,6 +297,7 @@ columns:
     REAL) <= 150000 THEN 'Acceptable' ELSE 'Low value' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Cost-Effectiveness Threshold band per KB Thresholds: <$50k high value,\
     \ $50k-$150k acceptable, >$150k low value (US benchmark).\n\n[kb=48]\nA common\
     \ benchmark for the Cost-Effectiveness Ratio (CER) in the US is $50,000 to $150,000\
@@ -283,12 +313,14 @@ columns:
     AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Daily resource units (parsed).
   hidden: false
 - name: staff_hours_per_case
   sql: CAST(substr(staff, 1, instr(staff, ' ') - 1) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Staff hours per case (parsed).
   hidden: false
 - name: graft_survival_outcome
@@ -296,6 +328,7 @@ columns:
     'At Risk' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Graft Survival outcome band (KB 28). Threshold (>= 0.5 = Successful)\
     \ is a documented common interpretation since KB 28 is descriptive prose, not\
     \ a numeric threshold.\n\n[kb=28]\nA key outcome measure in transplantation. Successful\

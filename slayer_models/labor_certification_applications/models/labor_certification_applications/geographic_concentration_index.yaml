@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: geographic_concentration_index
 source_queries:
-- version: 3
+- version: 4
   name: state_apps
   source_model: case_worksite
   measures:
@@ -9,25 +9,34 @@ source_queries:
   dimensions:
   - name: wsstate
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: state_share_sq
   source_model:
     source_name: state_apps
     columns:
     - name: share_sq
-      type: DOUBLE
       sql: (dockkey_count_distinct * 1.0 / SUM(dockkey_count_distinct) OVER ()) *
         (dockkey_count_distinct * 1.0 / SUM(dockkey_count_distinct) OVER ())
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: wsstate
   - name: share_sq
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model: state_share_sq
   measures:
   - formula: share_sq:sum
     name: gci
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"state_share_sq.share_sq_sum\" AS share_sq_sum FROM (SELECT\n\
   \  SUM(state_share_sq.share_sq) AS \"state_share_sq.share_sq_sum\"\nFROM (\n  SELECT\n\
@@ -48,6 +57,7 @@ columns:
   sql: share_sq_sum
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

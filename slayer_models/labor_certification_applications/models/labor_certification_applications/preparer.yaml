@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: preparer
 sql_table: preparer
 query_variables: {}
@@ -8,26 +8,31 @@ columns:
   sql: prepmail
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: preplname
   sql: preplname
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: prepfname
   sql: prepfname
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: prepmi
   sql: prepmi
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: prepbiz
   sql: prepbiz
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

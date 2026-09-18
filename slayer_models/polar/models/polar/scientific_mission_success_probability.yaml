@@ -1,7 +1,7 @@
-version: 7
+version: 10
 name: scientific_mission_success_probability
 source_queries:
-- version: 3
+- version: 4
   name: ser_per_eq
   source_model: scientific
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: scieqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: cri_per_eq
   source_model: communication
   measures:
@@ -19,7 +21,9 @@ source_queries:
   dimensions:
   - name: commeqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: ser_per_eq
     joins:
@@ -27,12 +31,15 @@ source_queries:
       join_pairs:
       - - scieqref
         - commeqref
+      join_type: left
   measures:
   - formula: ser:avg * (0.8 + 0.2 * cri_per_eq.cri:avg / 10.0)
     name: smsp
   dimensions:
   - name: scieqref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"ser_per_eq.scieqref\" AS scieqref, \"ser_per_eq.ser_avg\"\
   \ AS ser_avg, \"ser_per_eq.smsp\" AS smsp, \"ser_per_eq.cri_per_eq.cri_avg\" AS\
@@ -68,11 +75,13 @@ columns:
   sql: scieqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ser_avg
   sql: ser_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Scientific Equipment Reliability (KB #8): accuracy% \xD7 calibration\
     \ multiplier."
   hidden: false
@@ -82,6 +91,7 @@ columns:
   sql: smsp
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -89,6 +99,7 @@ columns:
   sql: cri_per_eq__cri_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

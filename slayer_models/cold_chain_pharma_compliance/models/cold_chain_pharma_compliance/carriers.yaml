@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: carriers
 sql_table: carriers
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: carriertag
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: carriercert
   sql: carriercert
   type: TEXT
   primary_key: false
+  unique: false
   description: "GDP Certification Status (KB #4): 'None' (no certification), 'GDP'\
     \ (Good Distribution Practice certified), 'CEIV Pharma' (IATA Center of Excellence\
     \ for Independent Validators), or 'Both'. NULL means pending certification status\
@@ -31,6 +33,7 @@ columns:
     IN ('gdp', 'ceiv pharma') THEN 8 ELSE 4 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Redundant Resources Depth proxy (KB #30, SCRS sub-score, 0-10): Both\
     \ certifications = 10, single GDP or CEIV Pharma = 8, else = 4. Used inside Supply\
     \ Chain Resilience Score; heuristic from the gold task solution because the schema\

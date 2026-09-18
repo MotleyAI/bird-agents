@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: continuous_filing_employer
 source_queries:
-- version: 3
+- version: 4
   name: emp_months
   source_model: cases
   measures:
@@ -9,18 +9,25 @@ source_queries:
   dimensions:
   - name: homefirm
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: emp_months
     columns:
     - name: is_continuous_filer
-      type: BOOLEAN
       sql: recv_month_count_distinct >= 9
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: homefirm
   - name: recv_month_count_distinct
   - name: is_continuous_filer
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"emp_months.homefirm\" AS homefirm, \"emp_months.recv_month_count_distinct\"\
   \ AS recv_month_count_distinct, \"emp_months.is_continuous_filer\" AS is_continuous_filer\
@@ -38,11 +45,13 @@ columns:
   sql: homefirm
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: recv_month_count_distinct
   sql: recv_month_count_distinct
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Month of receipt (1-12), parsed from recvday ''YYYY/MM/DD''. Used
     for KB #23/50 seasonal analysis.'
   hidden: false
@@ -52,6 +61,7 @@ columns:
   sql: is_continuous_filer
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

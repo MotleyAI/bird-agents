@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: lightandradiationreadings
 sql_table: lightandradiationreadings
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: lightradregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: envreadref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -22,6 +24,7 @@ columns:
   sql: lightlux
   type: INT
   primary_key: false
+  unique: false
   description: "[kb=29]\nValues in lux range from near-dark (5-10 lux) to typical\
     \ indoor lighting (300-500 lux). Conservation standards recommend 50 lux for highly\
     \ sensitive materials, 150-200 lux for paintings and wood, and up to 300 lux for\
@@ -38,6 +41,7 @@ columns:
   sql: uvuwcm2
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -45,6 +49,7 @@ columns:
   sql: irwm2
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -52,6 +57,7 @@ columns:
   sql: visibleexplxh
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -61,6 +67,7 @@ columns:
     END
   type: TEXT
   primary_key: false
+  unique: false
   description: "[kb=53]\nHigh sensitivity artifacts (textiles, paper) must not exceed\
     \ 50 lux; Medium sensitivity (paintings, wood) must not exceed 200 lux. Based\
     \ on conservation research about light-induced deterioration rates. \u2014 Defines\
@@ -72,11 +79,6 @@ columns:
     kb_id: 53
 measures: []
 aggregations: []
-joins:
-- target_model: environmentalreadingscore
-  join_pairs:
-  - - envreadref
-    - envreadregistry
-  join_type: left
+joins: []
 filters: []
 hidden: false

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: electrical
 sql_table: electrical
 query_variables: {}
@@ -8,12 +8,14 @@ columns:
   sql: elecregistry
   type: TEXT
   primary_key: true
+  unique: false
   description: VARCHAR(50) PRIMARY KEY uniquely identifying each electrical record.
   hidden: false
 - name: engyunitref
   sql: engyunitref
   type: TEXT
   primary_key: false
+  unique: false
   description: VARCHAR(50) REFERENCES Panel(PaneMark), tying this electrical record
     to a panel.
   hidden: false
@@ -21,6 +23,7 @@ columns:
   sql: efflogref
   type: TEXT
   primary_key: false
+  unique: false
   description: VARCHAR(50) REFERENCES Performance(PerfRegistry), linking to a performance
     record if relevant.
   hidden: false
@@ -28,6 +31,7 @@ columns:
   sql: iscinita
   type: DOUBLE
   primary_key: false
+  unique: false
   description: DECIMAL(7,3) short-circuit current (Isc) at initial measurement (was
     'IscInitialA') (e.g., 9.200).
   hidden: false
@@ -37,6 +41,7 @@ columns:
   sql: isccurra
   type: DOUBLE
   primary_key: false
+  unique: false
   description: NUMERIC(7,3) current Isc measurement (was 'IscCurrentA') (e.g., 8.950).
   hidden: false
   format:
@@ -45,6 +50,7 @@ columns:
   sql: vocinitv
   type: DOUBLE
   primary_key: false
+  unique: false
   description: NUMERIC(7,3) open-circuit voltage (Voc) initially (was 'VocInitialV')
     (e.g., 49.000).
   hidden: false
@@ -54,6 +60,7 @@ columns:
   sql: voccurrv
   type: DOUBLE
   primary_key: false
+  unique: false
   description: DECIMAL(7,3) current Voc measurement (was 'VocCurrentV') (e.g., 48.500).
   hidden: false
   format:
@@ -62,6 +69,7 @@ columns:
   sql: impinita
   type: DOUBLE
   primary_key: false
+  unique: false
   description: DECIMAL(7,3) current at maximum power initially (was 'ImpInitialA')
     (e.g., 8.700).
   hidden: false
@@ -71,6 +79,7 @@ columns:
   sql: impcurra
   type: DOUBLE
   primary_key: false
+  unique: false
   description: NUMERIC(7,3) current Imp measurement (was 'ImpCurrentA') (e.g., 8.450).
   hidden: false
   format:
@@ -79,6 +88,7 @@ columns:
   sql: vmpinitv
   type: DOUBLE
   primary_key: false
+  unique: false
   description: DECIMAL(7,3) voltage at maximum power initially (was 'VmpInitialV')
     (e.g., 46.500).
   hidden: false
@@ -88,6 +98,7 @@ columns:
   sql: vmpcurrv
   type: DOUBLE
   primary_key: false
+  unique: false
   description: NUMERIC(6,2) current Vmp measurement (was 'VmpCurrentV') (e.g., 46.12).
   hidden: false
   format:
@@ -96,8 +107,9 @@ columns:
   sql: ffactorinit
   type: DOUBLE
   primary_key: false
-  description: "Initial fill factor at panel commissioning; current fill factor\
-    \ is in ffactorcurr.\n\n[kb=24]\nA dimensionless value between 0 and 1 representing\
+  unique: false
+  description: "Initial fill factor at panel commissioning; current fill factor is\
+    \ in ffactorcurr.\n\n[kb=24]\nA dimensionless value between 0 and 1 representing\
     \ the ratio of maximum power point (Vmp \xD7 Imp) to open-circuit voltage times\
     \ short-circuit current (Voc \xD7 Isc). High-quality commercial panels typically\
     \ have fill factors between 0.75 and 0.85. \u2014 Illustrates a key indicator\
@@ -112,6 +124,7 @@ columns:
   sql: ffactorcurr
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Current snapshot; initial fill factor is in ffactorinit.\n\n[kb=24]\n\
     A dimensionless value between 0 and 1 representing the ratio of maximum power\
     \ point (Vmp \xD7 Imp) to open-circuit voltage times short-circuit current (Voc\
@@ -127,6 +140,7 @@ columns:
   sql: seriesresohm
   type: DOUBLE
   primary_key: false
+  unique: false
   description: DECIMAL(7,3) series resistance in ohms (was 'SeriesResistanceOhm')
     (e.g., 0.300).
   hidden: false
@@ -136,6 +150,7 @@ columns:
   sql: shuntresohm
   type: DOUBLE
   primary_key: false
+  unique: false
   description: DECIMAL(4,1) shunt resistance in ohms (was 'ShuntResistanceOhm') (e.g.,
     400.0).
   hidden: false
@@ -146,6 +161,7 @@ columns:
     / NULLIF(vocinitv, 0) + (iscinita - isccurra) / NULLIF(iscinita, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "[kb=38]\nEDI = (FillFactorInitial - FillFactorCurrent)/FillFactorInitial\
     \ + (VocInitialV - VocCurrV)/VocInitialV + (IscInitialA - IscCurrA)/IscInitialA,\
     \ where higher values indicate more severe degradation. \u2014 A composite of\

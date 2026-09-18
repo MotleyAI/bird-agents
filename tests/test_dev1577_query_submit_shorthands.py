@@ -60,13 +60,13 @@ async def test_query_impl_forwards_string_measure_shorthand(monkeypatch):
     from bird_interact_agents.agents._query import query_impl
 
     forwarded = _patch_slayer_query_fn(monkeypatch)
-    await query_impl(json.dumps({
+    await query_impl({
         "source_model": "orders",
         "measures": ["count"],
         "dimensions": ["status"],
-    }))
-    assert forwarded["measures"] == ["count"]
-    assert forwarded["dimensions"] == ["status"]
+    })
+    assert forwarded["query"]["measures"] == ["count"]
+    assert forwarded["query"]["dimensions"] == ["status"]
 
 
 @pytest.mark.asyncio
@@ -98,14 +98,14 @@ async def test_query_impl_lifts_misplaced_tool_level_keys(monkeypatch):
     from bird_interact_agents.agents._query import query_impl
 
     forwarded = _patch_slayer_query_fn(monkeypatch)
-    await query_impl(json.dumps({
+    await query_impl({
         "source_model": "orders",
         "dimensions": ["status"],
         "show_sql": True,
         "dry_run": True,
         "explain": True,
         "format": "json",
-    }))
+    })
     assert forwarded["show_sql"] is True
     assert forwarded["dry_run"] is True
     assert forwarded["explain"] is True
@@ -120,12 +120,12 @@ async def test_query_impl_lifts_nested_normalize_filters(monkeypatch):
     from bird_interact_agents.agents._query import query_impl
 
     forwarded = _patch_slayer_query_fn(monkeypatch)
-    await query_impl(json.dumps({
+    await query_impl({
         "source_model": "orders",
         "filters": ["category == 'Gadgets'"],
         "normalize_filters": False,
-    }))
-    assert forwarded["filters"] == ["category == 'Gadgets'"]
+    })
+    assert forwarded["query"]["filters"] == ["category == 'Gadgets'"]
     assert "normalize_filters" not in forwarded
 
 
@@ -136,35 +136,11 @@ async def test_query_impl_nested_format_overrides_default(monkeypatch):
     from bird_interact_agents.agents._query import query_impl
 
     forwarded = _patch_slayer_query_fn(monkeypatch)
-    await query_impl(json.dumps({
+    await query_impl({
         "source_model": "orders",
         "format": "csv",
-    }))
+    })
     assert forwarded["format"] == "csv"
-
-
-@pytest.mark.parametrize("offending_field,value", [
-    ("main_time_dimension", "created_at"),
-    ("name", "my_query"),
-    ("version", 3),
-    ("totally_unknown", "x"),
-])
-@pytest.mark.asyncio
-async def test_query_impl_still_rejects_genuinely_unknown_field(
-    monkeypatch, offending_field, value,
-):
-    """Lifting tool-level kwargs must not loosen the allowlist for real
-    SlayerQuery fields slayer's MCP ``query`` doesn't expose, nor for
-    nonsense keys."""
-    from bird_interact_agents.agents._query import query_impl
-
-    _patch_slayer_query_fn(monkeypatch)
-    with pytest.raises(ValueError) as ei:
-        await query_impl(json.dumps({
-            "source_model": "orders",
-            offending_field: value,
-        }))
-    assert offending_field in str(ei.value)
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: facilities
 sql_table: facilities
 query_variables: {}
@@ -8,41 +8,49 @@ columns:
   sql: fackey
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: rsource
   sql: rsource
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: envstress
   sql: envstress
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lifeimpact
   sql: lifeimpact
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: seasonpat
   sql: seasonpat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: leglissue
   sql: leglissue
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ssystemchg
   sql: ssystemchg
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: support_and_resources
   sql: support_and_resources
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSONB facility-resources column. Subfields: support_services (string\
     \ list), community_resources (Limited/Adequate/Comprehensive), emergency_contact,\
     \ plans.{safety_plan_status, crisis_plan_status}.\n\n[kb=24]\nRanges from Limited\
@@ -57,6 +65,7 @@ columns:
   sql: support_and_resources ->> '$.community_resources'
   type: TEXT
   primary_key: false
+  unique: false
   description: Community resources enum (Limited, Adequate, Comprehensive). Limited
     = few/none, Adequate = sufficient, Comprehensive = extensive.
   hidden: false
@@ -64,24 +73,28 @@ columns:
   sql: support_and_resources ->> '$.support_services'
   type: TEXT
   primary_key: false
+  unique: false
   description: Available/recommended support services (comma-separated).
   hidden: false
 - name: emergency_contact
   sql: support_and_resources ->> '$.emergency_contact'
   type: TEXT
   primary_key: false
+  unique: false
   description: Emergency contact info.
   hidden: false
 - name: safety_plan_status
   sql: support_and_resources ->> '$.plans.safety_plan_status'
   type: TEXT
   primary_key: false
+  unique: false
   description: Safety plan status (Needs Update, In Place, Not Needed).
   hidden: false
 - name: crisis_plan_status
   sql: support_and_resources ->> '$.plans.crisis_plan_status'
   type: TEXT
   primary_key: false
+  unique: false
   description: Crisis plan status (Needs Update, In Place, Not Needed).
   hidden: false
 - name: resource_score
@@ -89,6 +102,7 @@ columns:
     THEN 3 WHEN 'Adequate' THEN 2 WHEN 'Limited' THEN 1 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric community-resource score: Comprehensive=3, Adequate=2, Limited=1.\n\
     \n[kb=5]\nFRAI = \\frac{\\sum_{i \\in facilities} resource\\_score_i} {|facilities|},\
     \ \\text{where } resource\\_score = \\begin{cases} 3 & \\text{if } support\\_and\\\
@@ -107,6 +121,7 @@ columns:
     THEN 3 WHEN 'Adequate' THEN 2 WHEN 'Limited' THEN 1 ELSE NULL END) >= 2
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Resource-Supported Facility (KB #15): resource_score >= 2 (Adequate\
     \ or Comprehensive community resources).\n\n[kb=15]\nA facility with resource_score\
     \ \\geq 2 \\text{where } resource_score = \\begin{cases} 3 & \\text{if } support\\\

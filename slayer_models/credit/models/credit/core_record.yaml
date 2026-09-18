@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: core_record
 sql_table: core_record
 query_variables: {}
@@ -8,41 +8,49 @@ columns:
   sql: coreregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: timemark
   sql: timemark
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: clientref
   sql: clientref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: appref
   sql: appref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: modelline
   sql: modelline
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: scoredate
   sql: scoredate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: nextcheck
   sql: nextcheck
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: dataqscore
   sql: dataqscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -50,6 +58,7 @@ columns:
   sql: confscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -57,26 +66,31 @@ columns:
   sql: overridestat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: overridenote
   sql: overridenote
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: decidestat
   sql: decidestat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: decidedate
   sql: decidedate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: agespan
   sql: agespan
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -84,16 +98,19 @@ columns:
   sql: gendlabel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: maritalform
   sql: maritalform
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: depcount
   sql: depcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -101,11 +118,13 @@ columns:
   sql: resdform
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: addrstab
   sql: addrstab
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -113,6 +132,7 @@ columns:
   sql: phonestab
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -120,16 +140,19 @@ columns:
   sql: emailstab
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: clientseg
   sql: clientseg
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tenureyrs
   sql: tenureyrs
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -137,6 +160,7 @@ columns:
   sql: crossratio
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Cross-sell ratio (0-1). Below 0.2 indicates minimal product relationships,\
     \ 0.2-0.5 moderate opportunity, above 0.5 strong relationship with high additional\
     \ sales potential.\n\n[kb=27]\nCross-sell ratio (crossratio) ranges from 0-1.\
@@ -154,6 +178,7 @@ columns:
   sql: profitscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -161,6 +186,7 @@ columns:
   sql: churnrate
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Churn rate (0-1). Below 0.1 low attrition risk, 0.1-0.2 moderate,\
     \ 0.2-0.3 high, above 0.3 severe (immediate relationship intervention).\n\n[kb=29]\n\
     Churn rate (churnrate) ranges from 0-1. Values below 0.1 indicate low attrition\
@@ -179,6 +205,7 @@ columns:
     date(scoredate, '-' || tenureyrs || ' years')) AS INTEGER) - 1) / 3 + 1)
   type: TEXT
   primary_key: false
+  unique: false
   description: "Cohort quarter when the customer started with the institution: scoredate\
     \ minus tenureyrs years, formatted as YYYY-Q[1-4].\n\n[kb=51]\nQuarter of the\
     \ year when the customer started with the institution (scoring date minus tenure\

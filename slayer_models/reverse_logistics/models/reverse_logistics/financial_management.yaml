@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: financial_management
 sql_table: financial_management
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: creditref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: casetag
   sql: casetag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: dispcost
   sql: dispcost
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -25,11 +28,13 @@ columns:
   sql: cost_breakdown
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: restocking_fee
   sql: CAST(json_extract(cost_breakdown, '$.fees.restocking_fee') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Restocking Fee (R_f): service charge for reintegrating a returned\
     \ item into inventory.\n\n[kb=11]\nFee imposed to cover administrative and handling\
     \ work required to make the item sellable again. \u2014 Service charge for reintegrating\
@@ -42,6 +47,7 @@ columns:
   sql: CAST(json_extract(cost_breakdown, '$.fees.relabeling_cost') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Relabeling Cost (L_c): expense of printing/applying new labels or\
     \ packaging identifiers.\n\n[kb=12]\nDirect cost of material and labor associated\
     \ with correcting item labeling deficiencies. \u2014 Expense of printing and applying\
@@ -54,6 +60,7 @@ columns:
   sql: CAST(json_extract(cost_breakdown, '$.disposal.disposal_cost') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Disposal Cost (D_c): fee incurred when discarding a returned item\
     \ that cannot be resold or refurbished.\n\n[kb=13]\nMonetary cost of disposing\
     \ the item through methods such as recycling, landfill, or hazardous-waste processing.\
@@ -67,6 +74,7 @@ columns:
   sql: CAST(json_extract(cost_breakdown, '$.repair_costs.repair_estimate') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Repair Estimate (R_e): projected expense required to bring a defective\
     \ return back to sellable condition.\n\n[kb=14]\nEstimated sum of parts, labor\
     \ and overhead needed for repair work, agreed before work commences. \u2014 Projected\
@@ -79,6 +87,7 @@ columns:
   sql: CAST(json_extract(cost_breakdown, '$.valuation.recovery_value') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Recovery Value (R_v): amount of monetary value recaptured from a return\
     \ via resale, refurbish, or parts harvesting.\n\n[kb=15]\nNet revenue expected\
     \ after processing the return, excluding initial cost. \u2014 Amount of monetary\
@@ -92,6 +101,7 @@ columns:
   sql: CAST(json_extract(cost_breakdown, '$.sustainability.carbon_footprint') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Carbon Footprint (C_f): estimated kilograms of CO2-equivalent generated\
     \ through return processing activities.\n\n[kb=19]\nQuantifies greenhouse-gas\
     \ emissions attributable to transportation, handling, and disposal of a single\
@@ -105,6 +115,7 @@ columns:
   sql: TRIM(json_extract(cost_breakdown, '$.disposal.disposal_method'), '"')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Disposal Methods \u2014 'Recycle' (recycling streams), 'Hazardous\
     \ Waste' (batteries/chemicals/e-waste), 'Landfill' (non-recyclable residuals),\
     \ 'Return to Vendor' (supplier specialised processing).\n\n[kb=23]\n'Recycle'\
@@ -120,6 +131,7 @@ columns:
   sql: TRIM(json_extract(cost_breakdown, '$.refund.method'), '"')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Refund Methods \u2014 'Original Payment' (gateway reversal), 'Bank\
     \ Transfer' (ACH/SEPA when gateway blocked), 'Store Credit' (gift card / voucher).\n\
     \n[kb=24]\n'Original Payment' is when credit card/PayPal reversal within payment\
@@ -140,6 +152,7 @@ columns:
     '$.shipping.fee') AS REAL), 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Total Return Cost (TRC) = S_f + R_f + L_c + D_c + R_e. Aggregated\
     \ monetary outlay to handle a single return.\n\n[kb=0]\nThe Total Return Cost\
     \ is calculated as the sum of Shipping Fee ($S_f$), Restocking Fee ($R_f$), Relabeling\
@@ -160,6 +173,7 @@ columns:
     '$.shipping.fee') AS REAL), 0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Return Profit Impact (RPI) = R_v - TRC. Net financial impact of a\
     \ return after accounting for cost and recovery value.\n\n[kb=1]\n$$RPI = R_v\
     \ - TRC$$ where $R_v$ is Recovery Value and $TRC$ is Total Return Cost. \u2014\
@@ -174,6 +188,7 @@ columns:
     AS REAL) * 1.0 / NULLIF(returns.dayslapsed, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Recovery Rate per Day (RRD) = R_v / D_l. Daily efficiency: value recovered\
     \ per day elapsed since sale.\n\n[kb=2]\n$$RRD = \\frac{R_v}{D_l}$$ where $R_v$\
     \ is Recovery Value and $D_l$ is Days Lapsed. \u2014 Daily efficiency metric showing\
@@ -193,6 +208,7 @@ columns:
     '$.valuation.recovery_value') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Sustainability-Adjusted Loss (SAL) = TRC + 0.5 * C_f - R_v. Cost of\
     \ a return adjusted for environmental impact factors.\n\n[kb=4]\n$$SAL = TRC +\
     \ 0.5 \\times C_f - R_v$$ where $C_f$ is Carbon Footprint. \u2014 Cost of a return\
@@ -202,15 +218,16 @@ columns:
   meta:
     kb_id: 4
 - name: regulatory_compliance_penalty
-  sql: CASE WHEN TRIM(json_extract(returns__rl_products.product_traceability, '$.compliance.regulatory_compliance'),
-    '"') = 'Non-compliant' THEN 0.2 * (COALESCE(CAST(json_extract("financial_management".cost_breakdown,
-    '$.fees.restocking_fee') AS REAL), 0) + COALESCE(CAST(json_extract("financial_management".cost_breakdown,
-    '$.fees.relabeling_cost') AS REAL), 0) + COALESCE(CAST(json_extract("financial_management".cost_breakdown,
-    '$.disposal.disposal_cost') AS REAL), 0) + COALESCE(CAST(json_extract("financial_management".cost_breakdown,
-    '$.repair_costs.repair_estimate') AS REAL), 0) + COALESCE(CAST(json_extract(returns.return_details,
-    '$.shipping.fee') AS REAL), 0)) ELSE 0 END
+  sql: CASE WHEN TRIM(JSON_EXTRACT(returns.rl_products.product_traceability, '$.compliance.regulatory_compliance'),
+    '"') = 'Non-compliant' THEN 0.2 * (COALESCE(CAST(JSON_EXTRACT("financial_management".cost_breakdown,
+    '$.fees.restocking_fee') AS FLOAT), 0) + COALESCE(CAST(JSON_EXTRACT("financial_management".cost_breakdown,
+    '$.fees.relabeling_cost') AS FLOAT), 0) + COALESCE(CAST(JSON_EXTRACT("financial_management".cost_breakdown,
+    '$.disposal.disposal_cost') AS FLOAT), 0) + COALESCE(CAST(JSON_EXTRACT("financial_management".cost_breakdown,
+    '$.repair_costs.repair_estimate') AS FLOAT), 0) + COALESCE(CAST(JSON_EXTRACT(returns.return_details,
+    '$.shipping.fee') AS FLOAT), 0)) ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Regulatory Compliance Penalty (RCP) = 0.2 * TRC if product is Non-compliant\
     \ else 0.\n\n[kb=8]\nIf the Regulatory Compliance Status is *Non-compliant* the\
     \ penalty is $$RCP = 0.2 \\times TRC$$, else $$RCP = 0$$. \u2014 Additional proportional\

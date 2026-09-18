@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: projects
 sql_table: projects
 query_variables: {}
@@ -8,26 +8,31 @@ columns:
   sql: arcregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: vesseltag
   sql: vesseltag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: fundflux
   sql: fundflux
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: authpin
   sql: authpin
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: authhalt
   sql: authhalt
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

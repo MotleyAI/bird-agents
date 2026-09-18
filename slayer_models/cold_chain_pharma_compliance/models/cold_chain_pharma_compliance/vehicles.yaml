@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: vehicles
 sql_table: vehicles
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: vehref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: carrierbond
   sql: carrierbond
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vehtype
   sql: vehtype
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: veh_qual
   sql: veh_qual
   type: TEXT
   primary_key: false
+  unique: false
   description: "Cold Chain Vehicle Qualification Status (KB #24): 'Validated' (fully\
     \ validated through performance and temperature mapping), 'Qualified' (basic qualification),\
     \ 'Unqualified' (not formally qualified for pharmaceutical transport).\n\n[kb=24]\n\
@@ -39,6 +43,7 @@ columns:
   sql: temp_mon_sys
   type: TEXT
   primary_key: false
+  unique: false
   description: "Vehicle Temperature Monitoring Type (KB #58): 'Continuous' (uninterrupted),\
     \ 'Interval' (periodic), 'None' (no active monitoring). NULL means monitoring\
     \ type was not specified.\n\n[kb=58]\nVehicle temperature monitoring types include:\
@@ -55,6 +60,7 @@ columns:
     = 'qualified' THEN 7 ELSE 5 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Supplier Backup Presence proxy (KB #30, SCRS sub-score, 0-10): Validated\
     \ vehicle = 9, Qualified = 7, else = 5. Used inside Supply Chain Resilience Score;\
     \ heuristic from the gold task solution because the schema does not store SBP\

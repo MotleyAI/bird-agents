@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: medical_history
 sql_table: medical_history
 query_variables: {}
@@ -8,12 +8,14 @@ columns:
   sql: contrib_med_registry
   type: TEXT
   primary_key: true
+  unique: false
   description: FK to demographics.contrib_registry.
   hidden: false
 - name: med_history
   sql: med_history
   type: TEXT
   primary_key: false
+  unique: false
   description: Comma-separated donor medical history (e.g. 'None,Cancer,Heart Disease').
     'None' tokens mean no condition; NULL means undocumented.
   hidden: false
@@ -21,24 +23,28 @@ columns:
   sql: smk_cond
   type: TEXT
   primary_key: false
+  unique: false
   description: Donor smoking status (e.g. 'Never smoked, optimal lung condition').
   hidden: false
 - name: alc_cond
   sql: alc_cond
   type: TEXT
   primary_key: false
+  unique: false
   description: Donor alcohol-use status.
   hidden: false
 - name: drug_cond
   sql: drug_cond
   type: TEXT
   primary_key: false
+  unique: false
   description: Donor drug-use status (e.g. 'Current use, high risk assessment').
   hidden: false
 - name: viralstatinfo
   sql: viralstatinfo
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSON: {Cmv_State, Ebv_State, Hbv_State, Hcv_State, Hiv_State}. KB\
     \ Viral Infection Status.\n\n[kb=39]\nTesting for viruses such as Cytomegalovirus\
     \ (CMV), Epstein-Barr Virus (EBV), and Hepatitis. The Viral Infection Status of\
@@ -54,6 +60,7 @@ columns:
   sql: json_extract(viralstatinfo, '$.Cmv_State')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Donor CMV status (Negative/Positive). KB Viral Infection Status.\n\
     \n[kb=39]\nTesting for viruses such as Cytomegalovirus (CMV), Epstein-Barr Virus\
     \ (EBV), and Hepatitis. The Viral Infection Status of both donor and recipient\
@@ -68,24 +75,28 @@ columns:
   sql: json_extract(viralstatinfo, '$.Ebv_State')
   type: TEXT
   primary_key: false
+  unique: false
   description: Donor EBV status.
   hidden: false
 - name: donor_hbv_state
   sql: json_extract(viralstatinfo, '$.Hbv_State')
   type: TEXT
   primary_key: false
+  unique: false
   description: Donor HBV status.
   hidden: false
 - name: donor_hcv_state
   sql: json_extract(viralstatinfo, '$.Hcv_State')
   type: TEXT
   primary_key: false
+  unique: false
   description: Donor HCV status.
   hidden: false
 - name: donor_hiv_state
   sql: json_extract(viralstatinfo, '$.Hiv_State')
   type: TEXT
   primary_key: false
+  unique: false
   description: Donor HIV status.
   hidden: false
 - name: is_high_risk_donor
@@ -95,6 +106,7 @@ columns:
     END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "True when donor has communicable-disease positive status (HBV/HCV/HIV),\
     \ active high-risk drug use, or malignancy history (KB High-Risk Donor).\n\n[kb=27]\n\
     A donor category defined by criteria such as a history of communicable diseases\
@@ -109,12 +121,7 @@ columns:
     kb_id: 27
 measures: []
 aggregations: []
-joins:
-- target_model: demographics
-  join_pairs:
-  - - contrib_med_registry
-    - contrib_registry
-  join_type: left
+joins: []
 filters: []
 description: 'Donor medical/social history: comma-separated condition list, smoking/alcohol/drug
   status, and a viralstatinfo JSON (CMV/EBV/HBV/HCV/HIV).'

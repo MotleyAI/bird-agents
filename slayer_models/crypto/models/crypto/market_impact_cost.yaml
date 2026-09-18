@@ -1,14 +1,17 @@
-version: 6
+version: 10
 name: market_impact_cost
 source_queries:
-- version: 3
+- version: 4
   name: latest_mkteffect
   source_model:
     source_name: systemmonitoring
     columns:
     - name: join_key
-      type: DOUBLE
       sql: '1'
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: mkteffect
   - name: join_key
@@ -18,24 +21,32 @@ source_queries:
     direction: desc
   limit: 1
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: orders
     columns:
     - name: join_key
-      type: DOUBLE
       sql: '1'
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: latest_mkteffect
       join_pairs:
       - - join_key
         - join_key
+      join_type: left
   measures:
   - formula: dealcount:max * dealquote:max * latest_mkteffect.mkteffect:max * 0.01
     name: mic
   dimensions:
   - name: recordvault
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.dealcount_max\"\
   \ AS dealcount_max, \"orders.dealquote_max\" AS dealquote_max, \"orders.mic\" AS\
@@ -64,11 +75,13 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: dealcount_max
   sql: dealcount_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -76,6 +89,7 @@ columns:
   sql: dealquote_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -83,6 +97,7 @@ columns:
   sql: mic
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -90,6 +105,7 @@ columns:
   sql: latest_mkteffect__mkteffect_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer

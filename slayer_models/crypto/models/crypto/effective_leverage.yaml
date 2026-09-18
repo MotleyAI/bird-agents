@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: effective_leverage
 source_queries:
-- version: 3
+- version: 4
   name: wallet_per_user
   source_model: accountbalances
   measures:
@@ -10,29 +10,38 @@ source_queries:
   dimensions:
   - name: usertag
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: orders
+    columns:
+    - name: el_value
+      sql: (CAST(riskandmargin.risk_margin_profile ->> '$.position.posmagn' AS REAL))
+        * (riskandmargin.risk_margin_profile ->> '$.position.possum') / NULLIF(wallet_per_user.wallet_total,
+        0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: riskandmargin
       join_pairs:
       - - recordvault
         - ordervault
+      join_type: left
     - target_model: wallet_per_user
       join_pairs:
       - - userlink
         - usertag
-    columns:
-    - name: el_value
-      type: DOUBLE
-      sql: (CAST(riskandmargin.risk_margin_profile ->> '$.position.posmagn' AS REAL))
-        * (riskandmargin.risk_margin_profile ->> '$.position.possum') / NULLIF(wallet_per_user.wallet_total,
-        0)
+      join_type: left
   dimensions:
   - name: recordvault
   - name: userlink
   - name: el_value
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.userlink\"\
   \ AS userlink, \"orders.el_value\" AS el_value FROM (SELECT\n  orders.recordvault\
@@ -53,16 +62,19 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: userlink
   sql: userlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: el_value
   sql: el_value
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

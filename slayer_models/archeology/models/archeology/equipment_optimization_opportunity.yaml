@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: equipment_optimization_opportunity
 source_queries:
-- version: 3
+- version: 4
   name: pc_per_arcref
   source_model: scanpointcloud
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: env_per_zone
   source_model: scanenvironment
   measures:
@@ -19,7 +21,9 @@ source_queries:
   dimensions:
   - name: zoneref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: scan_with_equip
   source_model:
     source_name: scans
@@ -28,14 +32,17 @@ source_queries:
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
     - target_model: env_per_zone
       join_pairs:
       - - zoneref
         - zoneref
+      join_type: left
     - target_model: scanprocessing
       join_pairs:
       - - zoneref
         - zoneref
+      join_type: left
   dimensions:
   - name: questregistry
   - name: arcref
@@ -53,19 +60,27 @@ source_queries:
   - name: esi
     model: env_per_zone
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: scan_with_equip
     columns:
     - name: eer
-      type: DOUBLE
       sql: (pc_per_arcref__sqs * scanprocessing__equipment__equipstatus_value) / (scanprocessing__equipment__powerlevel
         * (101 - scanprocessing__equipment__equipage_days) / 365.0) * 25
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: is_equipment_optimization_opportunity
-      type: BOOLEAN
       sql: CASE WHEN ((pc_per_arcref__sqs * scanprocessing__equipment__equipstatus_value)
         / (scanprocessing__equipment__powerlevel * (101 - scanprocessing__equipment__equipage_days)
         / 365.0) * 25) < 30 AND env_per_zone__esi > 80 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: eer:avg
     name: eer
@@ -78,6 +93,8 @@ source_queries:
   - name: scanprocessing__equipref
   - name: is_equipment_optimization_opportunity
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"scan_with_equip.questregistry\" AS questregistry, \"\
   scan_with_equip.arcref\" AS arcref, \"scan_with_equip.zoneref\" AS zoneref, \"scan_with_equip.scanprocessing__equipref\"\
@@ -156,31 +173,37 @@ columns:
   sql: questregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: arcref
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: zoneref
   sql: zoneref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: scanprocessing__equipref
   sql: scanprocessing__equipref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_equipment_optimization_opportunity
   sql: is_equipment_optimization_opportunity
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 - name: eer
   sql: eer
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -188,6 +211,7 @@ columns:
   sql: esi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

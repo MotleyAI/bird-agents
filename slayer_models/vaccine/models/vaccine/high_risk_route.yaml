@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: high_risk_route
 source_queries:
-- version: 3
+- version: 4
   name: cri_per_vehicle
   source_model: sensordata
   measures:
@@ -10,19 +10,25 @@ source_queries:
   dimensions:
   - name: vehsenseref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: transportinfo
+    columns:
+    - name: is_high_risk_route
+      sql: CASE WHEN (CAST(distdonekm AS REAL) / NULLIF(distdonekm + distleftkm, 0)
+        * 100) < 50 AND cri_per_vehicle.cri > 0.4 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: cri_per_vehicle
       join_pairs:
       - - vehiclereg
         - vehsenseref
-    columns:
-    - name: is_high_risk_route
-      type: BOOLEAN
-      sql: CASE WHEN (CAST(distdonekm AS REAL) / NULLIF(distdonekm + distleftkm, 0)
-        * 100) < 50 AND cri_per_vehicle.cri > 0.4 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: vehiclereg
   - name: rcp
@@ -30,6 +36,8 @@ source_queries:
     model: cri_per_vehicle
   - name: is_high_risk_route
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"transportinfo.vehiclereg\" AS vehiclereg, \"transportinfo.rcp\"\
   \ AS rcp, \"transportinfo.cri_per_vehicle.cri\" AS cri_per_vehicle__cri, \"transportinfo.is_high_risk_route\"\
@@ -58,11 +66,13 @@ columns:
   sql: vehiclereg
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rcp
   sql: rcp
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Route Completion Percentage (RCP). Percentage of route completed:
     DistDoneKm / (DistDoneKm + DistLeftKm) * 100 (KB #4).'
   hidden: false
@@ -70,11 +80,13 @@ columns:
   sql: cri_per_vehicle__cri
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_high_risk_route
   sql: is_high_risk_route
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

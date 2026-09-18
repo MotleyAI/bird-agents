@@ -1,24 +1,30 @@
-version: 7
+version: 10
 name: signal_is_cip
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
+    columns:
+    - name: is_cip
+      sql: CASE WHEN ((1 - ABS(freqdrifthzs) / (freqmhz * 1000.0)) * sigdursec / (1
+        + doppshifthz / 1000.0)) > 0.8 AND signalclassification.entropyval BETWEEN
+        0.4 AND 0.8 AND modindex > 0.5 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: signalclassification
       join_pairs:
       - - signalregistry
         - signalref
-    columns:
-    - name: is_cip
-      type: BOOLEAN
-      sql: CASE WHEN ((1 - ABS(freqdrifthzs) / (freqmhz * 1000.0)) * sigdursec / (1
-        + doppshifthz / 1000.0)) > 0.8 AND signalclassification.entropyval BETWEEN
-        0.4 AND 0.8 AND modindex > 0.5 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: is_cip
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_cip\"\
   \ AS is_cip FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
@@ -35,11 +41,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_cip
   sql: is_cip
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

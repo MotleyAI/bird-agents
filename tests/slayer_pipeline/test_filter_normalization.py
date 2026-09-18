@@ -196,20 +196,20 @@ def test_payload_no_filters_key():
 # ---------------------------------------------------------------------------
 
 
-def test_tool_query_top_level_filters():
-    args = {"source_model": "widgets", "filters": ["category == 'Gadgets'"]}
+def test_tool_query_single_object():
+    args = {"query": {"source_model": "widgets", "filters": ["category == 'Gadgets'"]}}
     out = normalize_tool_filters("query", args)
-    assert out["filters"] == ["lower(trim(category)) == 'gadgets'"]
+    assert out["query"]["filters"] == ["lower(trim(category)) == 'gadgets'"]
 
 
-def test_tool_query_nested_queries():
-    args = {"queries": [
+def test_tool_query_stage_list():
+    args = {"query": [
         {"source_model": "widgets", "filters": ["category == 'A'"]},
         {"source_model": "stage1", "filters": ["region == 'B'"]},
     ]}
-    out = normalize_tool_filters("query_nested", args)
-    assert out["queries"][0]["filters"] == ["lower(trim(category)) == 'a'"]
-    assert out["queries"][1]["filters"] == ["lower(trim(region)) == 'b'"]
+    out = normalize_tool_filters("query", args)
+    assert out["query"][0]["filters"] == ["lower(trim(category)) == 'a'"]
+    assert out["query"][1]["filters"] == ["lower(trim(region)) == 'b'"]
 
 
 def test_tool_create_model_single_query_dict():
@@ -247,9 +247,9 @@ def test_tool_edit_model_add_filters_is_mode_a_untouched():
 
 
 def test_tool_filters_does_not_mutate_input():
-    args = {"filters": ["category == 'Gadgets'"]}
+    args = {"query": {"filters": ["category == 'Gadgets'"]}}
     _ = normalize_tool_filters("query", args)
-    assert args["filters"] == ["category == 'Gadgets'"]
+    assert args["query"]["filters"] == ["category == 'Gadgets'"]
 
 
 def test_tool_unknown_tool_passthrough():

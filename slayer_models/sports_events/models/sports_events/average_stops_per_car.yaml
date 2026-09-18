@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: average_stops_per_car
 source_queries:
-- version: 3
+- version: 4
   name: stops_per_race
   source_model: pit_stops
   measures:
@@ -10,25 +10,33 @@ source_queries:
   dimensions:
   - name: matchidx
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: stops_per_race
     columns:
     - name: average_stops_per_car
-      type: DOUBLE
       sql: _count * 1.0 / NULLIF(wunit_count_distinct, 0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
       description: 'Average Stops Per Car (KB #54): total_stops / unique_cars_with_a_pit_stop,
         per race.'
+      hidden: false
       meta:
         kb_id: 54
     - name: pit_strategy_cluster
-      type: TEXT
       sql: CASE WHEN _count * 1.0 / NULLIF(wunit_count_distinct, 0) < 1.5 THEN 'Single-Stop
         Race' WHEN _count * 1.0 / NULLIF(wunit_count_distinct, 0) < 2.5 THEN 'Standard
         Two-Stop' ELSE 'High-Strategy Event' END
+      type: TEXT
+      primary_key: false
+      unique: false
       description: 'Pit Strategy Cluster (KB #55): ''Single-Stop Race'' (<1.5), ''Standard
         Two-Stop'' (1.5-2.5), ''High-Strategy Event'' (>=2.5) by Average Stops Per
         Car.'
+      hidden: false
       meta:
         kb_id: 55
   dimensions:
@@ -38,6 +46,8 @@ source_queries:
   - name: average_stops_per_car
   - name: pit_strategy_cluster
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"stops_per_race.matchidx\" AS matchidx, \"stops_per_race._count\"\
   \ AS _count, \"stops_per_race.wunit_count_distinct\" AS wunit_count_distinct, \"\
@@ -62,6 +72,7 @@ columns:
   sql: matchidx
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to races.
   hidden: false
   format:
@@ -70,6 +81,7 @@ columns:
   sql: _count
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -77,6 +89,7 @@ columns:
   sql: wunit_count_distinct
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to drivers.
   hidden: false
   format:
@@ -85,6 +98,7 @@ columns:
   sql: average_stops_per_car
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Average Stops Per Car (KB #54): total_stops / unique_cars_with_a_pit_stop,
     per race.'
   hidden: false
@@ -92,6 +106,7 @@ columns:
   sql: pit_strategy_cluster
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Pit Strategy Cluster (KB #55): ''Single-Stop Race'' (<1.5), ''Standard
     Two-Stop'' (1.5-2.5), ''High-Strategy Event'' (>=2.5) by Average Stops Per Car.'
   hidden: false

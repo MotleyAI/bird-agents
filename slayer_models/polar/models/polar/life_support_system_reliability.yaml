@@ -1,7 +1,7 @@
-version: 7
+version: 10
 name: life_support_system_reliability
 source_queries:
-- version: 3
+- version: 4
   name: ors_per_eq
   source_model: operationmaintenance
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: opmainteqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: tie_per_eq
   source_model: thermalsolarwindandgrid
   measures:
@@ -19,7 +21,9 @@ source_queries:
   dimensions:
   - name: thermaleqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: ors_per_eq
     joins:
@@ -27,12 +31,15 @@ source_queries:
       join_pairs:
       - - opmainteqref
         - thermaleqref
+      join_type: left
   measures:
   - formula: 0.7 * ors:avg + 0.3 * tie_per_eq.tie:avg
     name: lssr
   dimensions:
   - name: opmainteqref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"ors_per_eq.opmainteqref\" AS opmainteqref, \"ors_per_eq.ors_avg\"\
   \ AS ors_avg, \"ors_per_eq.lssr\" AS lssr, \"ors_per_eq.tie_per_eq.tie_avg\" AS\
@@ -71,11 +78,13 @@ columns:
   sql: opmainteqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ors_avg
   sql: ors_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Operational Readiness Score (KB #1): 10 x (1 - operationhours/maintenancecyclehours)
     if Active, 5 x (...) if Standby, 0 otherwise.'
   hidden: false
@@ -85,6 +94,7 @@ columns:
   sql: lssr
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -92,6 +102,7 @@ columns:
   sql: tie_per_eq__tie_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

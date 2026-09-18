@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: joint_performance
 sql_table: joint_performance
 query_variables: {}
@@ -8,26 +8,31 @@ columns:
   sql: jperfoperref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: jperfrecref
   sql: jperfrecref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: jperfdetref
   sql: jperfdetref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: joint_metrics
   sql: joint_metrics
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: j1_torque
   sql: CAST(json_extract(joint_metrics, '$.joint1.torque') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Joint 1 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
     \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
     \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\
@@ -43,6 +48,7 @@ columns:
   sql: CAST(json_extract(joint_metrics, '$.joint2.torque') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Joint 2 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
     \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
     \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\
@@ -58,6 +64,7 @@ columns:
   sql: CAST(json_extract(joint_metrics, '$.joint3.torque') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Joint 3 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
     \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
     \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\
@@ -73,6 +80,7 @@ columns:
   sql: CAST(json_extract(joint_metrics, '$.joint4.torque') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Joint 4 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
     \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
     \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\
@@ -88,6 +96,7 @@ columns:
   sql: CAST(json_extract(joint_metrics, '$.joint5.torque') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Joint 5 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
     \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
     \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\
@@ -103,6 +112,7 @@ columns:
   sql: CAST(json_extract(joint_metrics, '$.joint6.torque') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Joint 6 torque from joint_metrics JSON \u2014 helper for JTV (KB #38).\n\
     \n[kb=38]\nFor a given robot R, JTV = \\frac{\\sum_{jp \\in \\text{joint_performance}\
     \ \\mid \\text{jperfdetref = R}} \\sum_{i=1}^6 ((joint_metrics->>'jointi'->>'torque'::float\

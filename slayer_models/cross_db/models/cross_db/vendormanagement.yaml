@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: vendormanagement
 sql_table: vendormanagement
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: vendortrace
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: secjoin
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -22,6 +24,7 @@ columns:
   sql: riskassoc
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -29,92 +32,110 @@ columns:
   sql: recordregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vendassess
   sql: vendassess
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vendsecrate
   sql: vendsecrate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vendauddate
   sql: vendauddate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: contrstate
   sql: contrstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: contrexpire
   sql: contrexpire
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: dpastate
   sql: dpastate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sccstate
   sql: sccstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: bcrstate
   sql: bcrstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: docustate
   sql: docustate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: polcomp
   sql: polcomp
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: proccomp
   sql: proccomp
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: trainstate
   sql: trainstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: certstate
   sql: certstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: monstate
   sql: monstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: repstate
   sql: repstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: stakecomm
   sql: stakecomm
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vendsecrate_value
   sql: CASE vendsecrate WHEN 'A' THEN 4 WHEN 'B' THEN 3 WHEN 'C' THEN 2 WHEN 'D' THEN
     1 ELSE 1 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric value of VendSecRate \u2014 KB #24: 'A'=4, 'B'=3, 'C'=2, 'D'/other=1.\n\
     \n[kb=24]\nEnum: 'A' = 4, 'B' = 3, 'C' = 2, 'D' or others = 1. This numeric scale\
     \ quantifies vendor security, where 'A' reflects top-tier security (score 4),\
@@ -129,6 +150,7 @@ columns:
     THEN 1 ELSE 1 END) * CASE WHEN contrstate = 'Active' THEN 1 ELSE 0.5 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Vendor Reliability Index (VRI) \u2014 KB #6: VendSecRate value \xD7\
     \ (1 if ContrState='Active' else 0.5).\n\n[kb=6]\nVRI = \\text{VendSecRate value}\
     \ \\times \\begin{cases} 1 & \\text{if ContrState = 'Active'} \\\\ 0.5 & \\text{otherwise}\
@@ -144,6 +166,7 @@ columns:
     * 1.0 / NULLIF(riskmanagement.ctrleff, 0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Vendor Risk Amplification (VRA) \u2014 KB #38: VRI \xD7 RES.\n\n[kb=38]\n\
     VRA = \\text{VRI} \\times \\text{RES} \u2014 Quantifies how vendor issues amplify\
     \ overall risk exposure.\n[/kb=38]"
@@ -159,6 +182,7 @@ columns:
     contrstate = 'Active' THEN 1 ELSE 0.5 END))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Vendor Risk Concentration (VRC) \u2014 KB #53: VRA \xD7 (1 \u2212\
     \ VRI).\n\n[kb=53]\nVRC = \\text{VRA} \\times (1 - \\text{VRI}) \u2014 Assesses\
     \ the concentration of risk from a vendor\u2019s compliance and security issues.\n\
@@ -175,6 +199,7 @@ columns:
     THEN 1 ELSE 0.5 END) < 3 THEN 'Medium Risk' ELSE 'Low Risk' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Vendor Risk Tier (KB #16): High Risk if VRI<2, Medium if 2\u2264VRI<3,\
     \ Low if VRI\u22653.\n\n[kb=16]\nA vendor is: High Risk if VRI < 2, Medium Risk\
     \ if 2 \u2264 VRI < 3, Low Risk if VRI \u2265 3 \u2014 Categorizes vendors into\
@@ -187,6 +212,7 @@ columns:
   sql: polcomp = 'Non-compliant' OR proccomp = 'Non-compliant'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Non-Compliant Vendor (KB #12): PolComp='Non-compliant' OR ProcComp='Non-compliant'.\n\
     \n[kb=12]\nA vendor where PolComp = 'Non-compliant' or ProcComp = 'Non-compliant'\
     \ \u2014 Identifies vendors failing compliance standards.\n[/kb=12]"

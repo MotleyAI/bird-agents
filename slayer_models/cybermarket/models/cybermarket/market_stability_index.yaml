@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: market_stability_index
 source_queries:
-- version: 3
+- version: 4
   name: vendor_disputes_per_market
   source_model: vendors
   measures:
@@ -14,18 +14,25 @@ source_queries:
   - name: esccomprate
     model: markets
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vendor_disputes_per_market
     columns:
     - name: msi
-      type: DOUBLE
       sql: (markets__mktspan * 1.0 / 365) * (markets__esccomprate * 1.0 / 100) * (1
         - venddisputecount_sum * 1.0 / NULLIF(vendtxcount_sum, 0)) * 100
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: mktref
   - name: msi
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vendor_disputes_per_market.mktref\" AS mktref, \"vendor_disputes_per_market.msi\"\
   \ AS msi FROM (SELECT\n  vendor_disputes_per_market.mktref AS \"vendor_disputes_per_market.mktref\"\
@@ -47,11 +54,13 @@ columns:
   sql: mktref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: msi
   sql: msi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

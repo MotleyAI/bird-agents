@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: cross_platform_threat
 source_queries:
-- version: 3
+- version: 4
   name: account_scores
   source_model: moderationaction
   measures:
@@ -15,7 +15,9 @@ source_queries:
   - name: account_id
   - name: cluster_id
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: cluster_sockpuppet
   source_model: account_scores
   measures:
@@ -24,7 +26,9 @@ source_queries:
   dimensions:
   - name: cluster_id
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: account_scores
     joins:
@@ -32,6 +36,7 @@ source_queries:
       join_pairs:
       - - cluster_id
         - cluster_id
+      join_type: left
   measures:
   - formula: cluster_sockpuppet.any_sock:max
     name: cluster_in_sockpuppet
@@ -41,6 +46,8 @@ source_queries:
   - name: is_hra
   - name: cpri_v
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"account_scores.account_id\" AS account_id, \"account_scores.cluster_id\"\
   \ AS cluster_id, \"account_scores.is_hra\" AS is_hra, \"account_scores.cpri_v\"\
@@ -130,6 +137,7 @@ columns:
   sql: account_id
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row account identifier resolved through the moderationaction \u2192\
     \ contentbehavior \u2192 sessionbehavior \u2192 profile join chain. Convenience\
     \ handle for grouping/multistage; equals the underlying account.accindex."
@@ -138,6 +146,7 @@ columns:
   sql: cluster_id
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row cluster identifier resolved through the moderationaction \u2192\
     \ contentbehavior \u2192 sessionbehavior \u2192 profile \u2192 account join chain.\
     \ Equals account.platident; per KB #80, this is the cluster identifier used to\
@@ -147,6 +156,7 @@ columns:
   sql: is_hra
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'High-Risk Account predicate (KB #10): SRS > 0.8 AND threatlvl=''Critical''.
     1=true.'
   hidden: false
@@ -154,6 +164,7 @@ columns:
   sql: cpri_v
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Cross-Platform Risk Index (KB #30): SRS * (1 + 0.2 * ipcountrynum).
     Inlines SRS to avoid cross-column reference inside Column.sql.'
   hidden: false
@@ -163,6 +174,7 @@ columns:
   sql: cluster_sockpuppet__any_sock_max
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

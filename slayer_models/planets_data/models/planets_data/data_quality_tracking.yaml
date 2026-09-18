@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: data_quality_tracking
 sql_table: data_quality_tracking
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: qualityref
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: targetlink
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -22,6 +24,7 @@ columns:
   sql: perioderr1
   type: INT
   primary_key: false
+  unique: false
   description: +1-sigma uncertainty in orbital period (days).
   hidden: false
   format:
@@ -31,6 +34,7 @@ columns:
   sql: perioderr2
   type: INT
   primary_key: false
+  unique: false
   description: -1-sigma uncertainty in orbital period (days, typically negative).
   hidden: false
   format:
@@ -40,6 +44,7 @@ columns:
   sql: semimajerr1
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -47,6 +52,7 @@ columns:
   sql: semimajerr2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -54,6 +60,7 @@ columns:
   sql: eccerr1
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -61,6 +68,7 @@ columns:
   sql: eccerr2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -68,6 +76,7 @@ columns:
   sql: inclerr1
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -75,6 +84,7 @@ columns:
   sql: inclerr2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -82,6 +92,7 @@ columns:
   sql: masserr1
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -89,6 +100,7 @@ columns:
   sql: masserr2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -96,6 +108,7 @@ columns:
   sql: raderr1
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -103,6 +116,7 @@ columns:
   sql: raderr2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -110,6 +124,7 @@ columns:
   sql: denserr1
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -117,6 +132,7 @@ columns:
   sql: denserr2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -124,6 +140,7 @@ columns:
   sql: disterr1
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -131,6 +148,7 @@ columns:
   sql: disterr2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -138,6 +156,7 @@ columns:
   sql: optmagerr
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -145,6 +164,7 @@ columns:
   sql: temperr1
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -152,6 +172,7 @@ columns:
   sql: temperr2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -159,6 +180,7 @@ columns:
   sql: stellarmasserr1
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -166,6 +188,7 @@ columns:
   sql: stellarmasserr2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -173,6 +196,7 @@ columns:
   sql: stellarraderr1
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -180,6 +204,7 @@ columns:
   sql: stellarraderr2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -187,6 +212,7 @@ columns:
   sql: masssource
   type: TEXT
   primary_key: false
+  unique: false
   description: "Mass determination method (KB #34). 'Msini' = minimum mass from radial\
     \ velocity (M*sin(i)); 'Mass' = true mass; 'Msin(i)/sin(i)' = inclination-corrected.\n\
     \n[kb=34]\nA flag indicating that the planet's mass was determined using a method\
@@ -201,11 +227,13 @@ columns:
   sql: updatestamp
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: limitflags
   sql: limitflags
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSONB grouping limit flags for planetary and stellar parameters. Each\
     \ flag is 0 (measured), 1 (upper limit per KB #35), or -1 (lower limit). Sub-paths:\
     \ $.planetary_limits.{Period_Lim,Semimaj_Lim,Ecc_Lim,Incl_Lim,Mass_Lim,Rad_Lim,Dens_Lim}\
@@ -221,6 +249,7 @@ columns:
   sql: masssource = 'Msini'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Minimum Mass Status (KB #34): mass was measured via radial velocity\
     \ so the value is M*sin(i), a lower bound on true mass.\n\n[kb=34]\nA flag indicating\
     \ that the planet's mass was determined using a method (like radial velocity)\
@@ -232,10 +261,11 @@ columns:
   meta:
     kb_id: 34
 - name: period_rel_uncertainty
-  sql: ABS((perioderr1 - perioderr2) / 2.0) / NULLIF(planets__orbital_characteristics.period,
+  sql: ABS((perioderr1 - perioderr2) / 2.0) / NULLIF(planets.orbital_characteristics.period,
     0) * 100.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Relative uncertainty in orbital period (KB #8) as a percent: U_rel\
     \ = ((e1 - e2) / 2) / v * 100. Wraps with ABS so the result is a magnitude regardless\
     \ of sign convention.\n\n[kb=8]\nFor a value $v$ with positive error $e_1$ and\
@@ -247,10 +277,11 @@ columns:
   meta:
     kb_id: 8
 - name: mass_rel_uncertainty
-  sql: ABS((masserr1 - masserr2) / 2.0) / NULLIF(planets__physical_properties.massjup,
+  sql: ABS((masserr1 - masserr2) / 2.0) / NULLIF(planets.physical_properties.massjup,
     0) * 100.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Relative uncertainty in planetary mass (KB #8) as a percent.\n\n[kb=8]\n\
     For a value $v$ with positive error $e_1$ and negative error $e_2$, the relative\
     \ uncertainty ($U_{rel}$) is: $U_{rel} = \\frac{(e_1 - e_2) / 2}{v} \\times 100\\\
@@ -261,10 +292,11 @@ columns:
   meta:
     kb_id: 8
 - name: radius_rel_uncertainty
-  sql: ABS((raderr1 - raderr2) / 2.0) / NULLIF(planets__physical_properties.radjup,
+  sql: ABS((raderr1 - raderr2) / 2.0) / NULLIF(planets.physical_properties.radjup,
     0) * 100.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Relative uncertainty in planetary radius (KB #8) as a percent.\n\n\
     [kb=8]\nFor a value $v$ with positive error $e_1$ and negative error $e_2$, the\
     \ relative uncertainty ($U_{rel}$) is: $U_{rel} = \\frac{(e_1 - e_2) / 2}{v} \\\
@@ -275,10 +307,11 @@ columns:
   meta:
     kb_id: 8
 - name: is_period_high_precision
-  sql: ABS((perioderr1 - perioderr2) / 2.0) / NULLIF(planets__orbital_characteristics.period,
+  sql: ABS((perioderr1 - perioderr2) / 2.0) / NULLIF(planets.orbital_characteristics.period,
     0) * 100.0 < 5.0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High-Precision Measurement of orbital period (KB #29): relative uncertainty\
     \ < 5%.\n\n[kb=29]\nA parameter for which the calculated Relative Uncertainty\
     \ is less than 5%. \u2014 Indicates that a specific physical or orbital parameter\
@@ -288,10 +321,11 @@ columns:
   meta:
     kb_id: 29
 - name: is_mass_high_precision
-  sql: ABS((masserr1 - masserr2) / 2.0) / NULLIF(planets__physical_properties.massjup,
+  sql: ABS((masserr1 - masserr2) / 2.0) / NULLIF(planets.physical_properties.massjup,
     0) * 100.0 < 5.0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High-Precision Measurement of planetary mass (KB #29): relative uncertainty\
     \ < 5%.\n\n[kb=29]\nA parameter for which the calculated Relative Uncertainty\
     \ is less than 5%. \u2014 Indicates that a specific physical or orbital parameter\
@@ -301,10 +335,11 @@ columns:
   meta:
     kb_id: 29
 - name: is_radius_high_precision
-  sql: ABS((raderr1 - raderr2) / 2.0) / NULLIF(planets__physical_properties.radjup,
+  sql: ABS((raderr1 - raderr2) / 2.0) / NULLIF(planets.physical_properties.radjup,
     0) * 100.0 < 5.0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High-Precision Measurement of planetary radius (KB #29): relative\
     \ uncertainty < 5%.\n\n[kb=29]\nA parameter for which the calculated Relative\
     \ Uncertainty is less than 5%. \u2014 Indicates that a specific physical or orbital\
@@ -314,12 +349,13 @@ columns:
   meta:
     kb_id: 29
 - name: is_well_characterized
-  sql: ABS((perioderr1 - perioderr2) / 2.0) / NULLIF(planets__orbital_characteristics.period,
-    0) * 100.0 < 5.0 AND ABS((masserr1 - masserr2) / 2.0) / NULLIF(planets__physical_properties.massjup,
-    0) * 100.0 < 5.0 AND ABS((raderr1 - raderr2) / 2.0) / NULLIF(planets__physical_properties.radjup,
+  sql: ABS((perioderr1 - perioderr2) / 2.0) / NULLIF(planets.orbital_characteristics.period,
+    0) * 100.0 < 5.0 AND ABS((masserr1 - masserr2) / 2.0) / NULLIF(planets.physical_properties.massjup,
+    0) * 100.0 < 5.0 AND ABS((raderr1 - raderr2) / 2.0) / NULLIF(planets.physical_properties.radjup,
     0) * 100.0 < 5.0
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Well-Characterized Planet (KB #30): mass, radius, and period are all\
     \ High-Precision Measurements.\n\n[kb=30]\nA planet where the measurements for\
     \ mass, radius, and orbital period are all considered High-Precision Measurements.\
@@ -334,6 +370,7 @@ columns:
     = 1
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Upper Limit Value flag for orbital period (KB #35): the recorded period\
     \ is an upper bound, not an exact measurement.\n\n[kb=35]\nA quality flag on a\
     \ parameter signifying that its true value is less than or equal to the stated\
@@ -348,6 +385,7 @@ columns:
     1
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Upper Limit Value flag for planetary mass (KB #35).\n\n[kb=35]\nA\
     \ quality flag on a parameter signifying that its true value is less than or equal\
     \ to the stated value. \u2014 Indicates that a measured value for a parameter\
@@ -360,6 +398,7 @@ columns:
   sql: CAST(json_extract(limitflags, '$.planetary_limits.Rad_Lim') AS INTEGER) = 1
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Upper Limit Value flag for planetary radius (KB #35).\n\n[kb=35]\n\
     A quality flag on a parameter signifying that its true value is less than or equal\
     \ to the stated value. \u2014 Indicates that a measured value for a parameter\

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: orders
 sql_table: orders
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: orderspivot
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,41 +16,49 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: timecode
   sql: timecode
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: exchspot
   sql: exchspot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: mktnote
   sql: mktnote
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: orderstamp
   sql: orderstamp
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: userlink
   sql: userlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ordertune
   sql: ordertune
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: dealedge
   sql: dealedge
   type: TEXT
   primary_key: false
+  unique: false
   description: "Order side enum (KB #20): 'Buy' = purchase the base asset using the\
     \ quote (e.g. buy BTC with USDT). 'Sell' = sell the base asset for the quote.\n\
     \n[kb=20]\nAn enum with values 'Buy' or 'Sell'. 'Buy' indicates the order is to\
@@ -65,6 +74,7 @@ columns:
   sql: dealquote
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -72,6 +82,7 @@ columns:
   sql: dealcount
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -79,6 +90,7 @@ columns:
   sql: notionsum
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -86,6 +98,7 @@ columns:
   sql: orderflow
   type: TEXT
   primary_key: false
+  unique: false
   description: "Order status enum (KB #21): 'New' = newly placed, unmatched. 'PartiallyFilled'\
     \ = some portion executed. 'Cancelled' = cancelled before full execution. 'Filled'\
     \ = completely executed.\n\n[kb=21]\nAn enum with values 'New', 'PartiallyFilled',\
@@ -102,6 +115,7 @@ columns:
   sql: timespan
   type: TEXT
   primary_key: false
+  unique: false
   description: "Time-in-force enum (KB #22): 'IOC' = immediate-or-cancel. 'GTC' =\
     \ good-till-cancelled. 'GTD' = good-till-date. 'FOK' = fill-or-kill.\n\n[kb=22]\n\
     An enum with values 'IOC', 'GTC', 'GTD', or 'FOK'. 'IOC' (Immediate-or-Cancel)\
@@ -118,21 +132,25 @@ columns:
   sql: orderbase
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: clientmark
   sql: clientmark
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: createspot
   sql: createspot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: updatespot
   sql: updatespot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

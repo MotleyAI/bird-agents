@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: environmentalreadingscore
 sql_table: environmentalreadingscore
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: envreadregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,21 +16,25 @@ columns:
   sql: monitorcode
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: readtimestamp
   sql: readtimestamp
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: showcaseref
   sql: showcaseref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tempc
   sql: tempc
   type: INT
   primary_key: false
+  unique: false
   description: "Temperature in Celsius (KB #27): typical 15-25; ideal 18-22; >2 deg\
     \ fluctuation in 24h stresses materials; <10 or >30 indicates control failure.\n\
     \n[kb=27]\nValues typically range from 15-25\xB0C, with 18-22\xB0C being ideal\
@@ -47,6 +52,7 @@ columns:
   sql: tempvar24h
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -54,6 +60,7 @@ columns:
   sql: relhumidity
   type: INT
   primary_key: false
+  unique: false
   description: "Relative humidity %% (KB #28): typical 30-65; ideal 45-55 for mixed\
     \ collections; >5 pp fluctuation/24h causes dimensional changes; <30 risks embrittlement;\
     \ >65 risks mold.\n\n[kb=28]\nValues typically range from 30-65%, with 45-55%\
@@ -71,6 +78,7 @@ columns:
   sql: humvar24h
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -78,6 +86,7 @@ columns:
   sql: airpresshpa
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -85,6 +94,7 @@ columns:
   sql: 10 - (tempvar24h + (humvar24h / 5.0) + showcases.leakrate) / 3.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Showcase Environmental Stability Rating (KB #5): 10 - (TempVar24h\
     \ + HumVar24h/5 + LeakRate)/3. Higher = more stable showcase.\n\n[kb=5]\nSESR\
     \ = 10 - \\frac{(TempVar24h + \\frac{HumVar24h}{5} + LeakRate)}{3}, \\text{where\
@@ -98,6 +108,7 @@ columns:
   sql: tempvar24h > 1 OR humvar24h > 3
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Environmental Instability Event (KB #13): TempVar24h > 1C OR HumVar24h\
     \ > 3 within 24h.\n\n[kb=13]\nOccurs when TempVar24h > 1\xB0C OR HumVar24h > 3\
     \ within a 24-hour period. \u2014 Identifies periods when showcase environmental\
@@ -114,6 +125,7 @@ columns:
     ELSE 0 END) >= 3
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Showcase Failure Risk (KB #16): SESR<4 OR >=3 of {SealCondition='Poor',\
     \ MaintStatus='Overdue', FilterStatus='Replace Now', SilicaGelStatus='Replace\
     \ Now'}.\n\n[kb=16]\nOccurs when SESR < 4 OR at least three of the following are\
@@ -133,11 +145,6 @@ joins:
     - showcasereg
   join_type: left
 - target_model: lightandradiationreadings
-  join_pairs:
-  - - envreadregistry
-    - envreadref
-  join_type: left
-- target_model: airqualityreadings
   join_pairs:
   - - envreadregistry
     - envreadref

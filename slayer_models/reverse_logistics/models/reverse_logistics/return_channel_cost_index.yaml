@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: return_channel_cost_index
 source_queries:
-- version: 3
+- version: 4
   name: avg_fee_per_channel
   source_model: returns
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: return_channel
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: returns
     joins:
@@ -18,6 +20,7 @@ source_queries:
       join_pairs:
       - - return_channel
         - return_channel
+      join_type: left
   measures:
   - formula: shipping_fee:avg / avg_fee_per_channel.channel_avg_fee:avg
     name: rcci
@@ -25,6 +28,8 @@ source_queries:
   - name: casenum
   - name: return_channel
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"returns.casenum\" AS casenum, \"returns.return_channel\"\
   \ AS return_channel, \"returns.shipping_fee_avg\" AS shipping_fee_avg, \"returns.rcci\"\
@@ -54,11 +59,13 @@ columns:
   sql: casenum
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: return_channel
   sql: return_channel
   type: TEXT
   primary_key: false
+  unique: false
   description: "Return Channels \u2014 pathway through which the customer sent the\
     \ item back. 'Store' (in-person retail outlet), 'Courier' (doorstep pickup), 'Mail'\
     \ (national post), 'Locker' (automated drop-box), 'Pickup' (retailer-scheduled\
@@ -68,6 +75,7 @@ columns:
   sql: shipping_fee_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Shipping Fee (S_f): cost charged by the logistics provider for transporting
     the returned item.'
   hidden: false
@@ -77,6 +85,7 @@ columns:
   sql: rcci
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -84,6 +93,7 @@ columns:
   sql: avg_fee_per_channel__channel_avg_fee_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: trader_intensity_metrics
 sql: "SELECT\n  t.tradereg,\n  t.voldaily * 1.0 / NULLIF(t.acctbal, 0) AS dtr,\n \
   \ CAST(json_extract(t.trading_performance, '$.risklevel.levratio') AS REAL) AS tle,\n\
@@ -21,36 +21,43 @@ columns:
   sql: tradereg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: dtr
   sql: dtr
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: tle
   sql: tle
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: rat
   sql: rat
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: avg_omi
   sql: avg_omi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: avg_sai
   sql: avg_sai
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: ati
   sql: dtr * tle * avg_omi
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Aggressive Trading Intensity (ATI = DTR * TLE * avg(OMI)) \u2014 KB\
     \ #36.\n\n[kb=36]\nATI = \\text{DTR} \\times \\text{TLE} \\times \\text{OMI}.\
     \ \u2014 Measures intensity by combining high turnover, leverage, and order modification\
@@ -63,6 +70,7 @@ columns:
   sql: avg_sai * dtr
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Suspicion-Weighted Turnover (SWT = avg(SAI) * DTR) \u2014 KB #37.\n\
     \n[kb=37]\nSWT = \\text{SAI} \\times \\text{DTR} \\\\ \\text{where SAI is Suspicious\
     \ Activity Index  and DTR is Daily Turnover Rate .} \u2014 Calculates daily turnover\
@@ -75,6 +83,7 @@ columns:
   sql: rat > 1.0 AND avg_sai > 0.6
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High Velocity Suspicion Trader (KB #66): RAT > 1.0 AND avg(SAI) >\
     \ 0.6.\n\n[kb=66]\nA trader with a high Risk-Adjusted Turnover (RAT)  (e.g., >\
     \ 1.0) AND a high Suspicious Activity Index (SAI)  (e.g., > 0.6). \u2014 Identifies\
@@ -88,6 +97,7 @@ columns:
   sql: avg_sai * (dtr * tle * avg_omi)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Aggressive Suspicion Score (ASS = SAI * ATI) \u2014 KB #54. Uses avg(SAI)\
     \ per trader and ATI = DTR * TLE * avg(OMI).\n\n[kb=54]\nASS = \\text{SAI} \\\
     times \\text{ATI} \u2014 Combines overall suspicious activity index with aggressive\

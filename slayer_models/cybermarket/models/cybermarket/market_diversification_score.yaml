@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: market_diversification_score
 source_queries:
-- version: 3
+- version: 4
   name: subcat_per_market
   source_model: products
   measures:
@@ -11,7 +11,9 @@ source_queries:
   - name: mktref
     model: vendors
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: tx_per_market
   source_model: transactions
   measures:
@@ -20,34 +22,46 @@ source_queries:
   dimensions:
   - name: mktref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: markets
-    joins:
-    - target_model: subcat_per_market
-      join_pairs:
-      - - mktregistry
-        - vendors__mktref
-    - target_model: tx_per_market
-      join_pairs:
-      - - mktregistry
-        - mktref
     columns:
     - name: mds
-      type: DOUBLE
       sql: (COALESCE(subcat_per_market.distinct_prodsubcat_count, 0) * 1.0 / 5) +
         (markets.vendcount * 1.0 / 50) + ((COALESCE(tx_per_market.tx_count, 0) * 1.0
         / NULLIF(markets.vendcount, 0)) * 0.5) - ((CASE markets.mktclass WHEN 'Forum'
         THEN 1 WHEN 'Service' THEN 2 WHEN 'Marketplace' THEN 4 WHEN 'Exchange' THEN
         3 ELSE 0 END) * 1.0 / 10)
-    - name: distinct_prodsubcat_count_col
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: distinct_prodsubcat_count_col
       sql: COALESCE(subcat_per_market.distinct_prodsubcat_count, 0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: subcat_per_market
+      join_pairs:
+      - - mktregistry
+        - vendors__mktref
+      join_type: left
+    - target_model: tx_per_market
+      join_pairs:
+      - - mktregistry
+        - mktref
+      join_type: left
   dimensions:
   - name: mktregistry
   - name: mds
   - name: distinct_prodsubcat_count_col
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"markets.mktregistry\" AS mktregistry, \"markets.mds\"\
   \ AS mds, \"markets.distinct_prodsubcat_count_col\" AS distinct_prodsubcat_count_col\
@@ -77,16 +91,19 @@ columns:
   sql: mktregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: mds
   sql: mds
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: distinct_prodsubcat_count_col
   sql: distinct_prodsubcat_count_col
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

@@ -1,24 +1,32 @@
-version: 6
+version: 10
 name: _debug_v2
 source_queries:
-- version: 3
+- version: 4
   name: fac_with_jk
   source_model:
     source_name: facility_metrics
     columns:
     - name: _jk
-      type: DOUBLE
       sql: '1'
-    - name: psm_row
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: psm_row
       sql: 1.0 / (1 + tb_per_fac__cif + enc_per_fac__mar)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: fackey
   - name: _jk
   - name: tox_per_fac__tar
   - name: psm_row
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: median_tar
   source_model: fac_with_jk
   measures:
@@ -27,7 +35,9 @@ source_queries:
   dimensions:
   - name: _jk
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: median_psm
   source_model: fac_with_jk
   measures:
@@ -36,30 +46,39 @@ source_queries:
   dimensions:
   - name: _jk
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: fac_with_jk
-    joins:
-    - target_model: median_tar
-      join_pairs:
-      - - _jk
-        - _jk
-    - target_model: median_psm
-      join_pairs:
-      - - _jk
-        - _jk
     columns:
     - name: quadrant
-      type: TEXT
       sql: CASE WHEN tox_per_fac__tar >= median_tar__median_tar AND psm_row >= median_psm__median_psm
         THEN 'High Adherence, High Stability' WHEN tox_per_fac__tar >= median_tar__median_tar
         AND psm_row < median_psm__median_psm THEN 'High Adherence, Low Stability'
         WHEN tox_per_fac__tar < median_tar__median_tar AND psm_row >= median_psm__median_psm
         THEN 'Low Adherence, High Stability' ELSE 'Low Adherence, Low Stability' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: median_tar
+      join_pairs:
+      - - _jk
+        - _jk
+      join_type: left
+    - target_model: median_psm
+      join_pairs:
+      - - _jk
+        - _jk
+      join_type: left
   dimensions:
   - name: fackey
   - name: quadrant
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"fac_with_jk.fackey\" AS fackey, \"fac_with_jk.quadrant\"\
   \ AS quadrant FROM (SELECT\n  fac_with_jk.fackey AS \"fac_with_jk.fackey\",\n  CASE\n\
@@ -263,11 +282,13 @@ columns:
   sql: fackey
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: quadrant
   sql: quadrant
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

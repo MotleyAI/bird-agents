@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: latest_bot_likelihood_score
 source_queries:
-- version: 3
+- version: 4
   name: ranked_detections
   source_model: securitydetection
   dimensions:
@@ -9,13 +9,18 @@ source_queries:
   - name: detecttime
   - name: botlikscore
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: ranked_detections
     columns:
     - name: rn
-      type: DOUBLE
       sql: ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY detecttime DESC)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: account_id
   - name: botlikscore
@@ -23,6 +28,8 @@ source_queries:
   filters:
   - rn = 1
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"ranked_detections.account_id\" AS account_id, \"ranked_detections.botlikscore\"\
   \ AS botlikscore, \"ranked_detections.rn\" AS rn FROM (SELECT *\nFROM (\nWITH base\
@@ -53,6 +60,7 @@ columns:
   sql: account_id
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row account identifier resolved through the securitydetection\
     \ \u2192 technicalinfo \u2192 networkmetrics \u2192 sessionbehavior \u2192 profile\
     \ join chain. Convenience handle for grouping/multistage; equals the underlying\
@@ -62,6 +70,7 @@ columns:
   sql: botlikscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Bot-likelihood score (KB #29). Range 0-100; >70 strongly indicates
     bot behavior.'
   hidden: false
@@ -69,6 +78,7 @@ columns:
   sql: rn
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

@@ -1,7 +1,7 @@
-version: 7
+version: 10
 name: comprehensive_operational_reliability_indicator
 source_queries:
-- version: 3
+- version: 4
   name: ors_per_eq_cori
   source_model: operationmaintenance
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: opmainteqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: cri_per_eq_cori
   source_model: communication
   measures:
@@ -19,7 +21,9 @@ source_queries:
   dimensions:
   - name: commeqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: eer_per_eq_cori
   source_model: equipment
   measures:
@@ -28,7 +32,9 @@ source_queries:
   dimensions:
   - name: equipmentcode
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: eer_per_eq_cori
     joins:
@@ -36,16 +42,20 @@ source_queries:
       join_pairs:
       - - equipmentcode
         - opmainteqref
+      join_type: left
     - target_model: cri_per_eq_cori
       join_pairs:
       - - equipmentcode
         - commeqref
+      join_type: left
   measures:
   - formula: 0.4 * eer:avg + 0.4 * ors_per_eq_cori.ors:avg + 0.2 * cri_per_eq_cori.cri:avg
     name: cori
   dimensions:
   - name: equipmentcode
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"eer_per_eq_cori.equipmentcode\" AS equipmentcode, \"\
   eer_per_eq_cori.eer_avg\" AS eer_avg, \"eer_per_eq_cori.cori\" AS cori, \"eer_per_eq_cori.cri_per_eq_cori.cri_avg\"\
@@ -96,11 +106,13 @@ columns:
   sql: equipmentcode
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: eer_avg
   sql: eer_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Equipment Efficiency Rating (KB #0): mean of perf/reliability x (1
     - env-impact/10).'
   hidden: false
@@ -110,6 +122,7 @@ columns:
   sql: cori
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -117,6 +130,7 @@ columns:
   sql: cri_per_eq_cori__cri_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -124,6 +138,7 @@ columns:
   sql: ors_per_eq_cori__ors_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

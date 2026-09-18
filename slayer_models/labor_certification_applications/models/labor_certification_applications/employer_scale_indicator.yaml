@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: employer_scale_indicator
 source_queries:
-- version: 3
+- version: 4
   name: emp_apps
   source_model: cases
   measures:
@@ -9,23 +9,33 @@ source_queries:
   dimensions:
   - name: homefirm
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: emp_apps
     columns:
     - name: esi
-      type: DOUBLE
       sql: _count * 1.0 / AVG(_count) OVER ()
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: size_class
-      type: TEXT
       sql: CASE WHEN _count < 5 THEN 'Small-scale' WHEN _count <= 25 THEN 'Medium-scale'
         ELSE 'Large-scale' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: homefirm
   - name: _count
   - name: esi
   - name: size_class
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"emp_apps.homefirm\" AS homefirm, \"emp_apps._count\"\
   \ AS _count, \"emp_apps.esi\" AS esi, \"emp_apps.size_class\" AS size_class FROM\
@@ -43,11 +53,13 @@ columns:
   sql: homefirm
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: _count
   sql: _count
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -55,11 +67,13 @@ columns:
   sql: esi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: size_class
   sql: size_class
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

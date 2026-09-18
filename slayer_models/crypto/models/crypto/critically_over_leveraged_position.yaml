@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: critically_over_leveraged_position
 source_queries:
-- version: 3
+- version: 4
   name: olp
   source_model: over_leveraged_position
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: recordvault
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: el
   source_model: effective_leverage
   measures:
@@ -19,7 +21,9 @@ source_queries:
   dimensions:
   - name: recordvault
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: mu
   source_model: margin_utilization
   measures:
@@ -28,26 +32,35 @@ source_queries:
   dimensions:
   - name: recordvault
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: olp
+    columns:
+    - name: is_critical
+      sql: olp.is_olp = 1 AND el.el_v > 20 AND mu.mu_v > 90
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: el
       join_pairs:
       - - recordvault
         - recordvault
+      join_type: left
     - target_model: mu
       join_pairs:
       - - recordvault
         - recordvault
-    columns:
-    - name: is_critical
-      type: BOOLEAN
-      sql: olp.is_olp = 1 AND el.el_v > 20 AND mu.mu_v > 90
+      join_type: left
   dimensions:
   - name: recordvault
   - name: is_critical
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"olp.recordvault\" AS recordvault, \"olp.is_critical\"\
   \ AS is_critical FROM (SELECT\n  olp.recordvault AS \"olp.recordvault\",\n  olp.is_olp\
@@ -135,11 +148,13 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_critical
   sql: is_critical
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

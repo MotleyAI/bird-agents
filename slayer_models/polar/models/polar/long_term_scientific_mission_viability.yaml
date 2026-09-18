@@ -1,50 +1,65 @@
-version: 7
+version: 10
 name: long_term_scientific_mission_viability
 source_queries:
-- version: 3
+- version: 4
   name: smsp_p_eq_lsmv
   source_model:
     source_name: scientific_mission_success_probability
     columns:
     - name: smsp_ok_flag
-      type: DOUBLE
       sql: CASE WHEN smsp > 0.8 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: smsp_ok_flag:min
     name: smsp_ok
   dimensions:
   - name: scieqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: cori_p_eq_lsmv
   source_model:
     source_name: comprehensive_operational_reliability_indicator
     columns:
     - name: cori_ok_flag
-      type: DOUBLE
       sql: CASE WHEN cori > 0.75 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: cori_ok_flag:min
     name: cori_ok
   dimensions:
   - name: equipmentcode
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: sci_p_eq_lsmv
   source_model:
     source_name: scientific
     columns:
     - name: sci_ok_flag
-      type: DOUBLE
       sql: CASE WHEN calibrationstatus = 'Valid' AND dataloggingstatus = 'Active'
         THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: sci_ok_flag:min
     name: sci_ok
   dimensions:
   - name: scieqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: sci_p_eq_lsmv
     joins:
@@ -52,16 +67,20 @@ source_queries:
       join_pairs:
       - - scieqref
         - scieqref
+      join_type: left
     - target_model: cori_p_eq_lsmv
       join_pairs:
       - - scieqref
         - equipmentcode
+      join_type: left
   measures:
   - formula: sci_ok:min * smsp_p_eq_lsmv.smsp_ok:min * cori_p_eq_lsmv.cori_ok:min
     name: is_lsmv
   dimensions:
   - name: scieqref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"sci_p_eq_lsmv.scieqref\" AS scieqref, \"sci_p_eq_lsmv.sci_ok_min\"\
   \ AS sci_ok_min, \"sci_p_eq_lsmv.is_lsmv\" AS is_lsmv, \"sci_p_eq_lsmv.cori_p_eq_lsmv.cori_ok_min\"\
@@ -202,16 +221,19 @@ columns:
   sql: scieqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sci_ok_min
   sql: sci_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_lsmv
   sql: is_lsmv
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -219,11 +241,13 @@ columns:
   sql: cori_p_eq_lsmv__cori_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: smsp_p_eq_lsmv__smsp_ok_min
   sql: smsp_p_eq_lsmv__smsp_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

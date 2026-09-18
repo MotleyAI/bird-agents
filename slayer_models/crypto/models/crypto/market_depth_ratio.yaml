@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: market_depth_ratio
 source_queries:
-- version: 3
+- version: 4
   name: depth_per_pair
   source_model: marketdata
   measures:
@@ -12,7 +12,9 @@ source_queries:
   dimensions:
   - name: mktcombo
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: lr_per_pair
   source_model: marketstats
   measures:
@@ -22,32 +24,42 @@ source_queries:
   - name: mktcombo
     model: marketdata
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: orders
+    columns:
+    - name: mdr_value
+      sql: (CASE WHEN (riskandmargin.risk_margin_profile ->> '$.position.posedge')
+        = 'Long' THEN depth_per_pair.biddepth_avg ELSE depth_per_pair.askdepth_avg
+        END) / NULLIF(orders.dealcount, 0) * lr_per_pair.lr_avg
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: depth_per_pair
       join_pairs:
       - - mktnote
         - mktcombo
+      join_type: left
     - target_model: lr_per_pair
       join_pairs:
       - - mktnote
         - marketdata__mktcombo
+      join_type: left
     - target_model: riskandmargin
       join_pairs:
       - - recordvault
         - ordervault
-    columns:
-    - name: mdr_value
-      type: DOUBLE
-      sql: (CASE WHEN (riskandmargin.risk_margin_profile ->> '$.position.posedge')
-        = 'Long' THEN depth_per_pair.biddepth_avg ELSE depth_per_pair.askdepth_avg
-        END) / NULLIF(orders.dealcount, 0) * lr_per_pair.lr_avg
+      join_type: left
   dimensions:
   - name: recordvault
   - name: mdr_value
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.mdr_value\"\
   \ AS mdr_value FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\",\n \
@@ -80,11 +92,13 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: mdr_value
   sql: mdr_value
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

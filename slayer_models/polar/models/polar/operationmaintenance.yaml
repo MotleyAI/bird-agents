@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: operationmaintenance
 sql_table: operationmaintenance
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: opmaintregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: opmainteqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: opmaintlocref
   sql: opmaintlocref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -27,6 +30,7 @@ columns:
   sql: operationhours
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Cumulative active-use hours. New: 0\u2013100, mid-life: 100\u2013\
     1000, near-replacement: high (KB #21).\n\n[kb=21]\nOperation hours represent the\
     \ cumulative time an equipment has been in active use. New equipment typically\
@@ -45,6 +49,7 @@ columns:
   sql: maintenancecyclehours
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -52,41 +57,49 @@ columns:
   sql: lastmaintenancedate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: nextmaintenancedue
   sql: nextmaintenancedue
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: operationalstatus
   sql: operationalstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: crewcertificationstatus
   sql: crewcertificationstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: inspectionstatus
   sql: inspectionstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: compliancestatus
   sql: compliancestatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: documentationstatus
   sql: documentationstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: opmaintcommref
   sql: opmaintcommref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -94,12 +107,14 @@ columns:
   sql: costmetrics
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ors
   sql: CASE operationalstatus WHEN 'Active' THEN 10 WHEN 'Standby' THEN 5 ELSE 0 END
     * (1 - operationhours * 1.0 / NULLIF(maintenancecyclehours, 0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Operational Readiness Score (KB #1): 10 x (1 - operationhours/maintenancecyclehours)\
     \ if Active, 5 x (...) if Standby, 0 otherwise.\n\n[kb=1]\nORS = \\begin{cases}\
     \ 10 \\times (1 - \\frac{operationhours}{maintenancecyclehours}) & \\text{if operationalstatus\
@@ -117,6 +132,7 @@ columns:
     0))) * (1 - operationhours / 20000.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Long-term Operational Stability Score (KB #37): 0.5 x EER + 0.5 x\
     \ ORS x (1 - operationhours/20000). Cross-table to equipment via existing FK join.\n\
     \n[kb=37]\nLOSS = 0.5 \xD7 EER + 0.5 \xD7 ORS \xD7 (1 - \\frac{operationhours}{20000})\
@@ -131,6 +147,7 @@ columns:
     'Scheduled Service' ELSE 'Routine Maintenance' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Maintenance Priority Level (KB #12): Immediate Attention (operationhours\
     \ > maintenancecyclehours OR status='Repair'), Scheduled Service (operationhours\
     \ > 0.8 * maintenancecyclehours), Routine Maintenance (otherwise).\n\n[kb=12]\n\

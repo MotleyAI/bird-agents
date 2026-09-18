@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: observationalconditions
 sql_table: observationalconditions
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: signalref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: obstime
   sql: obstime
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: obsdate
   sql: obsdate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: obsdurhrs
   sql: obsdurhrs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

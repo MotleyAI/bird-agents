@@ -1,15 +1,18 @@
-version: 7
+version: 10
 name: extreme_climate_adaptation_coefficient
 source_queries:
-- version: 3
+- version: 4
   name: weather_per_eq
   source_model:
     source_name: weatherandstructure
     columns:
     - name: ext_temp_factor
-      type: DOUBLE
       sql: CASE WHEN externaltemperaturec < -30 THEN 0.7 WHEN externaltemperaturec
         < -15 THEN 0.85 ELSE 1.0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: ssf:avg
     name: ssf
@@ -19,7 +22,9 @@ source_queries:
   - name: opmainteqref
     model: operationmaintenance
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: tie_per_eq
   source_model: thermalsolarwindandgrid
   measures:
@@ -28,7 +33,9 @@ source_queries:
   dimensions:
   - name: thermaleqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: weather_per_eq
     joins:
@@ -36,12 +43,15 @@ source_queries:
       join_pairs:
       - - operationmaintenance__opmainteqref
         - thermaleqref
+      join_type: left
   measures:
   - formula: ssf:avg * (1 + tie_per_eq.tie:avg * 0.5) * ext_factor:avg
     name: ecac
   dimensions:
   - name: operationmaintenance__opmainteqref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"weather_per_eq.operationmaintenance__opmainteqref\" AS\
   \ operationmaintenance__opmainteqref, \"weather_per_eq.ext_factor_avg\" AS ext_factor_avg,\
@@ -91,11 +101,13 @@ columns:
   sql: operationmaintenance__opmainteqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ext_factor_avg
   sql: ext_factor_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -103,6 +115,7 @@ columns:
   sql: ssf_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Structural Safety Factor (KB #3): (100 \u2212 structuralloadpercent)/100\
     \ \xD7 weather multiplier."
   hidden: false
@@ -112,6 +125,7 @@ columns:
   sql: ecac
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -119,6 +133,7 @@ columns:
   sql: tie_per_eq__tie_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

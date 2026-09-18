@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: high_maintenance_priority
 source_queries:
-- version: 3
+- version: 4
   name: mcs_per_shipment_hmp
   source_model: regulatoryandmaintenance
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: shipgov
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: agg_per_container_hmp
   source_model: sensordata
   measures:
@@ -25,7 +27,9 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: lhi_per_container_hmp
   source_model: datalogger
   measures:
@@ -34,39 +38,53 @@ source_queries:
   dimensions:
   - name: containlog
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vaccinedetails
-    joins:
-    - target_model: agg_per_container_hmp
-      join_pairs:
-      - - containvac
-        - containlink
-    - target_model: lhi_per_container_hmp
-      join_pairs:
-      - - containvac
-        - containlog
-    - target_model: mcs_per_shipment_hmp
-      join_pairs:
-      - - shipinject
-        - shipgov
     columns:
     - name: cmr
-      type: DOUBLE
       sql: (1 - mcs_per_shipment_hmp.mcs) * (1 + agg_per_container_hmp.tbs / 5.0)
         * (1 - lhi_per_container_hmp.lhi)
-    - name: qmi
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: qmi
       sql: mcs_per_shipment_hmp.mcs * (((JULIANDAY(expireday) - JULIANDAY('now'))
         * agg_per_container_hmp.tss) / 365.0 * agg_per_container_hmp.hqi * (1 - agg_per_container_hmp.cri))
         * (1 - agg_per_container_hmp.tbs / 10.0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: is_high_maintenance_priority
-      type: BOOLEAN
       sql: CASE WHEN ((1 - mcs_per_shipment_hmp.mcs) * (1 + agg_per_container_hmp.tbs
         / 5.0) * (1 - lhi_per_container_hmp.lhi)) > 0.7 AND (mcs_per_shipment_hmp.mcs
         * (((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_hmp.tss)
         / 365.0 * agg_per_container_hmp.hqi * (1 - agg_per_container_hmp.cri)) * (1
         - agg_per_container_hmp.tbs / 10.0)) < 0.4 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: agg_per_container_hmp
+      join_pairs:
+      - - containvac
+        - containlink
+      join_type: left
+    - target_model: lhi_per_container_hmp
+      join_pairs:
+      - - containvac
+        - containlog
+      join_type: left
+    - target_model: mcs_per_shipment_hmp
+      join_pairs:
+      - - shipinject
+        - shipgov
+      join_type: left
   dimensions:
   - name: vacregistry
   - name: containvac
@@ -75,6 +93,8 @@ source_queries:
   - name: qmi
   - name: is_high_maintenance_priority
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
   \ AS containvac, \"vaccinedetails.shipinject\" AS shipinject, \"vaccinedetails.cmr\"\
@@ -138,6 +158,7 @@ columns:
   sql: vacregistry
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -145,26 +166,31 @@ columns:
   sql: containvac
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: shipinject
   sql: shipinject
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cmr
   sql: cmr
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: qmi
   sql: qmi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_high_maintenance_priority
   sql: is_high_maintenance_priority
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

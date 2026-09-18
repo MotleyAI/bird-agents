@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: high_quality_arbitrage_opportunity
 source_queries:
-- version: 3
+- version: 4
   name: aw_per_pair
   source_model: analyticsindicators
   measures:
@@ -11,7 +11,9 @@ source_queries:
   - name: mktcombo
     model: marketdata
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: roi
   source_model: arbitrage_roi
   measures:
@@ -20,7 +22,9 @@ source_queries:
   dimensions:
   - name: recordvault
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: mer
   source_model: market_efficiency_ratio
   measures:
@@ -29,30 +33,40 @@ source_queries:
   dimensions:
   - name: recordvault
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: orders
+    columns:
+    - name: is_high_quality
+      sql: aw_per_pair.aos_avg > 0.05 AND roi.roi_v > 0.005 AND mer.mer_v < 1.2
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: aw_per_pair
       join_pairs:
       - - mktnote
         - marketdata__mktcombo
+      join_type: left
     - target_model: roi
       join_pairs:
       - - recordvault
         - recordvault
+      join_type: left
     - target_model: mer
       join_pairs:
       - - recordvault
         - recordvault
-    columns:
-    - name: is_high_quality
-      type: BOOLEAN
-      sql: aw_per_pair.aos_avg > 0.05 AND roi.roi_v > 0.005 AND mer.mer_v < 1.2
+      join_type: left
   dimensions:
   - name: recordvault
   - name: is_high_quality
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.is_high_quality\"\
   \ AS is_high_quality FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\"\
@@ -158,11 +172,13 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_high_quality
   sql: is_high_quality
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

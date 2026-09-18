@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: multi_phase_documentation_project
 source_queries:
-- version: 3
+- version: 4
   name: adc_per_scan
   source_model: archaeological_documentation_completeness
   measures:
@@ -11,7 +11,9 @@ source_queries:
   - name: arcref
   - name: questregistry
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: dpq_per_scan
   source_model: digital_preservation_quality
   measures:
@@ -21,7 +23,9 @@ source_queries:
   - name: arcref
   - name: questregistry
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: per_project_adc
   source_model: adc_per_scan
   measures:
@@ -32,7 +36,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: per_project_dpq
   source_model: dpq_per_scan
   measures:
@@ -41,7 +47,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: merged
   source_model:
     source_name: per_project_adc
@@ -50,6 +58,7 @@ source_queries:
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
   dimensions:
   - name: arcref
   - name: scan_count
@@ -57,14 +66,19 @@ source_queries:
   - name: avg_dpq
     model: per_project_dpq
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: merged
     columns:
     - name: is_multi_phase_documentation_project
-      type: BOOLEAN
       sql: CASE WHEN scan_count > 1 AND avg_adc < 70 AND per_project_dpq__avg_dpq
         > 80 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: scan_count:max
     name: scan_count
@@ -76,6 +90,8 @@ source_queries:
   - name: arcref
   - name: is_multi_phase_documentation_project
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"merged.arcref\" AS arcref, \"merged.is_multi_phase_documentation_project\"\
   \ AS is_multi_phase_documentation_project, \"merged.scan_count\" AS scan_count,\
@@ -325,16 +341,19 @@ columns:
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_multi_phase_documentation_project
   sql: is_multi_phase_documentation_project
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 - name: scan_count
   sql: scan_count
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -342,6 +361,7 @@ columns:
   sql: avg_adc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -349,6 +369,7 @@ columns:
   sql: avg_dpq
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

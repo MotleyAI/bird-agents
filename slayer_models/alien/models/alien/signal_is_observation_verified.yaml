@@ -1,33 +1,11 @@
-version: 7
+version: 10
 name: signal_is_observation_verified
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
-    joins:
-    - target_model: signaldecoding
-      join_pairs:
-      - - signalregistry
-        - signalref
-    - target_model: signalclassification
-      join_pairs:
-      - - signalregistry
-        - signalref
-    - target_model: signalprobabilities
-      join_pairs:
-      - - signalregistry
-        - signalref
-    - target_model: telescopes
-      join_pairs:
-      - - telescref
-        - telescregistry
-    - target_model: telescopes.observatories
-      join_pairs:
-      - - observstation
-        - observstation
     columns:
     - name: is_observation_verified
-      type: BOOLEAN
       sql: CASE WHEN ((1 - signalprobabilities.falseposprob) * signaldecoding.decodeconf
         * signalclassification.classconf * (CASE WHEN (snrratio - 0.1 * ABS(noisefloordbm))
         > 0 THEN (snrratio - 0.1 * ABS(noisefloordbm)) / 10.0 + 0.5 ELSE 0.1 END))
@@ -40,10 +18,42 @@ source_queries:
         - telescopes__observatories.lunardistdeg / 180.0) * (1 - telescopes__observatories.atmostransparency)))
         * (CASE WHEN telescopes.pointaccarc < 2 THEN 1 ELSE 2.0 / telescopes.pointaccarc
         END)) > 0.85 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: signaldecoding
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
+    - target_model: telescopes
+      join_pairs:
+      - - telescref
+        - telescregistry
+      join_type: left
+    - target_model: telescopes.observatories
+      join_pairs:
+      - - observstation
+        - observstation
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: is_observation_verified
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_observation_verified\"\
   \ AS is_observation_verified FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
@@ -77,11 +87,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_observation_verified
   sql: is_observation_verified
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

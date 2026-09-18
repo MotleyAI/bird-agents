@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: vendors
 sql_table: vendors
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: vendregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: vendspan
   sql: vendspan
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -20,6 +22,7 @@ columns:
   sql: vendrate
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -27,6 +30,7 @@ columns:
   sql: vendtxcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -34,6 +38,7 @@ columns:
   sql: vendsucccount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -41,6 +46,7 @@ columns:
   sql: venddisputecount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -48,6 +54,7 @@ columns:
   sql: vendplacecount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -55,6 +62,7 @@ columns:
   sql: vendpaymethods
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -62,6 +70,7 @@ columns:
   sql: vendchecklvl
   type: TEXT
   primary_key: false
+  unique: false
   description: "Vendor verification tier: 'Basic' = minimal (email + captcha) with\
     \ limited platform history; 'Advanced' = additional ID consistency checks + longer\
     \ positive history; 'Premium' = highest tier, verifiable identity elements + extended\
@@ -81,17 +90,20 @@ columns:
   sql: vendlastmoment
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: mktref
   sql: mktref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vti
   sql: (vendsucccount * 1.0 / NULLIF(vendtxcount, 0)) * 100 - (venddisputecount *
     1.0 / NULLIF(vendtxcount, 0)) * 50 + (vendrate * 5)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Vendor Trust Index (VTI): (vendsucccount/vendtxcount)*100 - (venddisputecount/vendtxcount)*50\
     \ + 5*vendrate. Higher = more trustworthy vendor.\n\n[kb=11]\nVTI = \\frac{vendsucccount}{vendtxcount}\
     \ \\times 100 - \\frac{venddisputecount}{vendtxcount} \\times 50 + (vendrate \\\
@@ -106,6 +118,7 @@ columns:
     THEN 3 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric mapping of vendchecklvl: Basic=1, Advanced=2, Premium=3, else=0\
     \ (used by VRS).\n\n[kb=7]\n'Basic' vendors have completed minimal verification\
     \ steps, typically only email and captcha verification with limited platform history;\
@@ -125,6 +138,7 @@ columns:
     ELSE 0 END) * 15 - (venddisputecount * 1.0 / NULLIF(vendtxcount, 0)) * 100
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Vendor Relationship Strength (VRS): 10*vendrate + (vendsucccount/vendtxcount)*50\
     \ + 15*vendchecklvl_numeric - (venddisputecount/vendtxcount)*100. Higher = stronger\
     \ vendor-customer relationships.\n\n[kb=37]\nVRS = (vendrate \\times 10) + \\\
@@ -145,6 +159,7 @@ columns:
     < 0.05 AND vendspan > 90
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Trusted Vendor (KB #21): VTI > 80, vendchecklvl Advanced/Premium,\
     \ dispute rate < 5%, vendspan > 90 days.\n\n[kb=21]\nA vendor with VTI > 80, vendchecklvl\
     \ of 'Advanced' or 'Premium', a dispute rate below 5% of total transactions, and\
@@ -162,6 +177,7 @@ columns:
     THEN 2 WHEN 'Large' THEN 3 WHEN 'Mega' THEN 4 ELSE 0 END)) * 10
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Vendor Network Centrality (VNC, KB #31): COUNT(DISTINCT mktref) *\
     \ 5 + vendtxcount/50 + VTI*0.1 - (1 - sizecluster_numeric)*10. Schema shortfall:\
     \ vendregistry is unique per (vendor, market), so COUNT(DISTINCT mktref) per vendor\
@@ -182,6 +198,7 @@ columns:
     THEN 3 WHEN 'Mega' THEN 4 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric mapping of the linked market's sizecluster used by VNC: Small=1,\
     \ Medium=2, Large=3, Mega=4.\n\n[kb=31]\nVNC = (COUNT(DISTINCT mktref) \\times\
     \ 5) + \\frac{vendtxcount}{50} + (VTI \\times 0.1) - (1 - sizecluster_numeric)\
@@ -204,6 +221,7 @@ columns:
     1.0 / NULLIF(vendtxcount, 0)) < 0.05 AND vendspan > 90
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Market Kingpin (KB #41): VNC > 85, COUNT(DISTINCT mktref) >= 3, vendchecklvl='Premium',\
     \ plus Trusted Vendor characteristics (KB #21). Schema shortfall: COUNT(DISTINCT\
     \ mktref) per vendor row literal-fits to 1, so `1 >= 3` is always false and this\

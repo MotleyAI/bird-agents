@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: family_categories
 sql_table: family_categories
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: linkid
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: familylink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: categorylink
   sql: categorylink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

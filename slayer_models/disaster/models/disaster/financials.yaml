@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: financials
 sql_table: financials
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: financeregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: findistref
   sql: findistref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: finopsref
   sql: finopsref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: budgetallotusd
   sql: budgetallotusd
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -30,6 +34,7 @@ columns:
   sql: fundsutilpct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -37,6 +42,7 @@ columns:
   sql: costbeneusd
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -44,6 +50,7 @@ columns:
   sql: opscostsusd
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -51,6 +58,7 @@ columns:
   sql: transportcostsusd
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -58,6 +66,7 @@ columns:
   sql: storagecostsusd
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -65,6 +74,7 @@ columns:
   sql: personnelcostsusd
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -72,6 +82,7 @@ columns:
   sql: fundingstate
   type: TEXT
   primary_key: false
+  unique: false
   description: "Financial-resource condition for operations (KB #4). Adequate = sufficient\
     \ funds; Limited = funding constraints affecting some activities; Critical = severe\
     \ shortages threatening essential operations.\n\n[kb=4]\nAdequate means sufficient\
@@ -87,6 +98,7 @@ columns:
   sql: donorcommitmentsusd
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -94,6 +106,7 @@ columns:
   sql: resourcegapsusd
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -102,6 +115,7 @@ columns:
     / 100.0) - (resourcegapsusd * 1.0 / NULLIF(budgetallotusd, 0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Financial Sustainability Ratio (FSR, KB #18): (donorcommitmentsusd/budgetallotusd)\
     \ * (1 - fundsutilpct/100) - resourcegapsusd/budgetallotusd.\n\n[kb=18]\nFSR =\
     \ \\frac{donorcommitmentsusd}{budgetallotusd} \\times \\left(1 - \\frac{fundsutilpct}{100}\\\
@@ -117,6 +131,7 @@ columns:
     * 1.0 / NULLIF(budgetallotusd, 0))) < 0.2
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Financial Crisis Risk (KB #27): fundsutilpct>80 AND fundingstate='Critical'\
     \ AND FSR<0.2.\n\n[kb=27]\nOperations where fundsutilpct > 80 AND fundingstate\
     \ is 'Critical' AND FSR < 0.2, indicating severe financial strain that threatens\
@@ -134,6 +149,7 @@ columns:
     / 10.0)) / 10.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Financial Efficiency Metric (FEM, KB #35): (benefeedbackscore/costbeneusd)\
     \ * FSR * (1 + OEI/10).\n\n[kb=35]\nFEM = \\frac{benefeedbackscore}{costbeneusd}\
     \ \\times FSR \\times \\left(1 + \\frac{OEI}{10}\\right), \\text{ where higher\

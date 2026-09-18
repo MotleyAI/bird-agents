@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: sprint_results
 sql_table: sprint_results
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: srescode
   type: INT
   primary_key: true
+  unique: false
   description: Unique sprint result identifier.
   hidden: false
   format:
@@ -16,6 +17,7 @@ columns:
   sql: matchref
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key to races (the race weekend whose sprint this belongs to).
   hidden: false
   format:
@@ -24,6 +26,7 @@ columns:
   sql: unitdrive
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key to drivers.
   hidden: false
   format:
@@ -32,6 +35,7 @@ columns:
   sql: makeref
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key to constructors.
   hidden: false
   format:
@@ -40,6 +44,7 @@ columns:
   sql: rno
   type: INT
   primary_key: false
+  unique: false
   description: Sprint result number (driver registration). NULL = no sprint result
     number available.
   hidden: false
@@ -49,6 +54,7 @@ columns:
   sql: sprint_performance
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSONB column. Captures performance metrics in sprint races including\
     \ grid, final_position, position_label, ranking_order, points, laps_completed,\
     \ timing.{final_time,duration_ms}, fastest_lap.{lap_number,lap_time}, status_code.\
@@ -66,18 +72,21 @@ columns:
   sql: CAST(json_extract(sprint_performance, '$.grid') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Sprint starting grid position (extracted).
   hidden: false
 - name: sprint_final_position
   sql: CAST(json_extract(sprint_performance, '$.final_position') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Sprint finishing position (extracted). NULL = did not finish / classify.
   hidden: false
 - name: sprint_points
   sql: CAST(json_extract(sprint_performance, '$.points') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Points awarded in the sprint per KB #9 (top 8 = 8/7/6/5/4/3/2/1, else
     0).'
   hidden: false
@@ -85,42 +94,49 @@ columns:
   sql: CAST(json_extract(sprint_performance, '$.laps_completed') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Number of laps completed in the sprint (extracted).
   hidden: false
 - name: sprint_duration_ms
   sql: CAST(json_extract(sprint_performance, '$.timing.duration_ms') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Sprint final time in milliseconds (extracted).
   hidden: false
 - name: sprint_final_time_str
   sql: json_extract(sprint_performance, '$.timing.final_time')
   type: TEXT
   primary_key: false
+  unique: false
   description: Sprint final time / status marker (extracted).
   hidden: false
 - name: sprint_fastest_lap_time
   sql: json_extract(sprint_performance, '$.fastest_lap.lap_time')
   type: TEXT
   primary_key: false
+  unique: false
   description: Driver's fastest lap time in the sprint (extracted).
   hidden: false
 - name: sprint_fastest_lap_number
   sql: CAST(json_extract(sprint_performance, '$.fastest_lap.lap_number') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Lap number of the driver's fastest sprint lap (extracted).
   hidden: false
 - name: sprint_status_code
   sql: CAST(json_extract(sprint_performance, '$.status_code') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Sprint status code (extracted).
   hidden: false
 - name: is_sprint_winner
   sql: CAST(json_extract(sprint_performance, '$.final_position') AS INTEGER) = 1
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Sprint Winner (KB #15): TRUE iff classified 1st in the sprint.\n\n\
     [kb=15]\nA Sprint Winner is the driver who is classified in 1st place at the conclusion\
     \ of a Sprint Session. \u2014 Defines the winner of a sprint session.\n[/kb=15]"
@@ -133,6 +149,7 @@ columns:
     + CAST(json_extract(sprint_performance, '$.points') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Sprint Performance Index (KB #36): SPI = (9 - sprint_final_position)\
     \ + sprint_points. Combines the driver's sprint finishing result with points scored.\
     \ Uses KB #9 (sprint points) and KB #15 (winner).\n\n[kb=36]\nSPI = (9 - P_{sprint})\
@@ -150,6 +167,7 @@ columns:
     '$.final_position') AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Position Gain / Loss (KB #24) for the sprint: G_pos = P_start - P_finish\
     \ using sprint_grid and sprint_final_position. Positive = positions gained.\n\n\
     [kb=24]\nG_{pos} = P_{start} - P_{finish}, \\text{where } P_{start} \\text{ is\

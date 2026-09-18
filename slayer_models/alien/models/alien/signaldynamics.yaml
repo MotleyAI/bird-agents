@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: signaldynamics
 sql_table: signaldynamics
 query_variables: {}
@@ -8,66 +8,79 @@ columns:
   sql: signalref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: sigintegrity
   sql: sigintegrity
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sigrecurr
   sql: sigrecurr
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sigevolve
   sql: sigevolve
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tempstab
   sql: tempstab
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: spatstab
   sql: spatstab
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: freqstab
   sql: freqstab
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: phasestab
   sql: phasestab
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ampstab
   sql: ampstab
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: modstab
   sql: modstab
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sigcoherence
   sql: sigcoherence
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sigdisp
   sql: sigdisp
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sigscint
   sql: sigscint
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

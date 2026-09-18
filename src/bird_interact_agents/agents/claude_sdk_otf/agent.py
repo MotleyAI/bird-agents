@@ -103,12 +103,10 @@ logger = logging.getLogger(__name__)
 
 
 # SLayer query tools that satisfy the pre-submit verification gate.
-# Any `query` or `query_nested` call immediately before `submit_query`
-# is treated as the required output-inspection step.
-#
-# DEV-1534 Fix C: these now point at our bird-interact-tools wrappers
-# (which forward to SLayer's MCP query/query_nested but with the
-# `normalize_filters` opt-out), NOT at the raw subprocess MCP tools.
+# A `query` call immediately before `submit_query` is treated as the
+# required output-inspection step. This points at our bird-interact-tools
+# wrapper (forwarding to SLayer's MCP `query` with the `normalize_filters`
+# opt-out), NOT the raw subprocess MCP tool.
 SLAYER_QUERY_TOOLS: frozenset[str] = frozenset(
     {
         "mcp__bird-interact-tools__query",
@@ -118,7 +116,7 @@ SLAYER_QUERY_TOOLS: frozenset[str] = frozenset(
 
 def _make_query_before_submit_guard():
     """Enforce that the last completed tool call before ``submit_query``
-    is a SLayer ``query`` or ``query_nested`` call.
+    is a SLayer ``query`` call.
 
     Returns ``(pre_submit_gate, post_tool_tracker)`` sharing a single
     per-task ``state`` closure. The factory MUST be invoked inside
@@ -175,8 +173,8 @@ def _make_query_before_submit_guard():
 # edit_model / save_memory / validate_models) so the agent can encode KB
 # items.
 #
-# DEV-1534 Fix C: `query` and `query_nested` are served by our own
-# wrappers on the bird-interact-tools SDK MCP server (registered via
+# DEV-1534 Fix C: `query` is served by our own wrapper on the
+# bird-interact-tools SDK MCP server (registered via
 # `_KNOWLEDGE_TOOLS` below) so the agent can opt out of filter
 # normalization mid-flight via the `normalize_filters` parameter. They
 # are NOT in this allowlist.
@@ -214,16 +212,16 @@ def _slayer_tool_names() -> list[str]:
 # against the live SLayer surface (`derive_disallowed_slayer_tools`) — one
 # allow-list to maintain, nothing leaks by construction. Supersedes the
 # DEV-1548 hand-written partial deny-list, which drifted and leaked
-# `query` / `query_nested` / `describe_datasource` / `edit_datasource` /
-# `delete_model` (the DEV-1644 mode-A errors).
+# `query` / `describe_datasource` / `edit_datasource` / `delete_model`
+# (the DEV-1644 mode-A errors).
 
 
 # Full MCP tool names whose payloads carry backing-query filter strings
 # that we need to normalize (lower(trim(col)) wrap) before SLayer
 # persists them on a model. Without this hook, the agent's `create_model`
 # / `edit_model` calls baked raw text-equality filters into the stored
-# entity definition — and the DEV-1534 Fix C `query` / `query_nested`
-# wrappers can never repair filters hidden inside the model's own
+# entity definition — and the DEV-1534 Fix C `query` wrapper
+# can never repair filters hidden inside the model's own
 # backing SQL (Codex post-merge catch; the pydantic_ai_otf_encode
 # adapter already runs the same `normalize_tool_filters` call on every
 # write).
@@ -353,8 +351,8 @@ def _make_turn_budget_hook(
 # needs. (The a-interact flavor adds `ask_user` in
 # ``claude_sdk_otf_ainteract``.)
 #
-# DEV-1534 Fix C: `query` / `query_nested` are bird-interact-tools
-# wrappers (not SLayer subprocess tools) so the agent can opt out of
+# DEV-1534 Fix C: `query` is a bird-interact-tools wrapper (not a
+# SLayer subprocess tool) so the agent can opt out of
 # filter normalization mid-flight.
 _KNOWLEDGE_TOOLS = [
     get_all_external_knowledge_names,
@@ -825,7 +823,7 @@ class ClaudeSDKOtfAgent:
             )
         finally:
             # DEV-1654: dispose this task's in-process SLayer engine (the
-            # `query` / `query_nested` natives build one) now that the agent
+            # `query` native builds one) now that the agent
             # session is closed — before grading (its own psycopg2 path) and
             # while the loop is still alive; a reused cloud actor would
             # otherwise retain one asyncpg pool per task. No-op when no

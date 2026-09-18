@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: facility_performance_quadrant
 source_queries:
-- version: 3
+- version: 4
   name: fac_grain
   source_model:
     source_name: facility_metrics
@@ -9,6 +9,9 @@ source_queries:
     - name: _one
       sql: '1'
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: tox_per_fac__tar:avg
     name: tar
@@ -18,7 +21,9 @@ source_queries:
   - name: fackey
   - name: _one
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: med_tar
   source_model: fac_grain
   measures:
@@ -27,7 +32,9 @@ source_queries:
   dimensions:
   - name: _one
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: med_psm
   source_model: fac_grain
   measures:
@@ -36,32 +43,41 @@ source_queries:
   dimensions:
   - name: _one
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: fac_grain
-    joins:
-    - target_model: med_tar
-      join_pairs:
-      - - _one
-        - _one
-    - target_model: med_psm
-      join_pairs:
-      - - _one
-        - _one
     columns:
     - name: quadrant
-      type: TEXT
       sql: CASE WHEN tar >= med_tar.median_tar AND psm >= med_psm.median_psm THEN
         'High Adherence, High Stability' WHEN tar >= med_tar.median_tar AND psm <
         med_psm.median_psm THEN 'High Adherence, Low Stability' WHEN tar < med_tar.median_tar
         AND psm >= med_psm.median_psm THEN 'Low Adherence, High Stability' ELSE 'Low
         Adherence, Low Stability' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: med_tar
+      join_pairs:
+      - - _one
+        - _one
+      join_type: left
+    - target_model: med_psm
+      join_pairs:
+      - - _one
+        - _one
+      join_type: left
   dimensions:
   - name: fackey
   - name: tar
   - name: psm
   - name: quadrant
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"fac_grain.fackey\" AS fackey, \"fac_grain.tar\" AS tar,\
   \ \"fac_grain.psm\" AS psm, \"fac_grain.quadrant\" AS quadrant FROM (SELECT\n  fac_grain.fackey\
@@ -754,11 +770,13 @@ columns:
   sql: fackey
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tar
   sql: tar
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -766,6 +784,7 @@ columns:
   sql: psm
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -773,6 +792,7 @@ columns:
   sql: quadrant
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

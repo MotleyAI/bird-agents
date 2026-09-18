@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: securitymonitoring
 sql_table: securitymonitoring
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: secmonregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: securityauditstatus
   sql: securityauditstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vulntally
   sql: vulntally
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -25,6 +28,7 @@ columns:
   sql: inctally
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -32,6 +36,7 @@ columns:
   sql: securitymeasurecount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -39,16 +44,19 @@ columns:
   sql: encryptionstrength
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: authenticationmethod
   sql: authenticationmethod
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sessionsecurityscore
   sql: sessionsecurityscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -56,11 +64,13 @@ columns:
   sql: dataprotectionlevel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: privprotscore
   sql: privprotscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -68,6 +78,7 @@ columns:
   sql: operationalsecurityscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -75,6 +86,7 @@ columns:
   sql: fpprob
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -82,6 +94,7 @@ columns:
   sql: alertsev
   type: TEXT
   primary_key: false
+  unique: false
   description: "Alert severity: 'Low' = minor anomaly, minimal attention; 'Medium'\
     \ = notable deviation, investigate within standard timeframes; 'High' = significant\
     \ security concern, prompt attention; 'Critical' = severe, immediate threat requiring\
@@ -100,11 +113,13 @@ columns:
   sql: alertcategory
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: alertconfidencescore
   sql: alertconfidencescore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -112,22 +127,26 @@ columns:
   sql: riskref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: commref
   sql: commref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: threat_analysis_metrics
   sql: threat_analysis_metrics
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sps
   sql: (100 - (vulntally * 5)) + (securitymeasurecount * 2) + (sessionsecurityscore
     * 0.5) + (privprotscore * 0.3) - (fpprob * 100)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Security Posture Score (SPS): (100 - 5*vulntally) + 2*securitymeasurecount\
     \ + 0.5*sessionsecurityscore + 0.3*privprotscore - 100*fpprob. Higher = stronger\
     \ security posture.\n\n[kb=17]\nSPS = (100 - (vulntally \\times 5)) + (securitymeasurecount\
@@ -150,6 +169,7 @@ columns:
     * 0.5)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Operational Security Index (OSI): 0.5*APL + 0.2*SPS + 2*tornodecount\
     \ + 5*encryptmethod_numeric (Standard=1/Enhanced=2/Custom=3 else=0) - 0.5*iptally.\
     \ APL/tornodecount/iptally/encryptmethod come from the linked communication record\
@@ -172,6 +192,7 @@ columns:
     < 5
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High-Security Entity (KB #24): SPS > 80, encryptionstrength='Military-grade',\
     \ authenticationmethod IN ('2FA','Multi-factor'), vulntally < 5.\n\n[kb=24]\n\
     An entity with SPS > 80, using military-grade encryption, implementing 2FA or\
@@ -201,6 +222,7 @@ columns:
     communication.encryptmethod IN ('Enhanced', 'Custom')
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "OpSec Specialist (KB #46): OSI > 85, displays Sophisticated Operational\
     \ Security characteristics (KB #28: APL > 120, langpattern='Variable', msgtally\
     \ < 10, txchainlen > 5), encryptmethod IN ('Enhanced','Custom'). Encoded on securitymonitoring;\
@@ -220,6 +242,7 @@ columns:
     'Critical' THEN 4 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric mapping of alertsev used by MVI: Low=1, Medium=2, High=3,\
     \ Critical=4 (per the alert severity classification, KB #9).\n\n[kb=30]\nMVI =\
     \ (100 - MSI) + (COUNT(CASE WHEN alertsev IS NOT NULL THEN 1 END) / 10) \\times\

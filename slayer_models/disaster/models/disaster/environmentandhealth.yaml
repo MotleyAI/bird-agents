@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: environmentandhealth
 sql_table: environmentandhealth
 query_variables: {}
@@ -8,26 +8,31 @@ columns:
   sql: envhealthregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: envdistref
   sql: envdistref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: envimpactrate
   sql: envimpactrate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: wastemanagementstate
   sql: wastemanagementstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: recyclepct
   sql: recyclepct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -35,6 +40,7 @@ columns:
   sql: carbontons
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -42,6 +48,7 @@ columns:
   sql: renewenergypct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -49,6 +56,7 @@ columns:
   sql: waterqualityindex
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -56,6 +64,7 @@ columns:
   sql: sanitationcoverage
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -63,16 +72,19 @@ columns:
   sql: diseaserisk
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: medicalemergencycapacity
   sql: medicalemergencycapacity
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vaccinationcoverage
   sql: vaccinationcoverage
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -80,12 +92,14 @@ columns:
   sql: mentalhealthaid
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: medcap_numeric
   sql: CASE medicalemergencycapacity WHEN 'Adequate' THEN 1.0 WHEN 'Limited' THEN
     0.6 WHEN 'Critical' THEN 0.3 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Numeric factor used by KB #37 (HSCI): Adequate=1.0, Limited=0.6, Critical=0.3,
     else=0.'
   hidden: false
@@ -93,6 +107,7 @@ columns:
   sql: carbontons * (1 - renewenergypct / 100.0) + (100 - recyclepct) * 0.5
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Environmental Impact Factor (EIF, KB #16): carbontons*(1 - renewenergypct/100)\
     \ + (100 - recyclepct)*0.5.\n\n[kb=16]\nEIF = carbontons \\times \\left(1 - \\\
     frac{renewenergypct}{100}\\right) + (100 - recyclepct) \\times 0.5 \u2014 Quantifies\
@@ -106,6 +121,7 @@ columns:
     0.3
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Public Health Resilience Score (PHRS, KB #17): waterqualityindex*0.4\
     \ + sanitationcoverage*0.3 + vaccinationcoverage*0.3.\n\n[kb=17]\nPHRS = waterqualityindex\
     \ \\times 0.4 + sanitationcoverage \\times 0.3 + vaccinationcoverage \\times 0.3\
@@ -121,6 +137,7 @@ columns:
     / 20.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Supply Chain Sustainability Index (SCSI, KB #33): 100 - EIF * (transportation.totaldeliverytons/1000)\
     \ * (transportation.fuelefficiencylpk/20).\n\n[kb=33]\nSCSI = 100 - EIF \\times\
     \ \\frac{totaldeliverytons}{1000} \\times \\left(\\frac{fuelefficiencylpk}{20}\\\
@@ -138,6 +155,7 @@ columns:
     7) AS INTEGER) / 6.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Health System Capacity Index (HSCI, KB #37): PHRS * medcap_numeric\
     \ * (1 - hazlevel_numeric/6).\n\n[kb=37]\nHSCI = PHRS \\times medcap\\_numeric\
     \ \\times \\left(1 - \\frac{hazlevel\\_numeric}{6}\\right), \\text{ where medcap\\\
@@ -154,6 +172,7 @@ columns:
     AND renewenergypct > 30 AND recyclepct > 60
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Sustainable Response Operation (KB #25): EIF<50 AND renewenergypct>30\
     \ AND recyclepct>60.\n\n[kb=25]\nOperations where EIF < 50 AND renewenergypct\
     \ > 30 AND recyclepct > 60, demonstrating environmental responsibility during\
@@ -168,6 +187,7 @@ columns:
     + sanitationcoverage * 0.3 + vaccinationcoverage * 0.3) < 40
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Public Health Emergency (KB #26): diseaserisk='High' AND waterqualityindex<50\
     \ AND PHRS<40.\n\n[kb=26]\nConditions where diseaserisk is 'High' AND waterqualityindex\
     \ < 50 AND PHRS < 40, indicating critical threats to public health requiring immediate\
@@ -186,6 +206,7 @@ columns:
     AND (humanresources.staffingprofile ->> '$.readiness.ppe_status') = 'Critical'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Critical Health Response Requirement (KB #44): is_public_health_emergency\
     \ AND HSCI<30 AND staffingProfile.readiness.ppe_status='Critical'.\n\n[kb=44]\n\
     Areas experiencing Public Health Emergency where HSCI < 30 AND staffingProfile.readiness.ppe_status\
@@ -202,6 +223,7 @@ columns:
     (100 - recyclepct) * 0.5) < 100 THEN 'Moderate Impact' ELSE 'High Impact' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Environmental Impact Classification (KB #51): Sustainable (EIF<50),\
     \ Moderate (50<=EIF<100), High (EIF>=100).\n\n[kb=51]\nSustainable (EIF < 50)\
     \ indicates operations with minimal environmental footprint and strong sustainability\

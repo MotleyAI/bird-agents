@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: spatially_complex_site
 source_queries:
-- version: 3
+- version: 4
   name: pc_per_arcref
   source_model: scanpointcloud
   measures:
@@ -14,7 +14,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: sp_per_arcref
   source_model: scanspatial
   measures:
@@ -23,7 +25,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: sdi_per_arcref
   source_model:
     source_name: pc_per_arcref
@@ -32,6 +36,7 @@ source_queries:
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
   measures:
   - formula: totalpts:avg / (sp_per_arcref.area_m2:avg * 10000.0) * sqrt(pointdense:avg
       / clouddense:avg)
@@ -41,13 +46,18 @@ source_queries:
   - name: area_m2
     model: sp_per_arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: sdi_per_arcref
     columns:
     - name: is_spatially_complex_site
-      type: BOOLEAN
       sql: CASE WHEN sp_per_arcref__area_m2 > 100 AND sdi > 50 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: sdi:avg
     name: sdi
@@ -57,6 +67,8 @@ source_queries:
   - name: arcref
   - name: is_spatially_complex_site
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"sdi_per_arcref.arcref\" AS arcref, \"sdi_per_arcref.is_spatially_complex_site\"\
   \ AS is_spatially_complex_site, \"sdi_per_arcref.sdi\" AS sdi, \"sdi_per_arcref.area_m2\"\
@@ -123,16 +135,19 @@ columns:
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_spatially_complex_site
   sql: is_spatially_complex_site
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 - name: sdi
   sql: sdi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -140,6 +155,7 @@ columns:
   sql: area_m2
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

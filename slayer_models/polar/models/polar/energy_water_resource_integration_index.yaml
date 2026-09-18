@@ -1,7 +1,7 @@
-version: 7
+version: 10
 name: energy_water_resource_integration_index
 source_queries:
-- version: 3
+- version: 4
   name: esi_per_eq_ewrii
   source_model: powerbattery
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: pwrbatteqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: wrmi_per_eq_ewrii
   source_model: waterandwaste
   measures:
@@ -19,7 +21,9 @@ source_queries:
   dimensions:
   - name: watereqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: heater_per_eq_ewrii
   source_model: cabinenvironment
   measures:
@@ -28,7 +32,9 @@ source_queries:
   dimensions:
   - name: cabineqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: esi_per_eq_ewrii
     joins:
@@ -36,10 +42,12 @@ source_queries:
       join_pairs:
       - - pwrbatteqref
         - watereqref
+      join_type: left
     - target_model: heater_per_eq_ewrii
       join_pairs:
       - - pwrbatteqref
         - cabineqref
+      join_type: left
   measures:
   - formula: 0.5 * esi:avg + 0.5 * wrmi_per_eq_ewrii.wrmi:avg * (1 - heater_per_eq_ewrii.heater_temp:avg
       / 100.0)
@@ -47,6 +55,8 @@ source_queries:
   dimensions:
   - name: pwrbatteqref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"esi_per_eq_ewrii.pwrbatteqref\" AS pwrbatteqref, \"esi_per_eq_ewrii.esi_avg\"\
   \ AS esi_avg, \"esi_per_eq_ewrii.ewrii\" AS ewrii, \"esi_per_eq_ewrii.wrmi_per_eq_ewrii.wrmi_avg\"\
@@ -95,11 +105,13 @@ columns:
   sql: pwrbatteqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: esi_avg
   sql: esi_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Energy Sustainability Index (KB #2): efficiency% x powersource multiplier
     (Solar/Wind=1.5, Hybrid=1.2, Battery=1.0, Diesel=0.7, otherwise 0).'
   hidden: false
@@ -109,6 +121,7 @@ columns:
   sql: ewrii
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -116,6 +129,7 @@ columns:
   sql: wrmi_per_eq_ewrii__wrmi_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -123,6 +137,7 @@ columns:
   sql: heater_per_eq_ewrii__heater_temp_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

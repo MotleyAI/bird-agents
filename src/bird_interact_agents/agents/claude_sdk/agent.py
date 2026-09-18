@@ -11,9 +11,8 @@ they need from here:
   ``get_all_external_knowledge_names`` / ``get_knowledge_definition`` /
   ``get_all_knowledge_definitions``.
 * Shared submission: ``ask_user``, ``submit_sql``, ``submit_query``.
-* DEV-1534 Fix C SLayer-mode wrappers: ``query`` / ``query_nested``
-  (filter-normalization opt-out aware; replace SLayer's MCP
-  ``query`` / ``query_nested`` in the OTF agents' allowlist).
+* In-process SLayer-mode wrappers: ``query`` / ``submit_query`` (unified
+  ``query`` argument; filter-normalization opt-out aware).
 
 The contextvar plumbing (``_ctx_var``, ``_CtxProxy``,
 ``accumulate_assistant_usage``, ``_state_view``, ``_gate``,
@@ -508,89 +507,81 @@ def _slayer_client():
     return client
 
 
+@functools.lru_cache(maxsize=None)
+def _slayer_tool_metadata(name: str) -> tuple[str, dict]:
+    """Extract ``(description, json_schema)`` for a SLayer MCP tool from a
+    storage-less ``create_mcp_server`` so the in-process native advertises
+    SLayer's real signature to the model.
+
+    The schema is derived from the tool fn's signature and is
+    storage-independent; the per-task fn that DOES need storage is resolved
+    separately at call time via ``_query._get_slayer_tool_fn`` (the shared,
+    task-local engine). Cached per name so we build the storage-less server
+    only once per process. Reuses SLayer's own tool definitions rather than
+    hand-maintaining a parallel schema.
+    """
+    from slayer.mcp.server import create_mcp_server
+
+    # Metadata-only build: we only read the tool's description + JSON schema.
+    mcp = create_mcp_server(None, _seed_help=False)
+    t = mcp._tool_manager._tools[name]
+    return t.description, t.parameters
+
+
+def _query_native_schema() -> dict:
+    """SLayer's own ``query`` schema plus our ``normalize_filters`` sibling arg
+    (no hand-maintained structured query args — the model learns the shape from
+    SLayer's own tool doc + ``SlayerQuery`` schema)."""
+    _desc, params = _slayer_tool_metadata("query")
+    schema = copy.deepcopy(params)
+    schema["properties"]["normalize_filters"] = {"type": "boolean", "default": True}
+    return schema
+
+
+def _submit_query_native_schema() -> dict:
+    """The unified ``query`` value (object | multi-stage list | model name) plus
+    ``normalize_filters``, carrying SLayer's ``$defs`` so the ``query`` ``$ref``
+    resolves."""
+    _desc, params = _slayer_tool_metadata("query")
+    return {
+        "type": "object",
+        "properties": {
+            "query": copy.deepcopy(params["properties"]["query"]),
+            "normalize_filters": {"type": "boolean", "default": True},
+        },
+        "required": ["query"],
+        "$defs": copy.deepcopy(params["$defs"]),
+    }
+
+
 @tool(
     "submit_query",
     (
-        "Submit your final SLayer query for evaluation. Pass EITHER a "
-        "single-stage form (`source_model` + projection fields: "
-        "`dimensions`, `measures`, `filters`, `time_dimensions`, `order`, "
-        "`limit`, `offset`, `whole_periods_only`, `variables`, "
-        "`distinct_dimension_values`) OR a nested-DAG form (`queries`: a "
-        "list of stage objects; last element is the DAG root; non-final "
-        "stages need a `name`; later stages reference earlier ones via "
-        "`source_model: \"<sibling name>\"`). The chosen query is "
-        "translated to SQL deterministically and tested against the "
-        "ground truth. `normalize_filters` (default true) controls "
-        "whether text-equality filter predicates are auto-wrapped in "
-        "lower(trim(...)) with the literal lowercased. Pass "
-        "`normalize_filters=false` when the gold answer requires "
-        "exact-case equality (rare; the default is semantically correct "
-        "for most NL questions that carry no casing info)."
+        "Submit your final SLayer query for evaluation. Pass it as `query`: "
+        "one SlayerQuery object, or a multi-stage list of stage objects (the "
+        "last element is the DAG root; non-final stages need a `name`; later "
+        "stages reference earlier ones via `source_model: \"<sibling name>\"`). "
+        "The query is translated to SQL deterministically and tested against "
+        "the ground truth. `normalize_filters` (default true) controls whether "
+        "text-equality filter predicates are auto-wrapped in lower(trim(...)) "
+        "with the literal lowercased. Pass `normalize_filters=false` when the "
+        "gold answer requires exact-case equality (rare; the default is "
+        "semantically correct for most NL questions that carry no casing info)."
     ),
-    # CR r1 / O1 follow-up: same unified shape as `query` — caller picks
-    # single-stage by populating `source_model`, or nested-DAG by
-    # populating `queries`. Mutual exclusion is enforced at the handler
-    # level so error messages stay specific.
-    {
-        "type": "object",
-        "properties": {
-            "source_model": {
-                "oneOf": [{"type": "string"}, {"type": "object"}],
-            },
-            "measures": {"type": "array"},
-            "dimensions": {"type": "array"},
-            "filters": {"type": "array"},
-            "time_dimensions": {"type": "array"},
-            "order": {"type": "array"},
-            "limit": {"type": "integer"},
-            "offset": {"type": "integer"},
-            "whole_periods_only": {"type": "boolean", "default": False},
-            "variables": {"type": "object"},
-            "distinct_dimension_values": {"type": "boolean"},
-            "queries": {"type": "array"},
-            "normalize_filters": {"type": "boolean", "default": True},
-        },
-        "required": [],
-    },
+    _submit_query_native_schema(),
 )
 async def submit_query(args: dict) -> dict:
     state = _state_view()
-    # Build the JSON payload from the structured args. `submit_slayer_query`
-    # takes a JSON string (the original CodeRabbit contract); we generate
-    # it here from the same structured shape as `query`.
-    payload: dict | list
-    if args.get("queries") is not None:
-        if args.get("source_model") is not None:
-            return _text(
-                "submit_query: pass either `source_model` (single-stage) "
-                "or `queries` (nested DAG), not both."
-            )
-        payload = args["queries"]
-    else:
-        if args.get("source_model") is None:
-            return _text(
-                "submit_query: `source_model` is required for "
-                "single-stage queries (or pass `queries` for a "
-                "nested DAG)."
-            )
-        # Single-stage: project the structured args into a SlayerQuery dict.
-        # Omit None / falsey values so the downstream JSON matches what the
-        # old `query_json` callers wrote by hand.
-        single: dict = {"source_model": args["source_model"]}
-        for k in (
-            "measures", "dimensions", "filters", "time_dimensions",
-            "order", "limit", "offset", "variables",
-            "distinct_dimension_values",
-        ):
-            v = args.get(k)
-            if v is not None:
-                single[k] = v
-        if args.get("whole_periods_only"):
-            single["whole_periods_only"] = True
-        payload = single
-
+    query = args.get("query")
+    if not isinstance(query, (dict, list)):
+        return _text(
+            "submit_query: `query` must be a SlayerQuery object or a "
+            "multi-stage array (a list of stage objects); got "
+            f"{type(query).__name__}."
+        )
     import json as _json
-    payload_str = _json.dumps(payload)
+
+    payload_str = _json.dumps(query)
     normalize_filters = bool(args.get("normalize_filters", True))
     observation = submit_slayer_query(
         state, payload_str, lambda _s: _slayer_client(),
@@ -602,177 +593,33 @@ async def submit_query(args: dict) -> dict:
     return _text(observation)
 
 
-# DEV-1534 Fix C + DEV-1546: wrap SLayer's MCP `query` so the agent
-# uses the SAME JSON DSL shape as `submit_query` / `query_nested`
-# (the field for dedup vs raw rows, `distinct_dimension_values`,
-# lives inside that JSON) and so it can opt out of Mode-B filter
-# normalization via a separate `normalize_filters` tool parameter.
+# The `query` native advertises SLayer's own `query` doc + schema (one `query`
+# argument: object | multi-stage list | model name) plus a `normalize_filters`
+# sibling arg; `query_impl` forwards the value to SLayer unchanged in shape.
 _QUERY_TOOL_DESC = (
-    "Run a SLayer query and return SLayer's formatted result. Pass "
-    "EITHER a single-stage form (`source_model` + the usual projection "
-    "fields: `dimensions`, `measures`, `filters`, `time_dimensions`, "
-    "`order`, `limit`, `offset`, `whole_periods_only`, `variables`, "
-    "`distinct_dimension_values`) OR a nested-DAG form (`queries`: a "
-    "list of stage objects; last is the DAG root; non-final stages need "
-    "a `name`; later stages reference earlier ones via "
-    "`source_model: \"<sibling name>\"`). Set "
-    "`distinct_dimension_values: false` on a single-stage call to "
-    "disable SLayer's default dim-only auto-dedup `GROUP BY`. Tool-level "
-    "options live outside the SlayerQuery: `show_sql`, `dry_run`, "
-    "`explain`, `format` (markdown/json/csv), and `normalize_filters` "
-    "(default true) — when true, every `col == 'X'` filter becomes "
-    "`lower(trim(col)) == 'x'` (case/whitespace-tolerant); when false, "
+    "Run a SLayer query and return SLayer's formatted result. Pass it as "
+    "`query`: one SlayerQuery object, a multi-stage list of stage objects "
+    "(one stage's output feeding the next), or a model name to run a stored "
+    "model. SLayer expresses multistage aggregations, computed dimensions, "
+    "ranking and cross-model joins inside ONE query — reserve the multi-stage "
+    "list for when a whole result set must be re-queried or joined. Tool-level "
+    "options are separate arguments, never fields of the query: `variables`, "
+    "`show_sql`, `dry_run`, `explain`, `format` (markdown/json/csv), and "
+    "`normalize_filters` (default true) — when true, every `col == 'X'` filter "
+    "becomes `lower(trim(col)) == 'x'` (case/whitespace-tolerant); when false, "
     "filters are forwarded verbatim (exact-case equality)."
 )
 
 
-@tool(
-    "query",
-    _QUERY_TOOL_DESC,
-    # DEV-1555 CR r1 / O1: the wrapper accepts EITHER a single
-    # SlayerQuery (set `source_model` + projection fields) OR a
-    # nested-DAG list (set `queries`). ``required`` stays empty;
-    # the runtime gates on `source_model XOR queries` so the
-    # error message is specific. Mirrors `submit_query`'s shape so
-    # the agent uses one form across query / submit_query.
-    {
-        "type": "object",
-        "properties": {
-            "source_model": {
-                "oneOf": [{"type": "string"}, {"type": "object"}],
-            },
-            "measures": {"type": "array"},
-            "dimensions": {"type": "array"},
-            "filters": {"type": "array"},
-            "time_dimensions": {"type": "array"},
-            "order": {"type": "array"},
-            "limit": {"type": "integer"},
-            "offset": {"type": "integer"},
-            "whole_periods_only": {"type": "boolean", "default": False},
-            "variables": {"type": "object"},
-            # DEV-1546 (origin/main): inside-SlayerQuery field that
-            # disables the default dim-only auto-dedup `GROUP BY`.
-            "distinct_dimension_values": {"type": "boolean"},
-            "show_sql": {"type": "boolean", "default": False},
-            "dry_run": {"type": "boolean", "default": False},
-            "explain": {"type": "boolean", "default": False},
-            "format": {"type": "string", "default": "markdown"},
-            "normalize_filters": {"type": "boolean", "default": True},
-            # Nested-DAG: when set, the wrapper routes to
-            # `query_nested_impl` and `source_model` + the
-            # single-stage projection kwargs must be unset.
-            "queries": {"type": "array"},
-        },
-        "required": [],
-    },
-)
+@tool("query", _QUERY_TOOL_DESC, _query_native_schema())
 async def query(args: dict) -> dict:
-    # Defer storage attach until first call so the per-task storage
-    # set in _slayer_client() is already in _ctx. DEV-1654: routing through
-    # _ensure_slayer_storage_attached ALSO registers this task's SLayer server
-    # on _ctx["_slayer_mcps"] so its asyncpg pool is disposed at teardown —
-    # `query` is the hottest tool, so skipping the stash here would leak the
-    # main client's engine on a reused cloud actor.
+    # Defer storage attach until first call so the per-task storage set in
+    # _slayer_client() is already in _ctx; also registers this task's SLayer
+    # server for asyncpg-pool disposal at teardown (query is the hottest tool).
     _ensure_slayer_storage_attached()
-
-    import json as _json
-
-    # Nested-DAG form: when `queries` is supplied, route to
-    # `query_nested_impl`. Mutual exclusion with `source_model` is
-    # enforced here (rather than in the schema) so a future caller
-    # passing both gets a clear error instead of a silent precedence
-    # rule.
-    if args.get("queries") is not None:
-        if args.get("source_model") is not None:
-            return _text(
-                "query: pass either `source_model` (single-stage) or "
-                "`queries` (nested DAG), not both."
-            )
-        result = await _query_mod.query_nested_impl(
-            queries=args["queries"],
-            variables=args.get("variables"),
-            show_sql=bool(args.get("show_sql", False)),
-            dry_run=bool(args.get("dry_run", False)),
-            explain=bool(args.get("explain", False)),
-            format=args.get("format", "markdown"),
-            normalize_filters=bool(args.get("normalize_filters", True)),
-        )
-        return _text(result if isinstance(result, str) else str(result))
-
-    # Single-stage form: `source_model` is required; build the
-    # SlayerQuery JSON from the structured args and hand it to
-    # DEV-1546's `query_impl(query_json: str, …)`.
-    if args.get("source_model") is None:
-        return _text(
-            "query: `source_model` is required for single-stage queries "
-            "(or pass `queries` for a nested DAG)."
-        )
-    single: dict = {"source_model": args["source_model"]}
-    for k in (
-        "measures", "dimensions", "filters", "time_dimensions",
-        "order", "limit", "offset", "variables",
-        "distinct_dimension_values",
-    ):
-        v = args.get(k)
-        if v is not None:
-            single[k] = v
-    if args.get("whole_periods_only"):
-        single["whole_periods_only"] = True
 
     result = await _query_mod.query_impl(
-        _json.dumps(single),
-        show_sql=bool(args.get("show_sql", False)),
-        dry_run=bool(args.get("dry_run", False)),
-        explain=bool(args.get("explain", False)),
-        format=args.get("format", "markdown"),
-        normalize_filters=bool(args.get("normalize_filters", True)),
-    )
-    return _text(result if isinstance(result, str) else str(result))
-
-
-# DEV-1534 Fix C: same opt-out logic for SLayer's MCP `query_nested`.
-# A nested-DAG preview goes through this wrapper so each stage's filters
-# can opt out of the default `lower(trim(...))` normalization.
-_QUERY_NESTED_TOOL_DESC = (
-    "Run a nested-DAG SLayer query (one stage's measure feeding the next "
-    "stage's dimension) and return SLayer's formatted result. Same shape "
-    "as SLayer's MCP `query_nested` tool — `queries` (required, a list "
-    "of stage objects; last is the DAG root; non-final stages need a "
-    "`name`; later stages reference earlier ones via `source_model: "
-    "\"<sibling name>\"`), `variables`, `show_sql`, `dry_run`, `explain`, "
-    "`format` (markdown/json/csv). The 7th parameter `normalize_filters` "
-    "(default true) controls our text-equality filter auto-normalization "
-    "for every stage's `filters` list: when true, every `col == 'X'` "
-    "filter becomes `lower(trim(col)) == 'x'`; when false, filters are "
-    "forwarded verbatim (exact-case equality). Pass the stage list in "
-    "the `queries` argument."
-)
-
-
-@tool(
-    "query_nested",
-    _QUERY_NESTED_TOOL_DESC,
-    {
-        "type": "object",
-        "properties": {
-            "queries": {"type": "array"},
-            "variables": {"type": "object"},
-            "show_sql": {"type": "boolean", "default": False},
-            "dry_run": {"type": "boolean", "default": False},
-            "explain": {"type": "boolean", "default": False},
-            "format": {"type": "string", "default": "markdown"},
-            "normalize_filters": {"type": "boolean", "default": True},
-        },
-        "required": ["queries"],
-    },
-)
-async def query_nested(args: dict) -> dict:
-    # DEV-1654: attach storage AND register the task's SLayer server for
-    # teardown disposal (see `query` above).
-    _ensure_slayer_storage_attached()
-
-    result = await _query_mod.query_nested_impl(
-        queries=args["queries"],
+        args.get("query"),
         variables=args.get("variables"),
         show_sql=bool(args.get("show_sql", False)),
         dry_run=bool(args.get("dry_run", False)),
@@ -880,38 +727,11 @@ _SLAYER_NATIVE_NAMES: frozenset[str] = frozenset({
     "create_model",
     "edit_model",
     "validate_models",
-    "help",
 })
 _SLAYER_NATIVE_NORMALIZE_WRITE: frozenset[str] = frozenset({
     "create_model",
     "edit_model",
 })
-
-
-@functools.lru_cache(maxsize=None)
-def _slayer_tool_metadata(name: str) -> tuple[str, dict]:
-    """Extract ``(description, json_schema)`` for a SLayer MCP tool from a
-    storage-less ``create_mcp_server`` so the in-process native advertises
-    SLayer's real signature to the model.
-
-    The schema is derived from the tool fn's signature and is
-    storage-independent; the per-task fn that DOES need storage is resolved
-    separately at call time via ``_query._get_slayer_tool_fn`` (the shared,
-    task-local engine). Cached per name so we build the storage-less server
-    only once per process. Reuses SLayer's own tool definitions rather than
-    hand-maintaining a parallel schema.
-    """
-    from slayer.mcp.server import create_mcp_server
-
-    # DEV-1668 / DEV-1669: this is a metadata-only build (we only read the tool's
-    # description + JSON schema). Pass ``_seed_help=False`` so slayer 0.9.6's
-    # DEV-1658 help-seeding — which does ``await storage.get_memory_row(...)`` —
-    # never fires on this storage-less (``None``) server. Without it the seed
-    # crashes with ``AttributeError: 'NoneType'.get_memory_row`` / a spurious
-    # event-loop error. Upstream fix tracked in DEV-1669.
-    mcp = create_mcp_server(None, _seed_help=False)
-    t = mcp._tool_manager._tools[name]
-    return t.description, t.parameters
 
 
 def _schema_without_param(schema: dict, param: str) -> dict:
@@ -979,7 +799,6 @@ _STATIC_NATIVE_TOOLS: dict = {
     "submit_sql": submit_sql,
     "submit_query": submit_query,
     "query": query,
-    "query_nested": query_nested,
     "ask_discovery": ask_discovery,
 }
 

@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: route_risk_factor
 source_queries:
-- version: 3
+- version: 4
   name: trs_cei_per_vehicle
   source_model: sensordata
   measures:
@@ -12,18 +12,24 @@ source_queries:
   dimensions:
   - name: vehsenseref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: transportinfo
+    columns:
+    - name: rrf
+      sql: (1 - rcp / 100.0) * trs_cei_per_vehicle.trs * (1 - trs_cei_per_vehicle.cei)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: trs_cei_per_vehicle
       join_pairs:
       - - vehiclereg
         - vehsenseref
-    columns:
-    - name: rrf
-      type: DOUBLE
-      sql: (1 - rcp / 100.0) * trs_cei_per_vehicle.trs * (1 - trs_cei_per_vehicle.cei)
+      join_type: left
   dimensions:
   - name: vehiclereg
   - name: rcp
@@ -33,6 +39,8 @@ source_queries:
     model: trs_cei_per_vehicle
   - name: rrf
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"transportinfo.vehiclereg\" AS vehiclereg, \"transportinfo.rcp\"\
   \ AS rcp, \"transportinfo.trs_cei_per_vehicle.trs\" AS trs_cei_per_vehicle__trs,\
@@ -74,11 +82,13 @@ columns:
   sql: vehiclereg
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rcp
   sql: rcp
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Route Completion Percentage (RCP). Percentage of route completed:
     DistDoneKm / (DistDoneKm + DistLeftKm) * 100 (KB #4).'
   hidden: false
@@ -86,6 +96,7 @@ columns:
   sql: trs_cei_per_vehicle__trs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -93,6 +104,7 @@ columns:
   sql: trs_cei_per_vehicle__cei
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -100,6 +112,7 @@ columns:
   sql: rrf
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: qualitycompliance
 sql_table: qualitycompliance
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: reckeyqc
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: qc_checklist
   sql: qc_checklist
   type: TEXT
   primary_key: false
+  unique: false
   description: JSON blob bundling seal integrity, product/pack condition, documentation
     and regulatory checks plus release status.
   hidden: false
@@ -20,6 +22,7 @@ columns:
   sql: json_extract(qc_checklist, '$.security.seal_status')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Security seal status: Intact / Broken / Suspicious. NULL means seal
     status not captured.'
   hidden: false
@@ -27,6 +30,7 @@ columns:
   sql: json_extract(qc_checklist, '$.security.security_incident')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Security incident severity (KB #39, Security Incident Severity Scale):\
     \ 0 (no concerns), 1 (minor procedural deviation), 2 (moderate), 3 (clear evidence\
     \ of attempted tampering), 4 (confirmed breach with product access). NULL means\
@@ -44,48 +48,56 @@ columns:
   sql: json_extract(qc_checklist, '$.product_integrity.product_intact_check')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Product-integrity check result: Passed/Conditional/Failed.'
   hidden: false
 - name: pack_condition
   sql: json_extract(qc_checklist, '$.product_integrity.pack_condition')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Packaging condition assessment: Good/Damaged/Compromised.'
   hidden: false
 - name: label_condition
   sql: json_extract(qc_checklist, '$.product_integrity.label_condition')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Label condition assessment: Clear/Damaged/Illegible.'
   hidden: false
 - name: documentation_complete
   sql: json_extract(qc_checklist, '$.documentation.documentation_complete')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Documentation completeness status: Complete/Partial/Incomplete.'
   hidden: false
 - name: certification_status
   sql: json_extract(qc_checklist, '$.documentation.certification_status')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Certification status at reception: Complete/Expired/Missing.'
   hidden: false
 - name: custom_clearance_status
   sql: json_extract(qc_checklist, '$.customs_and_regulatory.custom_clearance_status')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Customs-clearance status: Cleared/Pending/Delayed.'
   hidden: false
 - name: import_permit_status
   sql: json_extract(qc_checklist, '$.customs_and_regulatory.import_permit_status')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Import-permit compliance status: Valid/Pending/Not Required.'
   hidden: false
 - name: regulatory_compliance_status
   sql: json_extract(qc_checklist, '$.customs_and_regulatory.regulatory_compliance_status')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Regulatory Compliance Status (KB #21): 'Compliant' (meets all regulatory\
     \ requirements), 'Non-compliant' (fails one or more critical requirements), 'Under\
     \ Review' (compliance being assessed). NULL means status not yet determined.\n\
@@ -102,18 +114,21 @@ columns:
   sql: json_extract(qc_checklist, '$.gdp_quality.sop_compliance')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Standard operating procedure compliance status: Full/Partial/Non-compliant.'
   hidden: false
 - name: gdp_compliance
   sql: json_extract(qc_checklist, '$.gdp_quality.gdp_compliance')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Good distribution practice compliance status: Full/Partial/Non-compliant.'
   hidden: false
 - name: quality_agreement_status
   sql: json_extract(qc_checklist, '$.gdp_quality.quality_agreement_status')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Quality Agreement Status (KB #14): 'Active' (current agreement in\
     \ force), 'Expired' (lapsed), 'Pending' (under review), or null (no formal agreement).\n\
     \n[kb=14]\nQuality agreements can have the following statuses: 'Active' (current\
@@ -128,24 +143,28 @@ columns:
   sql: json_extract(qc_checklist, '$.gdp_quality.quality_review_status')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Quality review status: Approved/Pending/Rejected.'
   hidden: false
 - name: responsible_person
   sql: json_extract(qc_checklist, '$.gdp_quality.responsible_person')
   type: TEXT
   primary_key: false
+  unique: false
   description: Responsible quality person.
   hidden: false
 - name: quality_approval_ts
   sql: json_extract(qc_checklist, '$.gdp_quality.quality_approval_ts')
   type: TIMESTAMP
   primary_key: false
+  unique: false
   description: Timestamp of quality approval.
   hidden: false
 - name: product_release_status
   sql: json_extract(qc_checklist, '$.release.product_release_status')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Product release decision (KB #34, Product Release Decision Framework).\
     \ 'Released' (meets all criteria), 'Released with CAPA' (essential criteria met\
     \ but corrective action required), 'Quarantined' (further investigation required),\
@@ -165,12 +184,14 @@ columns:
   sql: json_extract(qc_checklist, '$.release.release_ts')
   type: TIMESTAMP
   primary_key: false
+  unique: false
   description: Product release timestamp.
   hidden: false
 - name: quarantine_reason
   sql: json_extract(qc_checklist, '$.release.quarantine_reason')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Reason for quarantine if applicable: Damage / Documentation / Temperature
     Deviation. NULL means product not quarantined.'
   hidden: false
@@ -179,6 +200,7 @@ columns:
     = 'Delayed' THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Customs-delay indicator for Lane Risk Potential (KB #36): 1 when custom_clearance_status='Delayed'\
     \ on this shipment, 0 otherwise. Used to compute CD (count of customs delays per\
     \ lane).\n\n[kb=36]\nLRP = \\frac{TE_{total} + SD_{total} + CD_{total}}{N_{shipments}},\
@@ -197,6 +219,7 @@ columns:
     THEN 6 ELSE 3 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Stock Management Capability proxy (KB #30, SCRS sub-score, 0-10):\
     \ GDP compliance Full = 9, Partial = 6, else = 3. Used inside Supply Chain Resilience\
     \ Score; heuristic from the gold task solution because the schema does not store\
@@ -214,6 +237,7 @@ columns:
     product_intact_check = 'Passed' THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Batch Release Critical Path Elements indicator (KB #51): the critical-path\
     \ prerequisites for a Released decision include complete temperature history with\
     \ no unexplained gaps, confirmation that any excursions were within stability\

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: airqualityreadings
 sql_table: airqualityreadings
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: aqrecordregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: envreadref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -22,6 +24,7 @@ columns:
   sql: co2ppm
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -29,6 +32,7 @@ columns:
   sql: tvocppb
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -36,6 +40,7 @@ columns:
   sql: ozoneppb
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -43,6 +48,7 @@ columns:
   sql: so2ppb
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -50,6 +56,7 @@ columns:
   sql: no2ppb
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -57,6 +64,7 @@ columns:
   sql: pm25conc
   type: INT
   primary_key: false
+  unique: false
   description: "PM2.5 concentration (KB #30, ug/m^3): clean museum air <5; 5-15 acceptable;\
     \ 15-30 risk to sensitive materials; >30 hazardous, requires immediate filtration\
     \ review.\n\n[kb=30]\nValues represent PM2.5 concentration in \xB5g/m\xB3. Clean\
@@ -75,6 +83,7 @@ columns:
   sql: pm10conc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -82,6 +91,7 @@ columns:
   sql: hchoconc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -89,6 +99,7 @@ columns:
   sql: airexrate
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -96,6 +107,7 @@ columns:
   sql: airvelms
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

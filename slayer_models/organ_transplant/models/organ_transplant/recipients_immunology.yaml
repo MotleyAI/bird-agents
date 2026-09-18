@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: recipients_immunology
 sql_table: recipients_immunology
 query_variables: {}
@@ -8,12 +8,14 @@ columns:
   sql: immu_recip_registry
   type: TEXT
   primary_key: true
+  unique: false
   description: FK to recipients_demographics.recip_registry.
   hidden: false
 - name: pra_score
   sql: pra_score
   type: INT
   primary_key: false
+  unique: false
   description: "Panel Reactive Antibody (PRA) score (0-100). Measure of recipient\
     \ sensitization to foreign HLA antigens. A recipient with pra_score >= 80 is defined\
     \ as having a 'high PRA score' (high immunological sensitization). See pra_band\
@@ -34,6 +36,7 @@ columns:
   sql: dsa_state
   type: TEXT
   primary_key: false
+  unique: false
   description: "Donor-specific antibody status (Negative/Positive). KB Donor-Specific\
     \ Antibodies.\n\n[kb=26]\nThe presence of these antibodies is identified by a\
     \ positive Crossmatch Test. They pose a significant risk for antibody-mediated\
@@ -48,6 +51,7 @@ columns:
   sql: cross_result
   type: TEXT
   primary_key: false
+  unique: false
   description: "Crossmatch result (Negative/Positive/Pending). 'Negative' means no\
     \ pre-formed donor-specific antibodies \u2014 transplant can proceed. 'Positive'\
     \ indicates donor-specific antibodies, making transplant highly risky/contraindicated\
@@ -65,30 +69,35 @@ columns:
   sql: cmv_state
   type: TEXT
   primary_key: false
+  unique: false
   description: Recipient CMV status.
   hidden: false
 - name: ebv_state
   sql: ebv_state
   type: TEXT
   primary_key: false
+  unique: false
   description: Recipient EBV status.
   hidden: false
 - name: func_status
   sql: func_status
   type: TEXT
   primary_key: false
+  unique: false
   description: Recipient functional status band.
   hidden: false
 - name: life_support
   sql: life_support
   type: TEXT
   primary_key: false
+  unique: false
   description: Recipient life-support modality (NULL if none).
   hidden: false
 - name: hlaprofile
   sql: hlaprofile
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSON: {Hla_A_Val, Hla_B_Val, Hla_Dr_Val, Hla_Dq_Val} for recipient.\
     \ KB HLA Typing.\n\n[kb=22]\nA genetic test that identifies a person's unique\
     \ HLA markers. A closer HLA match between a donor and recipient reduces the risk\
@@ -104,6 +113,7 @@ columns:
     'High' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "PRA banding per KB PRA Score Interpretation: 0-10 Low, 11-79 Moderate,\
     \ >=80 High.\n\n[kb=43]\nA PRA score reflects a recipient's sensitization level.\
     \ A score of 0-10% indicates low sensitization, making it easier to find a compatible\
@@ -118,6 +128,7 @@ columns:
   sql: CASE WHEN pra_score >= 80 THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "True when pra_score >= 80 (KB Immunological Sensitization).\n\n[kb=29]\n\
     A clinical state where a recipient is considered highly sensitized to potential\
     \ donors. This condition is formally defined as having a Panel Reactive Antibody\
@@ -133,24 +144,28 @@ columns:
   sql: CAST(json_extract(hlaprofile, '$.Hla_A_Val') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Recipient HLA-A value parsed from hlaprofile.
   hidden: false
 - name: recip_hla_b
   sql: CAST(json_extract(hlaprofile, '$.Hla_B_Val') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Recipient HLA-B value parsed from hlaprofile.
   hidden: false
 - name: recip_hla_dr
   sql: CAST(json_extract(hlaprofile, '$.Hla_Dr_Val') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Recipient HLA-DR value parsed from hlaprofile.
   hidden: false
 - name: recip_hla_dq
   sql: CAST(json_extract(hlaprofile, '$.Hla_Dq_Val') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Recipient HLA-DQ value parsed from hlaprofile.
   hidden: false
 - name: is_amr_high_risk
@@ -158,6 +173,7 @@ columns:
     THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Antibody-Mediated Rejection High-Risk (KB AMR Risk Stratification):\
     \ Positive crossmatch AND PRA >= 80 AND Positive DSA.\n\n[kb=51]\nA risk classification\
     \ system. For recipients who have a 'Positive' crossmatch result, the 'High Risk'\
@@ -175,6 +191,7 @@ columns:
     ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Crossmatch Test contraindication flag (KB 24): true when crossmatch\
     \ is Positive \u2014 indicates presence of donor-specific antibodies and is a\
     \ contraindication to transplantation, predicting immediate organ rejection.\n\
@@ -190,12 +207,7 @@ columns:
     kb_id: 24
 measures: []
 aggregations: []
-joins:
-- target_model: recipients_demographics
-  join_pairs:
-  - - immu_recip_registry
-    - recip_registry
-  join_type: left
+joins: []
 filters: []
 description: 'Recipient immunology: PRA, DSA status, crossmatch, viral status (CMV/EBV),
   functional status, life support, and a JSON hlaprofile (recipient HLA A/B/DR/DQ

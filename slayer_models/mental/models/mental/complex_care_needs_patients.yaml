@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: complex_care_needs_patients
 source_queries:
-- version: 3
+- version: 4
   name: high_risk_facilities
   source_model: facility_metrics
   dimensions:
@@ -10,7 +10,9 @@ source_queries:
   - asr_per_fac__srp > 20
   - asd_per_fac__pfis > 2.5
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: assessmentsymptomsandrisk
     joins:
@@ -18,6 +20,7 @@ source_queries:
       join_pairs:
       - - asrkey
         - fackey
+      join_type: left
   dimensions:
   - name: asrkey
   - name: subuse
@@ -27,6 +30,8 @@ source_queries:
   - subuse IN ('Opioids', 'Multiple')
   - encounters.facid = high_risk_facilities.fackey
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"assessmentsymptomsandrisk.asrkey\" AS asrkey, \"assessmentsymptomsandrisk.subuse\"\
   \ AS subuse, \"assessmentsymptomsandrisk.encounters.facid\" AS encounters__facid\
@@ -232,16 +237,19 @@ columns:
   sql: asrkey
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: subuse
   sql: subuse
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: encounters__facid
   sql: encounters__facid
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

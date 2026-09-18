@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: users
 sql_table: users
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: usersnode
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: userstamp
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: acctscope
   sql: acctscope
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

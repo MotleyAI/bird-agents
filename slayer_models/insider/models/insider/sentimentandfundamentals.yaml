@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: sentimentandfundamentals
 sql_table: sentimentandfundamentals
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: sentreg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: transref
   sql: transref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: newsscore
   sql: newsscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Normalised sentiment score from news feeds.
   hidden: false
   format:
@@ -26,6 +29,7 @@ columns:
   sql: socscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Social-media sentiment score.
   hidden: false
   format:
@@ -34,6 +38,7 @@ columns:
   sql: anlycount
   type: INT
   primary_key: false
+  unique: false
   description: Number of active analyst coverage reports.
   hidden: false
   format:
@@ -42,6 +47,7 @@ columns:
   sql: inholdpct
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Insider ownership percentage of the stock.
   hidden: false
   format:
@@ -50,6 +56,7 @@ columns:
   sql: instownpct
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Institutional ownership percentage.
   hidden: false
   format:
@@ -58,6 +65,7 @@ columns:
   sql: shortintrt
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Short-interest ratio (days to cover).
   hidden: false
   format:
@@ -66,6 +74,7 @@ columns:
   sql: optvolrt
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Option volume ratio versus average.
   hidden: false
   format:
@@ -74,6 +83,7 @@ columns:
   sql: putcallrt
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Put-to-call volume ratio.
   hidden: false
   format:
@@ -82,6 +92,7 @@ columns:
   sql: impvolrank
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Implied-volatility rank (0..1 scale).
   hidden: false
   format:
@@ -90,6 +101,7 @@ columns:
   sql: unuoptact
   type: TEXT
   primary_key: false
+  unique: false
   description: "Unusual Option Activity Level (KB #26): 'High' = significant deviations\
     \ from normal option-trading patterns (volume / strikes / expirations) \u2014\
     \ potential informed trading. 'Moderate' = some unusual activity.\n\n[kb=26]\n\
@@ -107,6 +119,7 @@ columns:
   sql: corpeventprx
   type: TEXT
   primary_key: false
+  unique: false
   description: Corporate event in close temporal proximity (Earnings / Restructuring
     / M&A).
   hidden: false
@@ -114,6 +127,7 @@ columns:
   sql: eventannotm
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Timing of the relevant event announcement: Pre-market / Intraday /
     Post-market.'
   hidden: false
@@ -121,6 +135,7 @@ columns:
   sql: infoleaksc
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Information Leakage Score Interpretation (KB #27): 0..100. Low (<20)\
     \ = little evidence; Moderate (20..50) = warrants attention; High (>50) = strongly\
     \ suggests trading on material non-public info.\n\n[kb=27]\n`infoleaksc`: A score\
@@ -140,11 +155,13 @@ columns:
   sql: trdref2
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sdf
   sql: ABS(newsscore - socscore)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Sentiment Divergence Factor (SDF = |newsscore - socscore|) \u2014\
     \ KB #7.\n\n[kb=7]\nSDF = |\\text{newsscore} - \\text{socscore}| \u2014 Measures\
     \ the difference between news and social media sentiment scores.\n[/kb=7]"
@@ -156,6 +173,7 @@ columns:
   sql: CASE WHEN instownpct = 0 THEN NULL ELSE shortintrt * 1.0 / instownpct END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Relative Short Interest (RSI = shortintrt / instownpct, undefined\
     \ if instownpct = 0) \u2014 KB #8.\n\n[kb=8]\nRSI = \\frac{\\text{shortintrt}}{\\\
     text{instownpct}} \\text{ (undefined if instownpct = 0)} \u2014 Calculates short\
@@ -168,6 +186,7 @@ columns:
   sql: optvolrt * (1.0 + ABS(newsscore - socscore))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Sentiment-Weighted Option Volume (SWOV = optvolrt * (1 + SDF)) \u2014\
     \ KB #34.\n\n[kb=34]\nSWOV = \\text{optvolrt} \\times (1 + \\text{SDF}) \\\\ \\\
     text{where SDF is the Sentiment Divergence Factor .} \u2014 Adjusts the option\
@@ -180,6 +199,7 @@ columns:
   sql: (optvolrt * (1.0 + ABS(newsscore - socscore))) * infoleaksc
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Sentiment-Driven Leakage Risk (SDLR = SWOV * infoleaksc) \u2014 KB\
     \ #51.\n\n[kb=51]\nSDLR = \\text{SWOV} \\times \\text{infoleaksc}. \u2014 Calculates\
     \ potential information leakage risk weighted by sentiment-driven unusual option\
@@ -193,6 +213,7 @@ columns:
     OR eventannotm = 'Intraday')
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Potential Insider Trading Flag (KB #11): infoleaksc>50 AND corpeventprx\
     \ IS NOT NULL AND eventannotm IN ('Pre-market','Intraday').\n\n[kb=11]\nA transaction\
     \ is flagged if `infoleaksc` > 50.0 AND `corpeventprx` is NOT NULL AND `eventannotm`\
@@ -207,6 +228,7 @@ columns:
     (eventannotm = 'Pre-market' OR eventannotm = 'Intraday') THEN 1.5 ELSE 1.0 END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Boosted Insider Leakage Score (BILS = infoleaksc * (1.5 if Potential\
     \ Insider Trading Flag else 1.0)) \u2014 KB #38.\n\n[kb=38]\nBILS = \\text{InfoLeakageScoreValue}\
     \ \\times (1.5 \\text{ if Potential Insider Trading Flag  is True else } 1.0)\
@@ -223,6 +245,7 @@ columns:
     * (CASE WHEN instownpct = 0 THEN NULL ELSE shortintrt * 1.0 / instownpct END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Insider Sentiment Short Ratio (ISSR = BILS * RSI) \u2014 KB #58.\n\
     \n[kb=58]\nISSR = \\text{BILS} \\times \\text{RSI} \\\\ \\text{where BILS is Boosted\
     \ Insider Leakage Score  and RSI is Relative Short Interest .} \u2014 Combines\
@@ -236,6 +259,7 @@ columns:
   sql: ((optvolrt * (1.0 + ABS(newsscore - socscore))) * infoleaksc) > 1000
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High SDLR Transaction (KB #70): SDLR > 1000.\n\n[kb=70]\nA transaction\
     \ where the calculated Sentiment-Driven Leakage Risk (SDLR) > 1000. \u2014 Identifies\
     \ transactions deemed high-risk based on their Sentiment-Driven Leakage Risk score\

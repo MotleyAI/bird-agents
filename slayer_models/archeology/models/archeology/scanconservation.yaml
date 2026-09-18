@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: scanconservation
 sql_table: scanconservation
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: cureregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,26 +16,31 @@ columns:
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: zoneref
   sql: zoneref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: harmassess
   sql: harmassess
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: curerank
   sql: curerank
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: structstate
   sql: structstate
   type: TEXT
   primary_key: false
+  unique: false
   description: "Structural State (KB #26). 'Stable' = maintains integrity under normal\
     \ conditions; 'Unstable' = signs of deterioration requiring intervention; 'Critical'\
     \ = imminent risk of collapse requiring emergency stabilization.\n\n[kb=26]\n\
@@ -52,17 +58,20 @@ columns:
   sql: intervhistory
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: priordocs
   sql: priordocs
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_degradation_risk_zone
   sql: CASE WHEN (sites.presstat LIKE '%Poor%' OR sites.presstat LIKE '%Critical%')
     AND (structstate IS NULL OR structstate <> 'Stable') THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Degradation Risk Zone (KB #14): site PresStat in {'Poor','Critical'}\
     \ AND StructState != 'Stable' \u2014 active deterioration, immediate conservation\
     \ needs.\n\n[kb=14]\nA site with PresStat containing 'Poor' or 'Critical' and\
@@ -80,6 +89,7 @@ columns:
     ELSE 'Not in Risk Zone' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Risk Zone Category (KB #52): two-class classification \u2014 'Degradation\
     \ Risk Zone' (KB #14) or 'Not in Risk Zone'.\n\n[kb=52]\nCategorizes archaeological\
     \ sites into two main groups: 'Degradation Risk Zone' and 'Not in Risk Zone'.\
@@ -95,6 +105,7 @@ columns:
     THEN 50 WHEN 'Poor' THEN 70 WHEN 'Critical' THEN 90 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'PresStat-to-PS mapping (KB #35 component): Excellent=10, Good=30,
     Fair=50, Poor=70, Critical=90; unrecognized values resolve to NULL. Component
     of `cpi`.'
@@ -104,6 +115,7 @@ columns:
   sql: abs(CAST(sites.guessdate AS REAL)) / 1000.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Approximate Age in millennia (KB #35 component) derived from GuessDate.
     Best-effort: leading numeric portion of GuessDate, absolute, divided by 1000.
     Non-numeric labels (e.g. ''Iron Age'') resolve to 0; underlying KB doesn''t fully
@@ -115,6 +127,7 @@ columns:
     THEN 6 WHEN 'Industrial' THEN 4 WHEN 'Burial' THEN 2 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'TypeSite rarity score (KB #35 component): 0-10 based on type. Religious=10,
     Military=8, Settlement=6, Industrial=4, Burial=2, other=0. KB #35 doesn''t specify
     the exact mapping; this is a best-effort archaeology-domain ranking. Component
@@ -135,6 +148,7 @@ columns:
     'Industrial' THEN 4 WHEN 'Burial' THEN 2 ELSE 0 END) / 20.0) END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Conservation Priority Index (CPI, KB #35): piecewise formula. If in\
     \ Degradation Risk Zone: 100 - PS + AF*(1+TS/10); else: 50 - PS + AF*(1+TS/20).\
     \ PS from PresStat (Excellent=10..Critical=90), AF in millennia from GuessDate,\
@@ -160,6 +174,7 @@ columns:
     ELSE 0 END) / 10.0)) > 75 THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Conservation Emergency (KB #42): in a Degradation Risk Zone (KB #14)\
     \ AND CPI > 75 (KB #35) \u2014 immediate protective measures and priority documentation\
     \ required.\n\n[kb=42]\nA site that is in a Degradation Risk Zone with CPI > 75,\

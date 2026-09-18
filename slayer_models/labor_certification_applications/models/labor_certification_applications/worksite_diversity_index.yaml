@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: worksite_diversity_index
 source_queries:
-- version: 3
+- version: 4
   name: ws_workers
   source_model: case_worksite
   measures:
@@ -13,20 +13,27 @@ source_queries:
   - name: wsstate
   - name: wszip
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: ws_share_sq
   source_model:
     source_name: ws_workers
     columns:
     - name: share_sq
-      type: DOUBLE
       sql: (wsheads_sum * 1.0 / SUM(wsheads_sum) OVER (PARTITION BY homefirm)) * (wsheads_sum
         * 1.0 / SUM(wsheads_sum) OVER (PARTITION BY homefirm))
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: homefirm
   - name: share_sq
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model: ws_share_sq
   measures:
   - formula: 1.0 - share_sq:sum
@@ -34,6 +41,8 @@ source_queries:
   dimensions:
   - name: homefirm
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"ws_share_sq.homefirm\" AS homefirm, \"ws_share_sq.share_sq_sum\"\
   \ AS share_sq_sum, \"ws_share_sq.wdi\" AS wdi FROM (WITH base AS (\nSELECT\n  ws_share_sq.homefirm\
@@ -65,17 +74,20 @@ columns:
   sql: homefirm
   type: TEXT
   primary_key: false
+  unique: false
   description: Employer (homefirm) for the case, denormalized via cases join.
   hidden: false
 - name: share_sq_sum
   sql: share_sq_sum
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: wdi
   sql: wdi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

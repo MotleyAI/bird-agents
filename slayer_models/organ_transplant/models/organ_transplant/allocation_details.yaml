@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: allocation_details
 sql_table: allocation_details
 query_variables: {}
@@ -8,12 +8,14 @@ columns:
   sql: allc_match_registry
   type: TEXT
   primary_key: true
+  unique: false
   description: FK to transplant_matching.match_rec_registry.
   hidden: false
 - name: allc_seq_num
   sql: allc_seq_num
   type: INT
   primary_key: false
+  unique: false
   description: Allocation rank position.
   hidden: false
   format:
@@ -22,6 +24,7 @@ columns:
   sql: allc_region
   type: TEXT
   primary_key: false
+  unique: false
   description: "Geographic region for organ allocation. KB Regional Allocation Priority.\n\
     \n[kb=36]\nA core rule embedded within an Allocation Policy that gives priority\
     \ to recipients located in the same geographic region as the donor. [cite_start]This\
@@ -39,6 +42,7 @@ columns:
   sql: allc_pol_vers
   type: TEXT
   primary_key: false
+  unique: false
   description: "Allocation Policy version (e.g. 'v2.7'). KB Allocation Policy.\n\n\
     [kb=34]\nThe precise set of rules used for organ distribution, identified by a\
     \ unique version string in the `allc_pol_vers` field, such as 'v2.7'[cite: 73].\
@@ -55,12 +59,14 @@ columns:
   sql: donor_ref_reg
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to demographics.contrib_registry.
   hidden: false
 - name: recip_ref_reg
   sql: recip_ref_reg
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to recipients_demographics.recip_registry.
   hidden: false
 measures: []

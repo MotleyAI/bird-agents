@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: investigation
 sql_table: investigation
 query_variables: {}
@@ -8,26 +8,31 @@ columns:
   sql: investregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: investstat
   sql: investstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lawinterest
   sql: lawinterest
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: regrisklvl
   sql: regrisklvl
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: compliancescore
   sql: compliancescore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -35,11 +40,13 @@ columns:
   sql: investpriority
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: resptimemins
   sql: resptimemins
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -47,16 +54,19 @@ columns:
   sql: escalationlevel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: casestatus
   sql: casestatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: resolutiontimehours
   sql: resolutiontimehours
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -64,26 +74,31 @@ columns:
   sql: actiontaken
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: followuprequired
   sql: followuprequired
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: reviewfrequency
   sql: reviewfrequency
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: nextreviewdate
   sql: nextreviewdate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: notescount
   sql: notescount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -91,16 +106,19 @@ columns:
   sql: dataretentionstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lastupdated
   sql: lastupdated
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: updatefrequencyhours
   sql: updatefrequencyhours
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -108,17 +126,20 @@ columns:
   sql: secref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: riskref
   sql: riskref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lawinterest_numeric
   sql: CASE lawinterest WHEN 'Low' THEN 1 WHEN 'Medium' THEN 2 WHEN 'High' THEN 3
     WHEN 'Unknown' THEN 2 ELSE 2 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric mapping of lawinterest used by IPS: Low=1, Medium=2, High=3,\
     \ Unknown=2.\n\n[kb=8]\n'Low' indicates minimal risk patterns with transparent\
     \ transaction flows and consistent monetary behavior; 'Medium' suggests some unusual\
@@ -137,6 +158,7 @@ columns:
     'Unknown' THEN 2 ELSE 2 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric mapping of regrisklvl used by IPS: Low=1, Medium=2, High=3,\
     \ Unknown=2.\n\n[kb=8]\n'Low' indicates minimal risk patterns with transparent\
     \ transaction flows and consistent monetary behavior; 'Medium' suggests some unusual\
@@ -158,6 +180,7 @@ columns:
     2)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Investigation Priority Score (IPS): 30*lawinterest_numeric + 20*regrisklvl_numeric\
     \ + 100*fraudprob (from linked riskanalysis via riskref) - 0.5*compliancescore\
     \ + 2*notescount. Higher = higher priority.\n\n[kb=18]\nIPS = (lawinterest\\_numeric\
@@ -171,12 +194,13 @@ columns:
   meta:
     kb_id: 18
 - name: cpra
-  sql: (riskanalysis__communication.keymatchcount * 3) + (1 * 10) + (((riskanalysis.fraudprob
+  sql: (riskanalysis.communication.keymatchcount * 3) + (1 * 10) + (((riskanalysis.fraudprob
     * 100) + (riskanalysis.wallrisksc * 0.5) - (riskanalysis.wallage * 1.0 / 30) +
-    (riskanalysis.wallturnrt * 10) + (riskanalysis.txvel * 1.0 / 10)) * 0.2) + ((riskanalysis__transactions__markets.mktspan
+    (riskanalysis.wallturnrt * 10) + (riskanalysis.txvel * 1.0 / 10)) * 0.2) + ((riskanalysis.transactions.markets.mktspan
     * 1.0 / 365) * 5) - (compliancescore * 1.0 / 20)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Cross-Platform Risk Amplification (CPRA, KB #38): keymatchcount*3\
     \ + COUNT(DISTINCT mktref)*10 + WRI*0.2 + (mktspan/365)*5 - compliancescore/20.\
     \ Schema shortfall: `riskanalysis` is per-transaction and the schema has no cross-market\
@@ -194,15 +218,16 @@ columns:
   meta:
     kb_id: 38
 - name: is_multi_platform_threat_entity
-  sql: ((riskanalysis__communication.keymatchcount * 3) + (1 * 10) + (((riskanalysis.fraudprob
+  sql: ((riskanalysis.communication.keymatchcount * 3) + (1 * 10) + (((riskanalysis.fraudprob
     * 100) + (riskanalysis.wallrisksc * 0.5) - (riskanalysis.wallage * 1.0 / 30) +
-    (riskanalysis.wallturnrt * 10) + (riskanalysis.txvel * 1.0 / 10)) * 0.2) + ((riskanalysis__transactions__markets.mktspan
-    * 1.0 / 365) * 5) - (compliancescore * 1.0 / 20)) > 80 AND riskanalysis__communication.keymatchcount
+    (riskanalysis.wallturnrt * 10) + (riskanalysis.txvel * 1.0 / 10)) * 0.2) + ((riskanalysis.transactions.markets.mktspan
+    * 1.0 / 365) * 5) - (compliancescore * 1.0 / 20)) > 80 AND riskanalysis.communication.keymatchcount
     > 30 AND ((riskanalysis.fraudprob * 100) + (riskanalysis.wallrisksc * 0.5) - (riskanalysis.wallage
     * 1.0 / 30) + (riskanalysis.wallturnrt * 10) + (riskanalysis.txvel * 1.0 / 10))
     > 70
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Multi-Platform Threat Entity (KB #48): CPRA > 80, displays Cross-Platform\
     \ Operator characteristics (KB #29: keymatchcount > 30 with cross-market identity),\
     \ WRI > 70, plus consistent OPSEC across platforms. Encoded on investigation so\

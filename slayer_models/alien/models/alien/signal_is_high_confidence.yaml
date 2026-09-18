@@ -1,33 +1,41 @@
-version: 7
+version: 10
 name: signal_is_high_confidence
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
+    columns:
+    - name: is_high_confidence
+      sql: CASE WHEN ((1 - signalprobabilities.falseposprob) * signaldecoding.decodeconf
+        * signalclassification.classconf * (CASE WHEN (snrratio - 0.1 * ABS(noisefloordbm))
+        > 0 THEN (snrratio - 0.1 * ABS(noisefloordbm)) / 10.0 + 0.5 ELSE 0.1 END))
+        > 0.8 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: signaldecoding
       join_pairs:
       - - signalregistry
         - signalref
+      join_type: left
     - target_model: signalclassification
       join_pairs:
       - - signalregistry
         - signalref
+      join_type: left
     - target_model: signalprobabilities
       join_pairs:
       - - signalregistry
         - signalref
-    columns:
-    - name: is_high_confidence
-      type: BOOLEAN
-      sql: CASE WHEN ((1 - signalprobabilities.falseposprob) * signaldecoding.decodeconf
-        * signalclassification.classconf * (CASE WHEN (snrratio - 0.1 * ABS(noisefloordbm))
-        > 0 THEN (snrratio - 0.1 * ABS(noisefloordbm)) / 10.0 + 0.5 ELSE 0.1 END))
-        > 0.8 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: is_high_confidence
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_high_confidence\"\
   \ AS is_high_confidence FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
@@ -48,11 +56,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_high_confidence
   sql: is_high_confidence
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

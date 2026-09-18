@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: surfaceandphysicalreadings
 sql_table: surfaceandphysicalreadings
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: surfphysregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: envreadref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -22,6 +24,7 @@ columns:
   sql: vibralvlmms2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -29,6 +32,7 @@ columns:
   sql: noisedb
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -36,6 +40,7 @@ columns:
   sql: dustaccummgm2
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -43,6 +48,7 @@ columns:
   sql: microbialcountcfu
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -50,6 +56,7 @@ columns:
   sql: moldriskidx
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -57,11 +64,13 @@ columns:
   sql: pestactivitylvl
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: pesttrapcount
   sql: pesttrapcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -69,11 +78,13 @@ columns:
   sql: pestspeciesdetected
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: surfaceph
   sql: surfaceph
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -81,6 +92,7 @@ columns:
   sql: matmoistcontent
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -88,11 +100,13 @@ columns:
   sql: saltcrystalrisk
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: metalcorroderate
   sql: metalcorroderate
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -100,6 +114,7 @@ columns:
   sql: organicdegradidx
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -107,6 +122,7 @@ columns:
   sql: colorchangedeltae
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -114,6 +130,7 @@ columns:
   sql: surfacetempc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -121,6 +138,7 @@ columns:
   sql: surfacerh
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -128,26 +146,31 @@ columns:
   sql: condenserisk
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: thermalimgstatus
   sql: thermalimgstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: structstability
   sql: structstability
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: crackmonitor
   sql: crackmonitor
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: deformmm
   sql: deformmm
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -155,6 +178,7 @@ columns:
   sql: wtchangepct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -162,6 +186,7 @@ columns:
   sql: surfdustcoverage
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -169,6 +194,7 @@ columns:
   sql: o2concentration
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -176,16 +202,12 @@ columns:
   sql: n2concentration
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
 measures: []
 aggregations: []
-joins:
-- target_model: environmentalreadingscore
-  join_pairs:
-  - - envreadref
-    - envreadregistry
-  join_type: left
+joins: []
 filters: []
 hidden: false

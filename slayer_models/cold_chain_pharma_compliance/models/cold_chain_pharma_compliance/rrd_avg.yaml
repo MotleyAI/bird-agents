@@ -1,18 +1,23 @@
-version: 6
+version: 10
 name: rrd_avg
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: carriers
     columns:
     - name: k
       sql: '1'
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: rrd_score:avg
   dimensions:
   - name: k
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"carriers.k\" AS k, \"carriers.rrd_score_avg\" AS rrd_score_avg\
   \ FROM (SELECT\n  1 AS \"carriers.k\",\n  AVG(\n    CASE\n      WHEN LOWER(TRIM(carriercert))\
@@ -25,11 +30,13 @@ columns:
   sql: k
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: rrd_score_avg
   sql: rrd_score_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Redundant Resources Depth proxy (KB #30, SCRS sub-score, 0-10): Both
     certifications = 10, single GDP or CEIV Pharma = 8, else = 4. Used inside Supply
     Chain Resilience Score; heuristic from the gold task solution because the schema

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: operations
 sql_table: operations
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: opsregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: opsdistref
   sql: opsdistref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: opshubref
   sql: opshubref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: emerglevel
   sql: emerglevel
   type: TEXT
   primary_key: false
+  unique: false
   description: "Color-coded emergency classification (KB #1). Yellow = monitoring/minimal\
     \ activation; Orange = partial activation/elevated alert; Red = full activation/serious\
     \ emergency; Black = critical emergency requiring all available resources.\n\n\
@@ -39,6 +43,7 @@ columns:
   sql: respphase
   type: TEXT
   primary_key: false
+  unique: false
   description: "Disaster response progression phase (KB #2). Initial = immediate life-saving\
     \ actions; Emergency = critical needs/stabilization; Recovery = restoring basic\
     \ services/infrastructure; Reconstruction = long-term rebuilding.\n\n[kb=2]\n\
@@ -54,21 +59,25 @@ columns:
   sql: opsstatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: coordcenter
   sql: coordcenter
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: opsstartdate
   sql: opsstartdate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: estdurationdays
   sql: estdurationdays
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -76,11 +85,13 @@ columns:
   sql: priorityrank
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: resourceallocstate
   sql: resourceallocstate
   type: TEXT
   primary_key: false
+  unique: false
   description: "Adequacy of resource distribution (KB #6). Sufficient = resources\
     \ meet operational needs; Limited = stretched, prioritisation needed; Critical\
     \ = severe shortages requiring immediate supplementation.\n\n[kb=6]\nSufficient\
@@ -96,12 +107,14 @@ columns:
   sql: supplyflowstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: respphase_numeric
   sql: CASE respphase WHEN 'Initial' THEN 1 WHEN 'Emergency' THEN 2 WHEN 'Recovery'
     THEN 3 WHEN 'Reconstruction' THEN 4 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Numeric mapping of respphase used by KB #30 (RTER): Initial=1, Emergency=2,
     Recovery=3, Reconstruction=4, else=0.'
   hidden: false
@@ -111,6 +124,7 @@ columns:
     AS INTEGER) * 10 + 1, 0)) * 100
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Market Stability Index (MSI, KB #14): (estdurationdays/365) * (deliverysuccessrate/100)\
     \ * (1 - secincidentcount/(partnerorgs::int*10 + 1)) * 100.\n\n[kb=14]\nMSI =\
     \ \\frac{estdurationdays}{365.0} \\times \\frac{deliverysuccessrate}{100.0} \\\
@@ -130,6 +144,7 @@ columns:
     THEN 3 WHEN 'Reconstruction' THEN 4 ELSE 0 END)) / 3.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Response Time Effectiveness Ratio (RTER, KB #30): (100/(estdurationdays+1))\
     \ * (deliverysuccessrate/100) * ((4 - respphase_numeric)/3).\n\n[kb=30]\nRTER\
     \ = \\frac{100}{estdurationdays + 1} \\times \\frac{deliverysuccessrate}{100}\
@@ -146,6 +161,7 @@ columns:
     IN ('Strained', 'Disrupted')
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Critical Resource Shortage (KB #20): storeavailm3 < 10% of storecapm3\
     \ AND supplyflowstate IN ('Strained','Disrupted').\n\n[kb=20]\nA condition where\
     \ storeavailm3 is less than 10% of storecapm3 AND supplyflowstate is 'Strained'\
@@ -161,6 +177,7 @@ columns:
     = 'High Risk' AND coordinationandevaluation.secincidentcount > 50
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High-Risk Response Operation (KB #21): emerglevel in (Red, Black)\
     \ AND safetyranking='High Risk' AND secincidentcount>50.\n\n[kb=21]\nOperations\
     \ where emerglevel is 'Red' or 'Black' AND safetyranking is 'High Risk' AND secincidentcount\
@@ -174,6 +191,7 @@ columns:
   sql: distributionhubs.hubutilpct < 30 AND transportation.distributionpoints > 20
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Resource Optimization Opportunity (KB #22): hubutilpct<30 AND distributionpoints>20.\n\
     \n[kb=22]\nA scenario where hubutilpct < 30 while simultaneously having distributionpoints\
     \ > 20, suggesting potential for redistribution of resources to maximize efficiency\
@@ -189,6 +207,7 @@ columns:
     / 24.0) * (1 + transportation.distributionpoints / 10.0)) > 3
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Operational Excellence (KB #24): deliverysuccessrate>90 AND invaccpct>95\
     \ AND OEI>3.\n\n[kb=24]\nOperations with deliverysuccessrate > 90 AND invaccpct\
     \ > 95 AND OEI > 3, representing highly effective logistics and resource management\
@@ -206,6 +225,7 @@ columns:
     IN ('Red', 'Black')
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Critical Resource Prioritization Need (KB #40): is_critical_resource_shortage\
     \ AND PER<0.5 AND emerglevel in (Red, Black).\n\n[kb=40]\nOperations experiencing\
     \ Critical Resource Shortage where PER < 0.5 AND emerglevel is either 'Red' or\
@@ -225,6 +245,7 @@ columns:
     > 60
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Sustainable Operation Excellence (KB #42): is_operational_excellence\
     \ AND is_sustainable_response.\n\n[kb=42]\nOperations qualifying as Operational\
     \ Excellence while simultaneously meeting Sustainable Response Operation criteria,\
@@ -243,6 +264,7 @@ columns:
     / (distributionhubs.storeavailm3 + 1.0))) > 0.9 AND resourceallocstate = 'Critical'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Financial Vulnerability Zone (KB #43): is_financial_crisis_risk AND\
     \ RUR>0.9 AND resourceallocstate='Critical'.\n\n[kb=43]\nOperations facing Financial\
     \ Crisis Risk where RUR > 0.9 AND resourceallocstate is 'Critical', indicating\
@@ -261,6 +283,7 @@ columns:
     / 10.0)) > 2.5 AND transportation.deliverysuccessrate > 85
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Rapid Response Success Model (KB #49): RTER>20 AND OEI>2.5 AND deliverysuccessrate>85.\n\
     \n[kb=49]\nOperations where RTER > 20 AND OEI > 2.5 AND deliverysuccessrate >\
     \ 85, representing highly effective and rapidly deployed response operations that\
@@ -287,6 +310,7 @@ columns:
     END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Community Resilience Classification (KB #52): Builder, Opportunity,\
     \ or Standard Operation.\n\n[kb=52]\nOperations satisfying criteria from Community\
     \ Resilience Builder are classified as Community Resilience Builder; operations\
@@ -310,26 +334,6 @@ joins:
   join_pairs:
   - - opshubref
     - hubregistry
-  join_type: left
-- target_model: humanresources
-  join_pairs:
-  - - opsregistry
-    - hropsref
-  join_type: left
-- target_model: financials
-  join_pairs:
-  - - opsregistry
-    - finopsref
-  join_type: left
-- target_model: coordinationandevaluation
-  join_pairs:
-  - - opsregistry
-    - coordopsref
-  join_type: left
-- target_model: beneficiariesandassessments
-  join_pairs:
-  - - opsregistry
-    - beneopsref
   join_type: left
 - target_model: transportation
   join_pairs:

@@ -1,31 +1,40 @@
-version: 6
+version: 10
 name: whale_driven_market
 source_queries:
-- version: 3
+- version: 4
   name: ai_per_pair
   source_model:
     source_name: analyticsindicators
     columns:
     - name: is_high_whalemotion
-      type: DOUBLE
       sql: CASE WHEN analyticsindicators.market_sentiment_indicators ->> '$.big_players.whalemotion'
         = 'High' THEN 1 ELSE 0 END
-    - name: is_sm_dominant_bull
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: is_sm_dominant_bull
       sql: CASE WHEN (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
         > 0 AND (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
         > 1.2 * (analyticsindicators.market_sentiment_indicators ->> '$.flow.retailflow')
         AND (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
         > 1.2 * (analyticsindicators.market_sentiment_indicators ->> '$.flow.instflow')
         THEN 1 ELSE 0 END
-    - name: is_sm_dominant_bear
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: is_sm_dominant_bear
       sql: CASE WHEN (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
         < 0 AND (analyticsindicators.market_sentiment_indicators ->> '$.flow.retailflow')
         > 1.2 * (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
         AND (analyticsindicators.market_sentiment_indicators ->> '$.flow.instflow')
         > 1.2 * (analyticsindicators.market_sentiment_indicators ->> '$.flow.smartforce')
         THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: is_high_whalemotion:max
     name: any_high_whalemotion
@@ -37,24 +46,33 @@ source_queries:
   - name: mktcombo
     model: marketdata
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: whale_per_pair
   source_model:
     source_name: whale_order
+    columns:
+    - name: is_whale_buy
+      sql: CASE WHEN whale_order.is_whale_order = 1 AND orders.dealedge = 'Buy' THEN
+        1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: is_whale_sell
+      sql: CASE WHEN whale_order.is_whale_order = 1 AND orders.dealedge = 'Sell' THEN
+        1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: orders
       join_pairs:
       - - recordvault
         - recordvault
-    columns:
-    - name: is_whale_buy
-      type: DOUBLE
-      sql: CASE WHEN whale_order.is_whale_order = 1 AND orders.dealedge = 'Buy' THEN
-        1 ELSE 0 END
-    - name: is_whale_sell
-      type: DOUBLE
-      sql: CASE WHEN whale_order.is_whale_order = 1 AND orders.dealedge = 'Sell' THEN
-        1 ELSE 0 END
+      join_type: left
   measures:
   - formula: is_whale_buy:max
     name: any_whale_buy
@@ -64,20 +82,26 @@ source_queries:
   - name: mktnote
     model: orders
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: ai_per_pair
+    columns:
+    - name: is_whale_driven
+      sql: CASE WHEN ai_per_pair.any_high_whalemotion = 1 AND ((ai_per_pair.any_sm_bull
+        = 1 AND whale_per_pair.any_whale_buy = 1) OR (ai_per_pair.any_sm_bear = 1
+        AND whale_per_pair.any_whale_sell = 1)) THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: whale_per_pair
       join_pairs:
       - - marketdata__mktcombo
         - orders__mktnote
-    columns:
-    - name: is_whale_driven
-      type: DOUBLE
-      sql: CASE WHEN ai_per_pair.any_high_whalemotion = 1 AND ((ai_per_pair.any_sm_bull
-        = 1 AND whale_per_pair.any_whale_buy = 1) OR (ai_per_pair.any_sm_bear = 1
-        AND whale_per_pair.any_whale_sell = 1)) THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: marketdata__mktcombo
   - name: any_high_whalemotion
@@ -85,6 +109,8 @@ source_queries:
   - name: any_sm_bear
   - name: is_whale_driven
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"ai_per_pair.marketdata__mktcombo\" AS marketdata__mktcombo,\
   \ \"ai_per_pair.any_high_whalemotion\" AS any_high_whalemotion, \"ai_per_pair.any_sm_bull\"\
@@ -156,26 +182,31 @@ columns:
   sql: marketdata__mktcombo
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: any_high_whalemotion
   sql: any_high_whalemotion
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: any_sm_bull
   sql: any_sm_bull
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: any_sm_bear
   sql: any_sm_bear
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_whale_driven
   sql: is_whale_driven
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

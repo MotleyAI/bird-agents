@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: processing_optimized_workflow
 source_queries:
-- version: 3
+- version: 4
   name: proc_per_zone
   source_model: scanprocessing
   measures:
@@ -14,7 +14,9 @@ source_queries:
   dimensions:
   - name: zoneref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: mesh_per_zone
   source_model: scanmesh
   measures:
@@ -25,7 +27,9 @@ source_queries:
   dimensions:
   - name: zoneref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: scans_keyed
   source_model:
     source_name: scans
@@ -34,10 +38,12 @@ source_queries:
       join_pairs:
       - - zoneref
         - zoneref
+      join_type: left
     - target_model: mesh_per_zone
       join_pairs:
       - - zoneref
         - zoneref
+      join_type: left
   dimensions:
   - name: questregistry
   - name: arcref
@@ -54,19 +60,27 @@ source_queries:
   - name: mfs
     model: mesh_per_zone
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: scans_keyed
     columns:
     - name: pru
-      type: DOUBLE
       sql: (proc_per_zone__flowhrs * (proc_per_zone__proccpu + proc_per_zone__procgpu)
         / 2.0) / (gbsize * 10 * log10(mesh_per_zone__facetverts + 10000.0))
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: is_processing_optimized_workflow
-      type: BOOLEAN
       sql: CASE WHEN ((proc_per_zone__flowhrs * (proc_per_zone__proccpu + proc_per_zone__procgpu)
         / 2.0) / (gbsize * 10 * log10(mesh_per_zone__facetverts + 10000.0))) < 5.0
         AND mesh_per_zone__mfs > 7.0 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: pru:avg
     name: pru
@@ -78,6 +92,8 @@ source_queries:
   - name: zoneref
   - name: is_processing_optimized_workflow
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"scans_keyed.questregistry\" AS questregistry, \"scans_keyed.arcref\"\
   \ AS arcref, \"scans_keyed.zoneref\" AS zoneref, \"scans_keyed.is_processing_optimized_workflow\"\
@@ -139,26 +155,31 @@ columns:
   sql: questregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: arcref
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: zoneref
   sql: zoneref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_processing_optimized_workflow
   sql: is_processing_optimized_workflow
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 - name: pru
   sql: pru
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -166,6 +187,7 @@ columns:
   sql: mfs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

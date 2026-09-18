@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: credit_and_compliance
 sql_table: credit_and_compliance
 query_variables: {}
@@ -8,31 +8,37 @@ columns:
   sql: compbankref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: sancresult
   sql: sancresult
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: pepresult
   sql: pepresult
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: legalstat
   sql: legalstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: regcompliance
   sql: regcompliance
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: credscore
   sql: credscore
   type: INT
   primary_key: false
+  unique: false
   description: "Credit score (300-850). 300-579 Poor, 580-669 Fair, 670-739 Good,\
     \ 740-799 Very Good, 800-850 Excellent. Higher = lower credit risk.\n\n[kb=20]\n\
     Credit scores (credscore) typically range from 300-850. 300-579: Poor, 580-669:\
@@ -49,6 +55,7 @@ columns:
   sql: risklev
   type: TEXT
   primary_key: false
+  unique: false
   description: "Risk level enum (Low/Medium/High/Very High). 'Low' = minimal risk,\
     \ 'Medium' = moderate (standard monitoring), 'High' = significant risk (enhanced\
     \ monitoring), 'Very High' = severe risk (active intervention).\n\n[kb=25]\nRisk\
@@ -65,6 +72,7 @@ columns:
   sql: defhist
   type: TEXT
   primary_key: false
+  unique: false
   description: "Default-history payment classification. Possible values: Excellent\
     \ (no late payments), Good (minimal late), Fair (occasional missed), Poor (regular\
     \ missed), Current (up to date), Past (historical data). Same enum reused for\
@@ -83,6 +91,7 @@ columns:
   sql: delinqcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -90,6 +99,7 @@ columns:
   sql: latepaycount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -97,6 +107,7 @@ columns:
   sql: collacc
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -104,6 +115,7 @@ columns:
   sql: choffs
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -111,6 +123,7 @@ columns:
   sql: bankr
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -118,6 +131,7 @@ columns:
   sql: taxlien
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -125,6 +139,7 @@ columns:
   sql: civiljudge
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -132,6 +147,7 @@ columns:
   sql: credinq
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -139,6 +155,7 @@ columns:
   sql: hardinq
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -146,6 +163,7 @@ columns:
   sql: softinq
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -153,11 +171,13 @@ columns:
   sql: credrepdisp
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: credageyrs
   sql: credageyrs
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -165,6 +185,7 @@ columns:
   sql: oldaccage
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -175,6 +196,7 @@ columns:
     ELSE 'Unknown' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Credit score category: Poor/Fair/Good/Very Good/Excellent/Unknown\
     \ per KB 20 bands.\n\n[kb=20]\nCredit scores (credscore) typically range from\
     \ 300-850. 300-579: Poor, 580-669: Fair, 670-739: Good, 740-799: Very Good, 800-850:\
@@ -189,6 +211,7 @@ columns:
     'Very High' THEN 4 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric encoding of risklev for use in composite scores: Low=1, Medium=2,\
     \ High=3, Very High=4.\n\n[kb=8]\nRAR = profitscore \xD7 (1 - \\frac{risklev}{4}),\
     \ \\text{where risklev is converted to a numeric scale: Low=1, Medium=2, High=3,\

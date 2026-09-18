@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: categories
 sql_table: categories
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: catref
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: classtype
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

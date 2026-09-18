@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: holdings
 sql_table: holdings
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: holdref
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: instrumentref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: securitykey
   sql: securitykey
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -27,6 +30,7 @@ columns:
   sql: holdingpct
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -34,6 +38,7 @@ columns:
   sql: positionrank
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer

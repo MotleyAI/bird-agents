@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: conservation_budget_crisis
 sql: SELECT (SELECT SUM((((r.histsignrating + r.researchvalrating + r.cultscore) *
   (10 - CASE a.conservestatus WHEN 'Excellent' THEN 1 WHEN 'Good' THEN 3 WHEN 'Fair'
@@ -19,6 +19,7 @@ columns:
   sql: cbe_value
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Global CBE (KB #9) computed over all artifacts.\n\n[kb=9]\nCBE = \\\
     frac{\\sum_{i \\in artifacts} (CPI_i \\times BudgetRatio_i)}{|artifacts|}, \\\
     text{where BudgetRatio is the proportion of total conservation budget allocated\
@@ -32,6 +33,7 @@ columns:
   sql: n_critical_insufficient
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Count of artifacts with ConserveStatus='Critical' AND BudgetAllocStatus='Insufficient'\
     \ (KB #17 second leg).\n\n[kb=17]\nOccurs when CBE < 0.5 AND at least one artifact\
     \ has ConserveStatus='Critical' and BudgetAllocStatus='Insufficient'. \u2014 Identifies\
@@ -45,6 +47,7 @@ columns:
   sql: CASE WHEN cbe_value < 0.5 AND n_critical_insufficient >= 1 THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Conservation Budget Crisis (KB #17): CBE < 0.5 AND >=1 artifact with\
     \ ConserveStatus='Critical' AND BudgetAllocStatus='Insufficient'.\n\n[kb=17]\n\
     Occurs when CBE < 0.5 AND at least one artifact has ConserveStatus='Critical'\

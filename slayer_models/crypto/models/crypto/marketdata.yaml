@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: marketdata
 sql_table: marketdata
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: marketdatanode
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,89 +16,104 @@ columns:
   sql: quote_depth_snapshot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: askquote
   sql: quote_depth_snapshot ->> '$.quotes.askquote'
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Best ask price.
   hidden: false
 - name: bidquote
   sql: quote_depth_snapshot ->> '$.quotes.bidquote'
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Best bid price.
   hidden: false
 - name: midquote
   sql: quote_depth_snapshot ->> '$.quotes.midquote'
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Midpoint price.
   hidden: false
 - name: markquote
   sql: quote_depth_snapshot ->> '$.quotes.markquote'
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Reference 'mark' price for derivatives.
   hidden: false
 - name: indexquote
   sql: quote_depth_snapshot ->> '$.quotes.indexquote'
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Index price.
   hidden: false
 - name: bidunits
   sql: quote_depth_snapshot ->> '$.depth.bidunits'
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Quantity at best bid.
   hidden: false
 - name: askunits
   sql: quote_depth_snapshot ->> '$.depth.askunits'
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Quantity at best ask.
   hidden: false
 - name: biddepth
   sql: quote_depth_snapshot ->> '$.depth.biddepth'
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Deeper bid liquidity.
   hidden: false
 - name: askdepth
   sql: quote_depth_snapshot ->> '$.depth.askdepth'
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Deeper ask liquidity.
   hidden: false
 - name: spreadband
   sql: quote_depth_snapshot ->> '$.spread.spreadband'
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Raw spread (askquote \u2212 bidquote)."
   hidden: false
 - name: spreadrate
   sql: quote_depth_snapshot ->> '$.spread.spreadrate'
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Spread as a ratio.
   hidden: false
 - name: exchnote
   sql: quote_depth_snapshot ->> '$.metadata.exchnote'
   type: TEXT
   primary_key: false
+  unique: false
   description: Exchange code for the snapshot.
   hidden: false
 - name: mktcombo
   sql: quote_depth_snapshot ->> '$.metadata.mktcombo'
   type: TEXT
   primary_key: false
+  unique: false
   description: Trading pair (e.g. BTC-USDT).
   hidden: false
 - name: timetrack
   sql: quote_depth_snapshot ->> '$.metadata.timetrack'
   type: TEXT
   primary_key: false
+  unique: false
   description: Timestamp the snapshot was recorded.
   hidden: false
 - name: spread_percentage
@@ -106,6 +122,7 @@ columns:
     AS REAL), 0) * 100
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Spread Percentage (KB #0): (askquote \u2212 bidquote) / midquote \xD7\
     \ 100. Spread as a percentage of the midpoint price.\n\n[kb=0]\nSpread Percentage\
     \ = \\frac{askquote - bidquote}{midquote} \\times 100, \\text{where } askquote\
@@ -122,6 +139,7 @@ columns:
     AS REAL) + CAST(quote_depth_snapshot ->> '$.depth.askdepth' AS REAL), 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Order Book Imbalance Ratio (KB #32): (biddepth \u2212 askdepth) /\
     \ (biddepth + askdepth). Positive = buying pressure; negative = selling pressure.\n\
     \n[kb=32]\nOrder Book Imbalance Ratio = \\frac{biddepth - askdepth}{biddepth +\

@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: pit_strategy_cluster
 source_queries:
-- version: 3
+- version: 4
   name: stops_per_race
   source_model: pit_stops
   measures:
@@ -10,22 +10,32 @@ source_queries:
   dimensions:
   - name: matchidx
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: stops_per_race
     columns:
     - name: average_stops_per_car
-      type: DOUBLE
       sql: _count * 1.0 / NULLIF(wunit_count_distinct, 0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: pit_strategy_cluster
-      type: TEXT
       sql: CASE WHEN _count * 1.0 / NULLIF(wunit_count_distinct, 0) < 1.5 THEN 'Single-Stop
         Race' WHEN _count * 1.0 / NULLIF(wunit_count_distinct, 0) < 2.5 THEN 'Standard
         Two-Stop' ELSE 'High-Strategy Event' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: matchidx
   - name: pit_strategy_cluster
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"stops_per_race.matchidx\" AS matchidx, \"stops_per_race.pit_strategy_cluster\"\
   \ AS pit_strategy_cluster FROM (SELECT\n  stops_per_race.matchidx AS \"stops_per_race.matchidx\"\
@@ -45,6 +55,7 @@ columns:
   sql: matchidx
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to races.
   hidden: false
   format:
@@ -53,6 +64,7 @@ columns:
   sql: pit_strategy_cluster
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

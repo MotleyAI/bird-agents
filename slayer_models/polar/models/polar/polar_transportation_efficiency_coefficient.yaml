@@ -1,7 +1,7 @@
-version: 7
+version: 10
 name: polar_transportation_efficiency_coefficient
 source_queries:
-- version: 3
+- version: 4
   name: vpc_per_eq
   source_model: chassisandvehicle
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: chassiseqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: esi_per_eq
   source_model: powerbattery
   measures:
@@ -19,7 +21,9 @@ source_queries:
   dimensions:
   - name: pwrbatteqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vpc_per_eq
     joins:
@@ -27,12 +31,15 @@ source_queries:
       join_pairs:
       - - chassiseqref
         - pwrbatteqref
+      join_type: left
   measures:
   - formula: vpc:avg * (0.6 + 0.4 * esi_per_eq.esi:avg / 100.0)
     name: ptec
   dimensions:
   - name: chassiseqref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vpc_per_eq.chassiseqref\" AS chassiseqref, \"vpc_per_eq.vpc_avg\"\
   \ AS vpc_avg, \"vpc_per_eq.ptec\" AS ptec, \"vpc_per_eq.esi_per_eq.esi_avg\" AS\
@@ -70,11 +77,13 @@ columns:
   sql: chassiseqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vpc_avg
   sql: vpc_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Vehicle Performance Coefficient (KB #5): wear / speed / engine-load
     product. Cross-table to engineandfluids for engineloadpercent.'
   hidden: false
@@ -84,6 +93,7 @@ columns:
   sql: ptec
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -91,6 +101,7 @@ columns:
   sql: esi_per_eq__esi_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

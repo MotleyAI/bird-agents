@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: news_users
 sql_table: users
 query_variables: {}
@@ -8,30 +8,35 @@ columns:
   sql: userkey
   type: INT
   primary_key: true
+  unique: false
   description: Primary key.
   hidden: false
 - name: regmoment
   sql: regmoment
   type: DATE
   primary_key: false
+  unique: false
   description: Registration date.
   hidden: false
 - name: typelabel
   sql: typelabel
   type: TEXT
   primary_key: false
+  unique: false
   description: 'User type enum: Trial, Premium, Free.'
   hidden: false
 - name: seglabel
   sql: seglabel
   type: TEXT
   primary_key: false
+  unique: false
   description: 'User segment: New, Dormant, Active, Regular.'
   hidden: false
 - name: substatus
   sql: substatus
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Subscription status: Premium, Enterprise, Basic, etc. Used in KB #6
     statusWeight and KB #17 USV.'
   hidden: false
@@ -39,30 +44,35 @@ columns:
   sql: subdays
   type: INT
   primary_key: false
+  unique: false
   description: 'Days the user has been subscribed. Drives KB #17 USV.'
   hidden: false
 - name: ageval
   sql: ageval
   type: INT
   primary_key: false
+  unique: false
   description: 'User age in years. Drives KB #30 UDS.'
   hidden: false
 - name: gendlbl
   sql: gendlbl
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Gender: M, F, Other. Drives KB #7 genderFactor.'
   hidden: false
 - name: occulbl
   sql: occulbl
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Occupation: Retired, Professional, Other, Student. Drives KB #8 occupationFactor.'
   hidden: false
 - name: testgrp
   sql: testgrp
   type: TEXT
   primary_key: false
+  unique: false
   description: "A/B test group: Control, Variant_A, Variant_B (KB #12 ABTCA: users\
     \ assigned to predetermined groups for controlled comparisons of experimental\
     \ feature performance across cohorts).\n\n[kb=12]\nUsers are assigned to predetermined\
@@ -77,6 +87,7 @@ columns:
   sql: user_preferences
   type: TEXT
   primary_key: false
+  unique: false
   description: JSON column with interests, activity_level, preference_score, satisfaction_score,
     and a feedback sub-object (type, value, category).
   hidden: false
@@ -85,6 +96,7 @@ columns:
     3.0 WHEN 'basic' THEN 1.0 ELSE 0.5 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "statusWeight (KB #6): Premium=2.0, Enterprise=3.0, Basic=1.0, others=0.5.\n\
     \n[kb=6]\n'Premium' = 2.0, 'Enterprise' = 3.0, 'Basic' = 1.0, and others = 0.5.\
     \ It reflects the assumed revenue or importance of the subscription tier. \u2014\
@@ -99,6 +111,7 @@ columns:
     END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "genderFactor (KB #7): 1.0 for Male/Female, 0.8 otherwise.\n\n[kb=7]\n\
     Assigned as 1.0 for Male, Female, and 0.8 otherwise. It standardizes the gender\
     \ effect on demographic impact. \u2014 A weighting value used to balance gender\
@@ -112,6 +125,7 @@ columns:
     1.2 WHEN 'student' THEN 0.7 ELSE 1.0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "occupationFactor (KB #8): Professional=1.5, Retired=1.2, Student=0.7,\
     \ Other=1.0.\n\n[kb=8]\n'Professional' = 1.5, 'Retired' = 1.2, 'Student' = 0.7,\
     \ 'Other' = 1.0. These values are based on segmentation assumptions or business\
@@ -126,6 +140,7 @@ columns:
     THEN 3.0 WHEN 'basic' THEN 1.0 ELSE 0.5 END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "User Subscription Value (USV, KB #17) = subdays \xD7 statusWeight.\n\
     \n[kb=17]\nUSV = subdays \\times statusWeight, \\text{ where statusWeight is a\
     \ multiplier defined by the subscription status (for example, Premium, Enterprise,\
@@ -141,6 +156,7 @@ columns:
     'retired' THEN 1.2 WHEN 'student' THEN 0.7 ELSE 1.0 END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "User Demographic Score (UDS, KB #30) = ageval \xD7 genderFactor \xD7\
     \ occupationFactor.\n\n[kb=30]\nUDS = ageval \\times genderFactor \\times occupationFactor,\
     \ \\text{ where genderFactor and occupationFactor are weights derived from segmentation\

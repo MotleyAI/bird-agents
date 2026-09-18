@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: employer_dependency_level
 source_queries:
-- version: 3
+- version: 4
   name: emp_h1b_share
   source_model: cases
   measures:
@@ -12,7 +12,9 @@ source_queries:
   dimensions:
   - name: homefirm
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: emp_h1b_share
     columns:
@@ -20,12 +22,17 @@ source_queries:
       sql: CASE WHEN h1b_app_pct > 15 THEN 'High Dependency' WHEN h1b_app_pct >= 5
         THEN 'Moderate Dependency' ELSE 'Low Dependency' END
       type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: homefirm
   - name: h1b_app_pct
   - name: any_h1b_dependent
   - name: dependency_level
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"emp_h1b_share.homefirm\" AS homefirm, \"emp_h1b_share.h1b_app_pct\"\
   \ AS h1b_app_pct, \"emp_h1b_share.any_h1b_dependent\" AS any_h1b_dependent, \"emp_h1b_share.dependency_level\"\
@@ -54,11 +61,13 @@ columns:
   sql: homefirm
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: h1b_app_pct
   sql: h1b_app_pct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -66,12 +75,14 @@ columns:
   sql: any_h1b_dependent
   type: DOUBLE
   primary_key: false
+  unique: false
   description: '1 if h1bdep=''Yes''. KB #2 / KB #37 component.'
   hidden: false
 - name: dependency_level
   sql: dependency_level
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

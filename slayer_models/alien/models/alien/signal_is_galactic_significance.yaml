@@ -1,29 +1,11 @@
-version: 7
+version: 10
 name: signal_is_galactic_significance
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
-    joins:
-    - target_model: signaldecoding
-      join_pairs:
-      - - signalregistry
-        - signalref
-    - target_model: signalclassification
-      join_pairs:
-      - - signalregistry
-        - signalref
-    - target_model: signalprobabilities
-      join_pairs:
-      - - signalregistry
-        - signalref
-    - target_model: sourceproperties
-      join_pairs:
-      - - signalregistry
-        - signalref
     columns:
     - name: is_galactic_significance
-      type: BOOLEAN
       sql: CASE WHEN ((CASE WHEN NOT sourceproperties.celestobj IS NULL AND sourceproperties.celestobj
         <> '' AND sourceproperties.celestobj <> 'Unknown' THEN 2 ELSE 1 END) * (CASE
         WHEN sourceproperties.objtype = 'Giant' AND sourceproperties.objmasssol BETWEEN
@@ -36,10 +18,37 @@ source_queries:
         * (1 - signalprobabilities.natsrcprob) * signalprobabilities.sigunique * (0.5
         + signalprobabilities.anomscore / 10.0))) / (1 + signalprobabilities.natsrcprob))
         > 0.7 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: signaldecoding
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
+    - target_model: signalclassification
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
+    - target_model: signalprobabilities
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
+    - target_model: sourceproperties
+      join_pairs:
+      - - signalregistry
+        - signalref
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: is_galactic_significance
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_galactic_significance\"\
   \ AS is_galactic_significance FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
@@ -72,11 +81,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_galactic_significance
   sql: is_galactic_significance
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

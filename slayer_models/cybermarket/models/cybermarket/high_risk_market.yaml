@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: high_risk_market
 source_queries:
-- version: 3
+- version: 4
   name: high_alerts_per_market
   source_model: securitymonitoring
   measures:
@@ -13,24 +13,32 @@ source_queries:
   filters:
   - alertsev = 'High'
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: markets
+    columns:
+    - name: is_high_risk_market
+      sql: CASE WHEN markets.mrs > 500 AND markets.vendcount > 100 AND markets.dlyflow
+        > 5000 AND COALESCE(high_alerts_per_market.high_alert_count, 0) >= 1 THEN
+        1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: high_alerts_per_market
       join_pairs:
       - - mktregistry
         - communication__transactions__mktref
-    columns:
-    - name: is_high_risk_market
-      type: DOUBLE
-      sql: CASE WHEN markets.mrs > 500 AND markets.vendcount > 100 AND markets.dlyflow
-        > 5000 AND COALESCE(high_alerts_per_market.high_alert_count, 0) >= 1 THEN
-        1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: mktregistry
   - name: is_high_risk_market
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"markets.mktregistry\" AS mktregistry, \"markets.is_high_risk_market\"\
   \ AS is_high_risk_market FROM (SELECT\n  markets.mktregistry AS \"markets.mktregistry\"\
@@ -57,11 +65,13 @@ columns:
   sql: mktregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_high_risk_market
   sql: is_high_risk_market
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

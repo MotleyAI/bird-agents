@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: qualifying_with_pole_deficit
 source_queries:
-- version: 3
+- version: 4
   name: best_qual_per_driver
   source_model: qualifying
   dimensions:
@@ -12,36 +12,50 @@ source_queries:
   - name: px_pos
   - name: best_qualifying_seconds
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: best_qual_per_driver
     columns:
     - name: pole_seconds
-      type: DOUBLE
       sql: MIN(best_qualifying_seconds) OVER (PARTITION BY rbind)
+      type: DOUBLE
+      primary_key: false
+      unique: false
       description: Pole-sitter's best qualifying time in seconds for this race (window
         function over qualifying).
+      hidden: false
     - name: qualifying_time_deficit_to_pole
-      type: DOUBLE
       sql: best_qualifying_seconds - MIN(best_qualifying_seconds) OVER (PARTITION
         BY rbind)
+      type: DOUBLE
+      primary_key: false
+      unique: false
       description: 'Qualifying Time Deficit to Pole (KB #28): driver''s best qualifying
         time minus pole sitter''s, in seconds.'
+      hidden: false
     - name: is_qualifying_specialist
-      type: BOOLEAN
       sql: (best_qualifying_seconds - MIN(best_qualifying_seconds) OVER (PARTITION
         BY rbind)) < 0.2
+      type: BOOLEAN
+      primary_key: false
+      unique: false
       description: 'Qualifying Specialist (KB #41): TRUE iff Qualifying Time Deficit
         to Pole < 0.2 s.'
+      hidden: false
     - name: qualifying_performance_cluster
-      type: TEXT
       sql: CASE WHEN (best_qualifying_seconds - MIN(best_qualifying_seconds) OVER
         (PARTITION BY rbind)) < 0.15 THEN 'Pole Threat' WHEN (best_qualifying_seconds
         - MIN(best_qualifying_seconds) OVER (PARTITION BY rbind)) < 0.4 THEN 'Mid
         Gap' ELSE 'Backmarker' END
+      type: TEXT
+      primary_key: false
+      unique: false
       description: 'Qualifying Performance Cluster (KB #53): ''Pole Threat'' (<0.15
         s), ''Mid Gap'' (0.15-0.4 s), ''Backmarker'' (>=0.4 s) by qualifying deficit
         to pole.'
+      hidden: false
   dimensions:
   - name: qualkey
   - name: rbind
@@ -54,6 +68,8 @@ source_queries:
   - name: is_qualifying_specialist
   - name: qualifying_performance_cluster
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"best_qual_per_driver.qualkey\" AS qualkey, \"best_qual_per_driver.rbind\"\
   \ AS rbind, \"best_qual_per_driver.pilotrec\" AS pilotrec, \"best_qual_per_driver.corptag\"\
@@ -105,6 +121,7 @@ columns:
   sql: qualkey
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Unique qualifying record identifier.
   hidden: false
   format:
@@ -113,6 +130,7 @@ columns:
   sql: rbind
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to races.
   hidden: false
   format:
@@ -121,6 +139,7 @@ columns:
   sql: pilotrec
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to drivers.
   hidden: false
   format:
@@ -129,6 +148,7 @@ columns:
   sql: corptag
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to constructors.
   hidden: false
   format:
@@ -137,6 +157,7 @@ columns:
   sql: px_pos
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Final qualifying position (1 = Pole Position, KB #10).'
   hidden: false
   format:
@@ -145,6 +166,7 @@ columns:
   sql: best_qualifying_seconds
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Driver''s best qualifying time (across Q1/Q2/Q3) in seconds. Used
     as T_driver in KB #28 Qualifying Time Deficit to Pole.'
   hidden: false
@@ -152,6 +174,7 @@ columns:
   sql: pole_seconds
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Pole-sitter's best qualifying time in seconds for this race (window
     function over qualifying).
   hidden: false
@@ -159,6 +182,7 @@ columns:
   sql: qualifying_time_deficit_to_pole
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Qualifying Time Deficit to Pole (KB #28): driver''s best qualifying
     time minus pole sitter''s, in seconds.'
   hidden: false
@@ -166,6 +190,7 @@ columns:
   sql: is_qualifying_specialist
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: 'Qualifying Specialist (KB #41): TRUE iff Qualifying Time Deficit to
     Pole < 0.2 s.'
   hidden: false
@@ -173,6 +198,7 @@ columns:
   sql: qualifying_performance_cluster
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Qualifying Performance Cluster (KB #53): ''Pole Threat'' (<0.15 s),
     ''Mid Gap'' (0.15-0.4 s), ''Backmarker'' (>=0.4 s) by qualifying deficit to pole.'
   hidden: false

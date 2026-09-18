@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: constructors
 sql_table: constructors
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: cstr_key
   type: INT
   primary_key: true
+  unique: false
   description: Unique constructor identifier.
   hidden: false
   format:
@@ -16,18 +17,21 @@ columns:
   sql: refcod
   type: TEXT
   primary_key: false
+  unique: false
   description: Constructor reference code (e.g. mclaren, williams).
   hidden: false
 - name: namelabel
   sql: namelabel
   type: TEXT
   primary_key: false
+  unique: false
   description: Full team name.
   hidden: false
 - name: naty
   sql: naty
   type: TEXT
   primary_key: false
+  unique: false
   description: "Constructor nationality. NULL = not recorded (KB #6).\n\n[kb=6]\n\
     When a constructor's nationality is not specified, it means the team's country\
     \ of origin is not recorded in the dataset. \u2014 Clarifies the meaning of unavailable\
@@ -40,6 +44,7 @@ columns:
   sql: linkpage
   type: TEXT
   primary_key: false
+  unique: false
   description: URL of the constructor's reference page.
   hidden: false
 measures: []

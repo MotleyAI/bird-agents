@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: instruments_surveys
 sql_table: instruments_surveys
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: instrumentref
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: facilityname
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Observational facility code: ''ttv'' (Transit Timing Variations method
     per KB #50), ''kep'' (Kepler Space Telescope per KB #39), ''k2'' (K2 mission).'
   hidden: false
@@ -23,6 +25,7 @@ columns:
   sql: facilityname = 'kep'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Kepler Mission facility (KB #39): facility code 'kep'.\n\n[kb=39]\n\
     A planet whose observation record is linked to the 'kep' facility. \u2014 Identifies\
     \ a planet discovered by the Kepler Space Telescope.\n[/kb=39]"
@@ -34,6 +37,7 @@ columns:
   sql: facilityname = 'ttv'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Transit Timing Variations facility (KB #50): facility code 'ttv'.\n\
     \n[kb=50]\nA planet whose observation record is linked to the 'ttv' facility.\
     \ \u2014 A method of exoplanet detection that infers the presence of planets by\

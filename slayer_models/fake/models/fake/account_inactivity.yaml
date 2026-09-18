@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: account_inactivity
 source_queries:
-- version: 3
+- version: 4
   name: last_detect_per_account
   source_model: securitydetection
   measures:
@@ -10,18 +10,25 @@ source_queries:
   dimensions:
   - name: account_id
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: last_detect_per_account
     columns:
     - name: is_inactive
-      type: DOUBLE
       sql: CASE WHEN last_proxy < date('now', '-90 days') THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: account_id
   - name: last_proxy
   - name: is_inactive
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"last_detect_per_account.account_id\" AS account_id, \"\
   last_detect_per_account.last_proxy\" AS last_proxy, \"last_detect_per_account.is_inactive\"\
@@ -48,6 +55,7 @@ columns:
   sql: account_id
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row account identifier resolved through the securitydetection\
     \ \u2192 technicalinfo \u2192 networkmetrics \u2192 sessionbehavior \u2192 profile\
     \ join chain. Convenience handle for grouping/multistage; equals the underlying\
@@ -57,6 +65,7 @@ columns:
   sql: last_proxy
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Detection timestamp. KB #84 ''last activity proxy time'' = max(detecttime)
     per account.'
   hidden: false
@@ -64,6 +73,7 @@ columns:
   sql: is_inactive
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

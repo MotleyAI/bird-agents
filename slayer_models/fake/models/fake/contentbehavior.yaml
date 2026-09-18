@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: contentbehavior
 sql_table: contentbehavior
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: cntref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: cntsessref
   sql: cntsessref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: postnum
   sql: postnum
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -25,6 +28,7 @@ columns:
   sql: postfreq
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Post frequency. Used in KB #13 (Content Farm: postfreq > 50) and KB\
     \ #73 (High-Impact Amplifier: postfreq > 30). \u03A3 postfreq across all content\
     \ rows for an account is Total Post Frequency (KB #76).\n\n[kb=76]\nTPF_a = \\\
@@ -42,6 +46,7 @@ columns:
   sql: postintvar
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -49,6 +54,7 @@ columns:
   sql: cntsimscore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -56,6 +62,7 @@ columns:
   sql: cntuniqscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Content uniqueness score (KB #23). Range 0-1; >0.8 highly unique;\
     \ <0.3 duplicate / templated. Component of CAS (KB #1) and CMS uses (1 - cntuniqscore)\
     \ (KB #8).\n\n[kb=23]\nRanges from 0 to 1. Scores above 0.8 indicate highly unique\
@@ -71,6 +78,7 @@ columns:
   sql: cntdiverseval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -78,11 +86,13 @@ columns:
   sql: cntlangnum
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cnttopicent
   sql: cnttopicent
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -90,11 +100,13 @@ columns:
   sql: hashusepat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: hashratio
   sql: hashratio
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -102,11 +114,13 @@ columns:
   sql: mentionpat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: mentionratio
   sql: mentionratio
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -114,11 +128,13 @@ columns:
   sql: urlsharefreq
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: urldomdiv
   sql: urldomdiv
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -126,6 +142,7 @@ columns:
   sql: mediaupratio
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -133,6 +150,7 @@ columns:
   sql: mediareratio
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Media reuse ratio. Component of CMS (KB #8).'
   hidden: false
   format:

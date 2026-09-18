@@ -1,27 +1,34 @@
-version: 7
+version: 10
 name: signal_ier
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
+    columns:
+    - name: ier
+      sql: signalclassification.entropyval / (signalprobabilities.natsrcprob * 0.9
+        + 0.1)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: signalclassification
       join_pairs:
       - - signalregistry
         - signalref
+      join_type: left
     - target_model: signalprobabilities
       join_pairs:
       - - signalregistry
         - signalref
-    columns:
-    - name: ier
-      type: DOUBLE
-      sql: signalclassification.entropyval / (signalprobabilities.natsrcprob * 0.9
-        + 0.1)
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: ier
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.ier\"\
   \ AS ier FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\",\n\
@@ -36,11 +43,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ier
   sql: ier
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

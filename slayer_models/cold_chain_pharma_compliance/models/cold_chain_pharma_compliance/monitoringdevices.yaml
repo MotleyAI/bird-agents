@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: monitoringdevices
 sql_table: monitoringdevices
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: mondevref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: calibts
   sql: calibts
   type: TIMESTAMP
   primary_key: false
+  unique: false
   description: "Timestamp of last calibration. KB #55 (Monitoring Device Calibration\
     \ Status): 'Current' (within ~12 months), 'Expired' (period elapsed), 'Exempt'\
     \ (single-use factory-calibrated), with null indicating unknown/undocumented.\
@@ -30,11 +32,13 @@ columns:
   sql: devacc
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: recintmin
   sql: recintmin
   type: INT
   primary_key: false
+  unique: false
   description: "Recording interval in minutes (KB #44, Risk-Based Monitoring Intensity):\
     \ high-risk products require 5-minute intervals, medium 15, low 30. NULL means\
     \ unplanned or non-standardised monitoring approaches.\n\n[kb=44]\nHigh-risk products\
@@ -53,6 +57,7 @@ columns:
   sql: temppts
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -60,6 +65,7 @@ columns:
   sql: CAST(devacc AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Device accuracy specification (\xB0C), parsed numerically. Used as\
     \ the 'A' parameter in Temperature Accuracy Impact Factor (KB #57). KB #48 (Data\
     \ Logger Reliability Score) further references device-error rates which are not\
@@ -70,6 +76,7 @@ columns:
     < 365 THEN 'Current' ELSE 'Expired' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Calibration Status (KB #55) derived from calibts: 'Current' if calibrated\
     \ within the last 365 days, 'Expired' otherwise. NULL when calibts is not recorded.\
     \ The 'Exempt' value is not derivable from this schema.\n\n[kb=55]\nCalibration\
@@ -86,6 +93,7 @@ columns:
   sql: CASE WHEN recintmin IS NULL THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Reading-failure indicator for DLRS (KB #48): 1 when the recording\
     \ interval (recintmin) is not configured, 0 otherwise. Used to compute Fr (rate\
     \ of reading failures per 100 deployments).\n\n[kb=48]\nDLRS = 100 - (10 \\times\
@@ -102,6 +110,7 @@ columns:
   sql: CASE WHEN calibts IS NOT NULL AND calibts < '2024-06-26' THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Calibration-drift indicator for DLRS (KB #48): 1 when the device''s
     last calibration date is older than 365 days before the dataset reference date
     (2025-06-26 - 1 year = 2024-06-26), 0 otherwise. Used to compute Fc (calibration
@@ -114,6 +123,7 @@ columns:
     'Unqualified' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Qualification Status of Temperature Monitoring Devices (KB #35): 'Fully\
     \ Qualified' (calibrated with NIST-traceable standards and validated for pharmaceutical\
     \ use), 'Partially Qualified' (calibrated but not fully validated), 'Unqualified'\
@@ -133,6 +143,7 @@ columns:
     recintmin <= 30 THEN 'Tier 2' ELSE 'Tier 1' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Electronic Monitoring System Tier (KB #52): Tier 1 (basic data loggers,\
     \ manual download) / Tier 2 (USB or Bluetooth download) / Tier 3 (network-connected\
     \ real-time alerts) / Tier 4 (full IoT predictive). Source schema does not store\
@@ -152,6 +163,7 @@ columns:
   sql: CASE WHEN devacc IS NOT NULL THEN 'Electronic Impact Recorder' ELSE NULL END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Package Integrity Monitoring Systems (KB #33): Shock Indicators /\
     \ Tilt Indicators / Electronic Impact Recorders / Pressure Indicators. The monitoringdevices\
     \ table represents the electronic-recorder class; mechanical shock/tilt/pressure\

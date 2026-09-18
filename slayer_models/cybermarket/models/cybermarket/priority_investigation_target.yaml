@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: priority_investigation_target
 source_queries:
-- version: 3
+- version: 4
   name: investigation_with_tx
   source_model: investigation
   dimensions:
@@ -13,25 +13,33 @@ source_queries:
   - name: is_suspicious_transaction_pattern
     model: riskanalysis.transactions
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: investigation_with_tx
+    columns:
+    - name: is_priority_investigation_target
+      sql: CASE WHEN investigation_with_tx.ips > 200 AND investigation_with_tx.lawinterest
+        = 'High' AND COALESCE(investigation_with_tx.riskanalysis__transactions__is_suspicious_transaction_pattern,
+        0) = 1 AND COALESCE(high_risk_market.is_high_risk_market, 0) = 1 THEN 1 ELSE
+        0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: high_risk_market
       join_pairs:
       - - riskanalysis__transactions__mktref
         - mktregistry
-    columns:
-    - name: is_priority_investigation_target
-      type: DOUBLE
-      sql: CASE WHEN investigation_with_tx.ips > 200 AND investigation_with_tx.lawinterest
-        = 'High' AND COALESCE(investigation_with_tx.riskanalysis__transactions__is_suspicious_transaction_pattern,
-        0) = 1 AND COALESCE(high_risk_market.is_high_risk_market, 0) = 1 THEN 1 ELSE
-        0 END
+      join_type: left
   dimensions:
   - name: investregistry
   - name: is_priority_investigation_target
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"investigation_with_tx.investregistry\" AS investregistry,\
   \ \"investigation_with_tx.is_priority_investigation_target\" AS is_priority_investigation_target\
@@ -102,11 +110,13 @@ columns:
   sql: investregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_priority_investigation_target
   sql: is_priority_investigation_target
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

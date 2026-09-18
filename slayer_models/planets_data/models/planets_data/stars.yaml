@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: stars
 sql_table: stars
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: stellarref
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: hostplname
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: stellardist
   sql: stellardist
   type: INT
   primary_key: false
+  unique: false
   description: "Distance to host star in parsecs (KB #40). Range ~3.21 to 8500 pc.\n\
     \n[kb=40]\nMeasured in parsecs (pc), where 1 parsec equals about 3.26 light-years.\
     \ Values range from nearby stars like Proxima Centauri (~1.3 pc) to stars thousands\
@@ -35,6 +38,7 @@ columns:
   sql: compcount
   type: INT
   primary_key: false
+  unique: false
   description: Number of confirmed planetary companions for this host star (range
     1..7).
   hidden: false
@@ -45,6 +49,7 @@ columns:
   sql: coordsys
   type: TEXT
   primary_key: false
+  unique: false
   description: JSONB with RA_Text/RA_Decimal (right ascension) and Dec_Text/Dec_Decimal
     (declination).
   hidden: false
@@ -53,6 +58,7 @@ columns:
   sql: stellarprops
   type: TEXT
   primary_key: false
+  unique: false
   description: JSONB grouping photometry (Opt_Mag, Mag_Blend, Photo_Band) and physical
     properties (Temp_Value, Temp_Blend, Mass_Value, Mass_Blend, Radius_Value, Rad_Blend)
     for the host star. The kb_id annotations live on the helper columns that extract
@@ -64,6 +70,7 @@ columns:
   sql: CAST(json_extract(coordsys, '$.RA_Decimal') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Right Ascension in decimal degrees (0..360), extracted from coordsys
     JSON.
   hidden: false
@@ -71,6 +78,7 @@ columns:
   sql: CAST(json_extract(coordsys, '$.Dec_Decimal') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Declination in decimal degrees (-90..+90), extracted from coordsys
     JSON.
   hidden: false
@@ -78,18 +86,21 @@ columns:
   sql: json_extract(coordsys, '$.RA_Text')
   type: TEXT
   primary_key: false
+  unique: false
   description: Right Ascension in sexagesimal format (e.g. '12h20m43.03s').
   hidden: false
 - name: dec_text
   sql: json_extract(coordsys, '$.Dec_Text')
   type: TEXT
   primary_key: false
+  unique: false
   description: Declination in sexagesimal format (e.g. '+17d47m34.3s').
   hidden: false
 - name: stellar_mass
   sql: CAST(json_extract(stellarprops, '$.physical.Mass_Value') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Stellar mass in solar masses (KB #43). Extracted from stellarprops\
     \ JSON.\n\n[kb=43]\nMeasured in solar masses ($M_{\\odot}$), where 1 is the mass\
     \ of our Sun. Most known host stars range from low-mass red dwarfs (~0.1 $M_{\\\
@@ -103,6 +114,7 @@ columns:
   sql: CAST(json_extract(stellarprops, '$.physical.Radius_Value') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Stellar radius in solar radii (KB #44). Extracted from stellarprops\
     \ JSON.\n\n[kb=44]\nMeasured in solar radii ($R_{\\odot}$), where 1 is the radius\
     \ of our Sun. Values range from small neutron stars to giant stars like Betelgeuse,\
@@ -116,6 +128,7 @@ columns:
   sql: CAST(json_extract(stellarprops, '$.physical.Temp_Value') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Effective stellar temperature in Kelvin (KB #42). Extracted from stellarprops\
     \ JSON.\n\n[kb=42]\nMeasured in Kelvin (K). Cool red dwarfs can be around 3,000\
     \ K, a Sun-like star is about 5,800 K, and very hot blue stars can exceed 30,000\
@@ -129,6 +142,7 @@ columns:
   sql: CAST(json_extract(stellarprops, '$.photometry.Opt_Mag') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Apparent optical magnitude (KB #41). Smaller is brighter. Extracted\
     \ from stellarprops JSON.\n\n[kb=41]\nThis is a logarithmic scale where smaller\
     \ numbers are brighter. A magnitude of 1.0 is 100 times brighter than a magnitude\
@@ -142,6 +156,7 @@ columns:
   sql: CAST(json_extract(stellarprops, '$.photometry.Mag_Blend') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Blended Measurement quality flag for optical magnitude (KB #38): 1\
     \ = blended (light from stellar companions affects accuracy), 0 = clean. Extracted\
     \ from stellarprops JSON.\n\n[kb=38]\nA quality flag indicating that a measurement's\
@@ -156,6 +171,7 @@ columns:
   sql: CAST(json_extract(stellarprops, '$.physical.Temp_Blend') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Blended Measurement quality flag for effective temperature (KB #38):\
     \ 1 = blended, 0 = clean. Extracted from stellarprops JSON.\n\n[kb=38]\nA quality\
     \ flag indicating that a measurement's value is affected by light from stellar\
@@ -170,6 +186,7 @@ columns:
   sql: CAST(json_extract(stellarprops, '$.physical.Mass_Blend') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Blended Measurement quality flag for stellar mass (KB #38): 1 = blended,\
     \ 0 = clean. Extracted from stellarprops JSON.\n\n[kb=38]\nA quality flag indicating\
     \ that a measurement's value is affected by light from stellar companions, potentially\
@@ -184,6 +201,7 @@ columns:
   sql: CAST(json_extract(stellarprops, '$.physical.Rad_Blend') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Blended Measurement quality flag for stellar radius (KB #38): 1 =\
     \ blended, 0 = clean. Extracted from stellarprops JSON.\n\n[kb=38]\nA quality\
     \ flag indicating that a measurement's value is affected by light from stellar\
@@ -198,6 +216,7 @@ columns:
   sql: json_extract(stellarprops, '$.photometry.Photo_Band')
   type: TEXT
   primary_key: false
+  unique: false
   description: Photometric band used for magnitude measurement (e.g. 'V (Johnson)',
     'Kepler-band').
   hidden: false
@@ -205,6 +224,7 @@ columns:
   sql: stellardist * 3.26156
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Distance to the star in light-years (KB #0): D_ly = D_pc x 3.26156.\n\
     \n[kb=0]\nGiven the distance in parsecs ($D_{pc}$), the distance in light-years\
     \ ($D_{ly}$) is calculated as: $D_{ly} = D_{pc} \\times 3.26156$ \u2014 Converts\
@@ -219,6 +239,7 @@ columns:
     4)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Stellar luminosity in solar units (KB #3) via Stefan-Boltzmann: L\
     \ = (R/Rsun)^2 * (T/Tsun)^4 with Tsun=5778 K.\n\n[kb=3]\nLuminosity ($L_{\\star}$)\
     \ relative to the Sun is estimated using the Stefan-Boltzmann law: $L_{\\star}\
@@ -237,6 +258,7 @@ columns:
     4)) / 1.1)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Habitable Zone inner boundary in AU (KB #6): r_i = sqrt(L_star / 1.1).\n\
     \n[kb=6]\nThe inner boundary of the habitable zone ($r_i$) in AU is estimated\
     \ based on the star's luminosity ($L_{\\star}$): $r_i \\approx \\sqrt{L_{\\star}\
@@ -253,6 +275,7 @@ columns:
     4)) / 0.53)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Habitable Zone outer boundary in AU (KB #7): r_o = sqrt(L_star / 0.53).\n\
     \n[kb=7]\nThe outer boundary of the habitable zone ($r_o$) in AU is estimated\
     \ based on the star's luminosity ($L_{\\star}$): $r_o \\approx \\sqrt{L_{\\star}\
@@ -269,6 +292,7 @@ columns:
     AS REAL), 3))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Average stellar density (KB #12) in solar units: rho = M / (4/3 *\
     \ pi * R^3).\n\n[kb=12]\nThe average density of a star ($\\rho_{\\star}$) is its\
     \ mass divided by its volume: $\\rho_{\\star} = \\frac{M_{\\star}}{\\frac{4}{3}\\\
@@ -283,6 +307,7 @@ columns:
     * 1.989e30
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Standard gravitational parameter mu = G * M_star (KB #19). G = 6.6743e-11\
     \ N m^2/kg^2; M_star converted from solar masses to kg (1 M_sun = 1.989e30 kg).\
     \ Units: m^3/s^2.\n\n[kb=19]\nThe standard gravitational parameter is $\\mu =\
@@ -297,6 +322,7 @@ columns:
   sql: compcount > 1
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Multi-planetary System (KB #28): the star hosts more than one confirmed\
     \ planet.\n\n[kb=28]\nAny star system with a total number of confirmed planetary\
     \ companions greater than 1. \u2014 A star that hosts more than one confirmed\
@@ -312,6 +338,7 @@ columns:
     AS REAL) / 5778.0, 4)) || '')'''
   type: TEXT
   primary_key: false
+  unique: false
   description: "Hertzsprung-Russell diagram coordinate (KB #13): (T_star, L_star).\
     \ Pair encoded as '(T, L)' string for grouping.\n\n[kb=13]\nThe position is a\
     \ coordinate pair ($T_{\\star}$, $L_{\\star}$) where $T_{\\star}$ is the star's\

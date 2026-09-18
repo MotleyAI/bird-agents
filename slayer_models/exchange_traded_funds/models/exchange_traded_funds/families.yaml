@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: families
 sql_table: families
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: famcode
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,12 +16,14 @@ columns:
   sql: groupname
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: avg_beta3y
   sql: (SELECT AVG(rm.beta3y) FROM funds f JOIN risk_metrics rm ON rm.investmentref
     = f.tickersym WHERE f.parentgroup = families.groupname AND rm.beta3y IS NOT NULL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Family's average 3Y Beta across all its funds.
   hidden: false
 - name: n_alpha_generators
@@ -28,6 +31,7 @@ columns:
     WHERE f.parentgroup = families.groupname AND rm.alpha5y > 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Number of Alpha Generators (5Y alpha > 0) in this family.
   hidden: false
 - name: is_top_tier_family
@@ -38,6 +42,7 @@ columns:
     5
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Top-Tier Family (KB 88): avg 3Y Beta < 1.0 AND \u22655 alpha-generating\
     \ funds.\n\n[kb=88]\nA fund family is 'Top-Tier' if its average 3-year beta is\
     \ less than 1.0 and it manages 5 or more alpha-generating funds. \u2014 A classification\
@@ -53,6 +58,7 @@ columns:
     GROUP BY s.industrytag ORDER BY AVG(sa.weightpct) DESC LIMIT 1)
   type: TEXT
   primary_key: false
+  unique: false
   description: "Family Sector Concentration Profile (KB 87): the economic sector with\
     \ the highest average weight across all funds in this family.\n\n[kb=87]\nFor\
     \ each fund family, this profile is the economic sector with the highest average\

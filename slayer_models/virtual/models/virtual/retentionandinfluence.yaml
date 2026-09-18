@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: retentionandinfluence
 sql_table: retentionandinfluence
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: retreg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: retainengagepivot
   sql: retainengagepivot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: retainloyaltypivot
   sql: retainloyaltypivot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: churnflag
   sql: churnflag
   type: TEXT
   primary_key: false
+  unique: false
   description: "Churn risk rating (KB #8). 'None' = extremely low risk (high-frequency\
     \ interaction + recent consumption); 'Low' = slight risk (slightly decreased login\
     \ freq); 'Medium' = moderate risk (significantly decreased interaction/consumption\
@@ -43,6 +47,7 @@ columns:
   sql: reactcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -50,6 +55,7 @@ columns:
   sql: refcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -57,6 +63,7 @@ columns:
   sql: contreach
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -64,6 +71,7 @@ columns:
   sql: viralcont
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -71,6 +79,7 @@ columns:
   sql: trendpart
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -78,6 +87,7 @@ columns:
   sql: hashuse
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -86,6 +96,7 @@ columns:
     'High' THEN 3 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Numeric mapping of churnflag (KB #52) used by RRF and other retention\
     \ calcs: None=0, Low=1, Medium=2, High=3.\n\n[kb=52]\nTransforms the churnflag\
     \ enum values into numeric equivalents for use in calculations and risk models:\
@@ -102,11 +113,6 @@ columns:
 measures: []
 aggregations: []
 joins:
-- target_model: engagement
-  join_pairs:
-  - - retainengagepivot
-    - engagereg
-  join_type: left
 - target_model: loyaltyandachievements
   join_pairs:
   - - retainloyaltypivot

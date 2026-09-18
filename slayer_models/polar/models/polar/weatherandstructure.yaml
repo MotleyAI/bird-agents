@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: weatherandstructure
 sql_table: weatherandstructure
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: weatherregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: weatherlocref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -22,6 +24,7 @@ columns:
   sql: externaltemperaturec
   type: INT
   primary_key: false
+  unique: false
   description: "External temp (\xB0C) for polar regions. <-40 extreme cold, -40 to\
     \ -20 standard, -20 to 0 mild, 0\u201310 warm (KB #22).\n\n[kb=22]\nExternal temperature\
     \ in polar regions typically ranges from -70\xB0C to 10\xB0C. Temperatures below\
@@ -40,6 +43,7 @@ columns:
   sql: windspeedms
   type: INT
   primary_key: false
+  unique: false
   description: "Wind speed (m/s). <5 calm, 5\u201315 moderate, 15\u201325 strong,\
     \ >25 severe (KB #23).\n\n[kb=23]\nWind speeds in polar environments typically\
     \ range from 0 to 60 m/s. Speeds below 5 m/s represent calm conditions, 5-15 m/s\
@@ -58,6 +62,7 @@ columns:
   sql: winddirectiondegrees
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -65,6 +70,7 @@ columns:
   sql: barometricpressurehpa
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -72,6 +78,7 @@ columns:
   sql: solarradiationwm2
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -79,6 +86,7 @@ columns:
   sql: snowdepthcm
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -86,6 +94,7 @@ columns:
   sql: icethicknesscm
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -93,6 +102,7 @@ columns:
   sql: visibilitykm
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -100,11 +110,13 @@ columns:
   sql: precipitationtype
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: precipitationratemmh
   sql: precipitationratemmh
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -112,6 +124,7 @@ columns:
   sql: snowloadkgm2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -119,6 +132,7 @@ columns:
   sql: structuralloadpercent
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -126,11 +140,13 @@ columns:
   sql: structuralintegritystatus
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vibrationlevelmms2
   sql: vibrationlevelmms2
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -138,6 +154,7 @@ columns:
   sql: noiseleveldb
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -145,6 +162,7 @@ columns:
   sql: weatheropmaintref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -153,6 +171,7 @@ columns:
     > 20 THEN 0.5 WHEN snowloadkgm2 > 50 OR windspeedms > 10 THEN 0.8 ELSE 1.0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Structural Safety Factor (KB #3): (100 \u2212 structuralloadpercent)/100\
     \ \xD7 weather multiplier.\n\n[kb=3]\nSSF = \\frac{100 - structuralloadpercent}{100}\
     \ \\times \\begin{cases} 0.5 & \\text{if snowloadkgm2 > 100 or windspeedms > 20}\

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: performance_and_safety
 sql_table: performance_and_safety
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: effectivenessactuation
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: effectivenessoperation
   sql: effectivenessoperation
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: effectivenessrobot
   sql: effectivenessrobot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: conditionindexval
   sql: conditionindexval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -30,6 +34,7 @@ columns:
   sql: effectivenessindexval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -37,6 +42,7 @@ columns:
   sql: qualitymeasureval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -44,6 +50,7 @@ columns:
   sql: energyusekwhval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -51,6 +58,7 @@ columns:
   sql: pwrfactorval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -58,6 +66,7 @@ columns:
   sql: airpressval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -65,6 +74,7 @@ columns:
   sql: toolchangecount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -72,6 +82,7 @@ columns:
   sql: toolwearpct
   type: INT
   primary_key: false
+  unique: false
   description: "Tool wear percentage. 100% indicates the tool needs replacement (KB\
     \ #28).\n\n[kb=28]\nTool wear is expressed as a percentage, with 100% indicating\
     \ the tool needs replacement. \u2014 Illustrates the tool wear percentage.\n[/kb=28]"
@@ -85,11 +96,13 @@ columns:
   sql: safety_metrics
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: safety_state
   sql: json_extract(safety_metrics, '$.safety_state')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Robot safety state from safety_metrics JSON ('Normal', 'Warning',\
     \ 'Emergency') (KB #26).\n\n[kb=26]\nPossible states include 'Normal', 'Warning',\
     \ and 'Emergency', indicating the current safety condition. \u2014 Illustrates\
@@ -102,6 +115,7 @@ columns:
   sql: json_extract(safety_metrics, '$.emergency_stops')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Number of emergency stops from safety_metrics JSON. Higher = more\
     \ operational issues / safety concerns (KB #27).\n\n[kb=27]\nA higher number of\
     \ emergency stops may indicate operational issues or safety concerns. \u2014 Illustrates\
@@ -117,6 +131,7 @@ columns:
     '$.speed_violations') AS INTEGER), 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Row-level helper for SIS (KB #34): per-row sum of overloads + collisions\
     \ + emergency_stops + speed_violations from safety_metrics JSON.\n\n[kb=34]\n\
     For a given robot R, SIS = \\sum_{ps \\in \\text{performance_and_safety} \\mid\

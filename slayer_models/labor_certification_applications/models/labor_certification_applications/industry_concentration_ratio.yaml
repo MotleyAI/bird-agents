@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: industry_concentration_ratio
 source_queries:
-- version: 3
+- version: 4
   name: industry_apps
   source_model: cases
   measures:
@@ -9,25 +9,34 @@ source_queries:
   dimensions:
   - name: naics_code
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: industry_share_sq
   source_model:
     source_name: industry_apps
     columns:
     - name: share_sq
-      type: DOUBLE
       sql: (_count * 1.0 / SUM(_count) OVER ()) * (_count * 1.0 / SUM(_count) OVER
         ())
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: naics_code
   - name: share_sq
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model: industry_share_sq
   measures:
   - formula: share_sq:sum
     name: icr
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"industry_share_sq.share_sq_sum\" AS share_sq_sum FROM\
   \ (SELECT\n  SUM(industry_share_sq.share_sq) AS \"industry_share_sq.share_sq_sum\"\
@@ -48,6 +57,7 @@ columns:
   sql: share_sq_sum
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

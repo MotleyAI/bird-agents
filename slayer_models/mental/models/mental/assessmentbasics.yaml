@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: assessmentbasics
 sql_table: assessmentbasics
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: abkey
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: atype
   sql: atype
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: amethod
   sql: amethod
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: adurmin
   sql: adurmin
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -30,26 +34,31 @@ columns:
   sql: alang
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: avalid
   sql: avalid
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: respconsist
   sql: respconsist
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: symptvalid
   sql: symptvalid
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: patownerref
   sql: patownerref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

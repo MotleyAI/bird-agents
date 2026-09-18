@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: scanfeatures
 sql_table: scanfeatures
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: traitregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,21 +16,25 @@ columns:
   sql: zoneref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: equipref
   sql: equipref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: traitextract
   sql: traitextract
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: traitcount
   sql: traitcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -37,6 +42,7 @@ columns:
   sql: articount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -44,26 +50,31 @@ columns:
   sql: structkind
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: matkind
   sql: matkind
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: huestudy
   sql: huestudy
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: texturestudy
   sql: texturestudy
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: patternnote
   sql: patternnote
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

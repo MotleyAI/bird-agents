@@ -1,28 +1,35 @@
-version: 7
+version: 10
 name: signal_is_eit
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
+    columns:
+    - name: is_eit
+      sql: CASE WHEN ((signaldecoding.compressratio * signalclassification.complexidx
+        * signalclassification.entropyval) / 10.0) > 1.8 AND signalclassification.entropyval
+        BETWEEN 0.3 AND 0.7 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: signaldecoding
       join_pairs:
       - - signalregistry
         - signalref
+      join_type: left
     - target_model: signalclassification
       join_pairs:
       - - signalregistry
         - signalref
-    columns:
-    - name: is_eit
-      type: BOOLEAN
-      sql: CASE WHEN ((signaldecoding.compressratio * signalclassification.complexidx
-        * signalclassification.entropyval) / 10.0) > 1.8 AND signalclassification.entropyval
-        BETWEEN 0.3 AND 0.7 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: is_eit
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_eit\"\
   \ AS is_eit FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
@@ -38,11 +45,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_eit
   sql: is_eit
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: prevailing_wage
 sql_table: prevailing_wage
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: trackno
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: wage_details
   sql: wage_details
   type: TEXT
   primary_key: false
+  unique: false
   description: JSON column. Holds offered_wage (from/to/unit), prevailing_wage (value/unit/level/oes_year),
     and alternate_source. Per kb_id placement rule, the JSON blob itself is untagged;
     helper columns (prevailing_wage_level, offered_wage_unit, prevailing_wage_unit,
@@ -23,6 +25,7 @@ columns:
   sql: wage_details ->> '$.offered_wage.unit'
   type: TEXT
   primary_key: false
+  unique: false
   description: "Offered wage payment unit (Hour, Week, Month, Year) (KB #8).\n\n[kb=8]\n\
     Wage payment units indicate how wages are calculated and paid, with common units\
     \ including: Hour (payment calculated per working hour), Week (payment calculated\
@@ -39,6 +42,7 @@ columns:
   sql: wage_details ->> '$.prevailing_wage.unit'
   type: TEXT
   primary_key: false
+  unique: false
   description: "Prevailing wage payment unit (Hour, Week, Month, Year) (KB #8).\n\n\
     [kb=8]\nWage payment units indicate how wages are calculated and paid, with common\
     \ units including: Hour (payment calculated per working hour), Week (payment calculated\
@@ -55,6 +59,7 @@ columns:
   sql: wage_details ->> '$.prevailing_wage.level'
   type: TEXT
   primary_key: false
+  unique: false
   description: "Prevailing wage level I (entry) - IV (fully competent) (KB #5).\n\n\
     [kb=5]\nPrevailing wage levels range from I to IV, representing increasingly higher\
     \ wages based on skill, experience, education, and responsibility: Level I (entry-level),\
@@ -71,6 +76,7 @@ columns:
   sql: wage_details ->> '$.alternate_source.source_type'
   type: TEXT
   primary_key: false
+  unique: false
   description: "Alternate prevailing-wage source type when not OES: CBA, Survey, etc.\
     \ (KB #60).\n\n[kb=60]\nAcceptable sources for prevailing wage determinations\
     \ include Occupational Employment Statistics (OES), Collective Bargaining Agreements\
@@ -87,6 +93,7 @@ columns:
     '') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Numeric offered wage in its native unit (parsed from offered_wage.from
     like '$130000.00').
   hidden: false
@@ -95,6 +102,7 @@ columns:
     ''), ',', ''), ' ', '') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Numeric prevailing wage in its native unit (parsed from prevailing_wage.value
     like 'USD 116,979.00').
   hidden: false
@@ -104,6 +112,7 @@ columns:
     WHEN 'Week' THEN 52 WHEN 'Month' THEN 12 WHEN 'Year' THEN 1 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Offered wage annualized: hourly\xD72080, weekly\xD752, monthly\xD7\
     12, yearly\xD71."
   hidden: false
@@ -114,6 +123,7 @@ columns:
     1 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Prevailing wage annualized: hourly\xD72080, weekly\xD752, monthly\xD7\
     12, yearly\xD71."
   hidden: false
@@ -129,6 +139,7 @@ columns:
     52 WHEN 'Month' THEN 12 WHEN 'Year' THEN 1 ELSE NULL END, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Wage Differential Rate (KB #11): ((offered_annual - prevailing_annual)\
     \ / prevailing_annual) * 100.\n\n[kb=11]\nWDR = ((Offered Wage - Prevailing Wage)\
     \ / Prevailing Wage) \xD7 100%. Both offered and prevailing wages are converted\
@@ -151,6 +162,7 @@ columns:
     52 WHEN 'Month' THEN 12 WHEN 'Year' THEN 1 ELSE NULL END, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Wage Premium Rate (KB #17): ((offered - minimum_required) / minimum_required)\
     \ * 100. Minimum required is the prevailing wage in this dataset.\n\n[kb=17]\n\
     WPR = ((Offered Wage - Minimum Required Wage) / Minimum Required Wage) \xD7 100%.\
@@ -174,6 +186,7 @@ columns:
     52 WHEN 'Month' THEN 12 WHEN 'Year' THEN 1 ELSE NULL END, 0) > 20
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Premium Wage Position (KB #40): true iff WDR > 20%.\n\n[kb=40]\nA\
     \ position is considered a premium wage position if the Wage Differential Rate\
     \ (WDR) exceeds 20%, indicating the employer is offering significantly above the\
@@ -207,6 +220,7 @@ columns:
     ELSE 'Premium' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Wage Competitiveness Tier (KB #48): Below-Market (WDR<0), Market-Competitive\
     \ (0\u2264WDR\u226410), Premium (WDR>10).\n\n[kb=48]\nWage offers are classified\
     \ as Below-Market (WDR < 0%), Market-Competitive (0% \u2264 WDR \u2264 10%), or\
@@ -224,6 +238,7 @@ columns:
     Specialized' ELSE NULL END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Occupational Specialization Level (KB #49). KB defines this as General\
     \ / Specialized / Highly Specialized typically correlated with wage level and\
     \ experience. The schema has prevailing_wage.level (I-IV) but no separate experience\

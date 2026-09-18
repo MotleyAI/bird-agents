@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: archaeological_documentation_completeness
 source_queries:
-- version: 3
+- version: 4
   name: pc_per_arcref
   source_model: scanpointcloud
   measures:
@@ -14,7 +14,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: mesh_per_zone
   source_model: scanmesh
   measures:
@@ -23,7 +25,9 @@ source_queries:
   dimensions:
   - name: zoneref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: scans_keyed
   source_model:
     source_name: scans
@@ -32,10 +36,12 @@ source_queries:
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
     - target_model: mesh_per_zone
       join_pairs:
       - - zoneref
         - zoneref
+      join_type: left
   dimensions:
   - name: questregistry
   - name: arcref
@@ -49,14 +55,19 @@ source_queries:
   - name: mfs
     model: mesh_per_zone
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: scans_keyed
     columns:
     - name: adc
-      type: DOUBLE
       sql: pc_per_arcref__sqs * 0.4 + mesh_per_zone__mfs * 0.4 + pc_per_arcref__sce
         * 0.2 - 5 * sqrt(pc_per_arcref__noisedb / 10.0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: adc:avg
     name: adc
@@ -65,6 +76,8 @@ source_queries:
   - name: arcref
   - name: zoneref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"scans_keyed.questregistry\" AS questregistry, \"scans_keyed.arcref\"\
   \ AS arcref, \"scans_keyed.zoneref\" AS zoneref, \"scans_keyed.adc\" AS adc FROM\
@@ -126,21 +139,25 @@ columns:
   sql: questregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: arcref
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: zoneref
   sql: zoneref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: adc
   sql: adc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

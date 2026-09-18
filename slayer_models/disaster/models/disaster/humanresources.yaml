@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: humanresources
 sql_table: humanresources
 query_variables: {}
@@ -8,21 +8,25 @@ columns:
   sql: hrregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: hrdistref
   sql: hrdistref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: hropsref
   sql: hropsref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: staffingprofile
   sql: staffingprofile
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSON consolidating personnel counts and readiness. Sub-fields: personnel.{total,medical,security,logistics,volunteers},\
     \ readiness.{ppe_status (KB #8), comm_equipment, training_status, availability_percent}.\n\
     \n[kb=8]\nAdequate means sufficient PPE available for all personnel, Limited indicates\
@@ -37,36 +41,42 @@ columns:
   sql: CAST(staffingprofile ->> '$.personnel.total' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Total staff (parsed from staffingprofile.personnel.total).
   hidden: false
 - name: personnel_medical
   sql: CAST(staffingprofile ->> '$.personnel.medical' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Medical personnel count.
   hidden: false
 - name: personnel_security
   sql: CAST(staffingprofile ->> '$.personnel.security' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Security personnel count.
   hidden: false
 - name: personnel_logistics
   sql: CAST(staffingprofile ->> '$.personnel.logistics' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Logistics personnel count.
   hidden: false
 - name: personnel_volunteers
   sql: CAST(staffingprofile ->> '$.personnel.volunteers' AS INTEGER)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Volunteer count.
   hidden: false
 - name: ppe_status
   sql: staffingprofile ->> '$.readiness.ppe_status'
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Personal Protective Equipment availability (KB #8). Adequate / Limited
     / Critical.'
   hidden: false
@@ -75,6 +85,7 @@ columns:
     WHEN 'Limited' THEN 0.8 WHEN 'Critical' THEN 0.5 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Numeric factor used by KB #34 (SNR): Adequate=1.2, Limited=0.8, Critical=0.5,
     else=0.'
   hidden: false
@@ -82,18 +93,21 @@ columns:
   sql: CAST(staffingprofile ->> '$.readiness.availability_percent' AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Staff availability percentage.
   hidden: false
 - name: training_status
   sql: staffingprofile ->> '$.readiness.training_status'
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Training progress: Complete / In Progress / Required.'
   hidden: false
 - name: comm_equipment
   sql: staffingprofile ->> '$.readiness.comm_equipment'
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Communication gear availability: Sufficient / Insufficient / Limited.'
   hidden: false
 - name: per
@@ -102,6 +116,7 @@ columns:
     AS REAL) / 100.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Personnel Effectiveness Ratio (PER, KB #13): (staffingprofile.personnel.total\
     \ / (personnelcostsusd/10000)) * (staffingprofile.readiness.availability_percent/100).\n\
     \n[kb=13]\nPER = \\frac{staffingprofile->>'personnel'->>'total'}{(personnelcostsusd\
@@ -121,6 +136,7 @@ columns:
     THEN 1.2 WHEN 'Limited' THEN 0.8 WHEN 'Critical' THEN 0.5 ELSE 0 END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Staffing to Need Ratio (SNR, KB #34): (staffingprofile.personnel.total\
     \ / (impactMetrics.population.affected/10000)) * PER * ppe_factor.\n\n[kb=34]\n\
     SNR = \\frac{staffingprofile->>'personnel'->>'total'}{(impactMetrics->>'population'->>'affected'/10000)}\

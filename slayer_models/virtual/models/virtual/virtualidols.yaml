@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: virtualidols
 sql_table: virtualidols
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: entityreg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: nametag
   sql: nametag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: kindtag
   sql: kindtag
   type: TEXT
   primary_key: false
+  unique: false
   description: "Idol type (KB #2). '2D' = two-dimensional animated, anime-style, limited\
     \ interactivity; '3D' = three-dimensional modeled, natural movements, complex\
     \ performances; 'AI Generated' = AI-created characters, high uniqueness, requires\
@@ -38,21 +41,25 @@ columns:
   sql: debdate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: assocgroup
   sql: assocgroup
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: genretag
   sql: genretag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: primlang
   sql: primlang
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

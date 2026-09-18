@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: exchanges
 sql_table: exchanges
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: xchgnum
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,16 +16,19 @@ columns:
   sql: marketcode
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tradingvenue
   sql: tradingvenue
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: exchangetime
   sql: exchangetime
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

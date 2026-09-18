@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: constructor_standings
 sql_table: constructor_standings
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: cstnds
   type: INT
   primary_key: true
+  unique: false
   description: Unique standings record identifier.
   hidden: false
   format:
@@ -16,6 +17,7 @@ columns:
   sql: rref
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key to races.
   hidden: false
   format:
@@ -24,6 +26,7 @@ columns:
   sql: contunit
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key to constructors.
   hidden: false
   format:
@@ -32,6 +35,7 @@ columns:
   sql: scr_tot
   type: INT
   primary_key: false
+  unique: false
   description: Constructor's cumulative season points after this race.
   hidden: false
   format:
@@ -40,6 +44,7 @@ columns:
   sql: posno
   type: INT
   primary_key: false
+  unique: false
   description: Constructor's rank in the standings.
   hidden: false
   format:
@@ -48,12 +53,14 @@ columns:
   sql: poslab
   type: TEXT
   primary_key: false
+  unique: false
   description: Position text label.
   hidden: false
 - name: trophy_w
   sql: trophy_w
   type: INT
   primary_key: false
+  unique: false
   description: Total wins by the constructor at this point in the season.
   hidden: false
   format:

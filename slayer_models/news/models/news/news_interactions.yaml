@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: news_interactions
 sql_table: interactions
 query_variables: {}
@@ -8,42 +8,49 @@ columns:
   sql: intkey
   type: INT
   primary_key: true
+  unique: false
   description: Primary key.
   hidden: false
 - name: seshlink2
   sql: seshlink2
   type: INT
   primary_key: false
+  unique: false
   description: FK to news_sessions.seshkey.
   hidden: false
 - name: reclink
   sql: reclink
   type: INT
   primary_key: false
+  unique: false
   description: FK to news_recommendations.reckey.
   hidden: false
 - name: artval
   sql: artval
   type: INT
   primary_key: false
+  unique: false
   description: Article id (non-FK reference).
   hidden: false
 - name: intts
   sql: intts
   type: TIMESTAMP
   primary_key: false
+  unique: false
   description: When the interaction occurred.
   hidden: false
 - name: evttype
   sql: evttype
   type: TEXT
   primary_key: false
+  unique: false
   description: Event type.
   hidden: false
 - name: seqval
   sql: seqval
   type: INT
   primary_key: false
+  unique: false
   description: "Event sequence/position within the session.\n\n[kb=9]\nCIE = AVG(seqval)\n\
     \nHere `seqval` is the event\u2019s sequence/position within a session (e.g.,\
     \ 1, 2, 3\u2026).  Average it across all interactions in a session. \u2014 Measures\
@@ -57,42 +64,49 @@ columns:
   sql: agentval
   type: TEXT
   primary_key: false
+  unique: false
   description: User agent.
   hidden: false
 - name: clkts
   sql: clkts
   type: TIMESTAMP
   primary_key: false
+  unique: false
   description: Click timestamp.
   hidden: false
 - name: clkpos
   sql: clkpos
   type: TEXT
   primary_key: false
+  unique: false
   description: Click position.
   hidden: false
 - name: clktype
   sql: clktype
   type: TEXT
   primary_key: false
+  unique: false
   description: Click type.
   hidden: false
 - name: clksrc
   sql: clksrc
   type: TEXT
   primary_key: false
+  unique: false
   description: Click source.
   hidden: false
 - name: clkctx
   sql: clkctx
   type: TEXT
   primary_key: false
+  unique: false
   description: Click context.
   hidden: false
 - name: inttype
   sql: inttype
   type: TEXT
   primary_key: false
+  unique: false
   description: Interaction type.
   hidden: false
 measures:

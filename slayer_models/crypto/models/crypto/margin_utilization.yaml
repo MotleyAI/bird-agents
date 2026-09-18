@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: margin_utilization
 source_queries:
-- version: 3
+- version: 4
   name: margsum_per_user
   source_model: accountbalances
   measures:
@@ -10,28 +10,37 @@ source_queries:
   dimensions:
   - name: usertag
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: orders
+    columns:
+    - name: mu_value
+      sql: (riskandmargin.risk_margin_profile ->> '$.margin_thresholds.inithold')
+        / NULLIF(margsum_per_user.margsum_total, 0) * 100
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: riskandmargin
       join_pairs:
       - - recordvault
         - ordervault
+      join_type: left
     - target_model: margsum_per_user
       join_pairs:
       - - userlink
         - usertag
-    columns:
-    - name: mu_value
-      type: DOUBLE
-      sql: (riskandmargin.risk_margin_profile ->> '$.margin_thresholds.inithold')
-        / NULLIF(margsum_per_user.margsum_total, 0) * 100
+      join_type: left
   dimensions:
   - name: recordvault
   - name: userlink
   - name: mu_value
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.userlink\"\
   \ AS userlink, \"orders.mu_value\" AS mu_value FROM (SELECT\n  orders.recordvault\
@@ -52,16 +61,19 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: userlink
   sql: userlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: mu_value
   sql: mu_value
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

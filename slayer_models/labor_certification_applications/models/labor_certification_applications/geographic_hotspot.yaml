@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: geographic_hotspot
 source_queries:
-- version: 3
+- version: 4
   name: state_apps
   source_model: case_worksite
   measures:
@@ -9,22 +9,32 @@ source_queries:
   dimensions:
   - name: wsstate
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: state_apps
     columns:
     - name: national_avg
-      type: DOUBLE
       sql: AVG(_count) OVER ()
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: is_hotspot
-      type: BOOLEAN
       sql: _count > AVG(_count) OVER () * 1.5
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: wsstate
   - name: _count
   - name: national_avg
   - name: is_hotspot
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"state_apps.wsstate\" AS wsstate, \"state_apps._count\"\
   \ AS _count, \"state_apps.national_avg\" AS national_avg, \"state_apps.is_hotspot\"\
@@ -41,11 +51,13 @@ columns:
   sql: wsstate
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: _count
   sql: _count
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -53,11 +65,13 @@ columns:
   sql: national_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_hotspot
   sql: is_hotspot
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

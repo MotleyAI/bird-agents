@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: quality_maintenance_index
 source_queries:
-- version: 3
+- version: 4
   name: mcs_per_shipment_qmi
   source_model: regulatoryandmaintenance
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: shipgov
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: agg_per_container_qmi
   source_model: sensordata
   measures:
@@ -25,28 +27,38 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: vaccinedetails
+    columns:
+    - name: sqi
+      sql: ((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_qmi.tss)
+        / 365.0 * agg_per_container_qmi.hqi * (1 - agg_per_container_qmi.cri)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: qmi
+      sql: mcs_per_shipment_qmi.mcs * (((JULIANDAY(expireday) - JULIANDAY('now'))
+        * agg_per_container_qmi.tss) / 365.0 * agg_per_container_qmi.hqi * (1 - agg_per_container_qmi.cri))
+        * (1 - agg_per_container_qmi.tbs / 10.0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: agg_per_container_qmi
       join_pairs:
       - - containvac
         - containlink
+      join_type: left
     - target_model: mcs_per_shipment_qmi
       join_pairs:
       - - shipinject
         - shipgov
-    columns:
-    - name: sqi
-      type: DOUBLE
-      sql: ((JULIANDAY(expireday) - JULIANDAY('now')) * agg_per_container_qmi.tss)
-        / 365.0 * agg_per_container_qmi.hqi * (1 - agg_per_container_qmi.cri)
-    - name: qmi
-      type: DOUBLE
-      sql: mcs_per_shipment_qmi.mcs * (((JULIANDAY(expireday) - JULIANDAY('now'))
-        * agg_per_container_qmi.tss) / 365.0 * agg_per_container_qmi.hqi * (1 - agg_per_container_qmi.cri))
-        * (1 - agg_per_container_qmi.tbs / 10.0)
+      join_type: left
   dimensions:
   - name: vacregistry
   - name: containvac
@@ -64,6 +76,8 @@ source_queries:
   - name: sqi
   - name: qmi
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vaccinedetails.vacregistry\" AS vacregistry, \"vaccinedetails.containvac\"\
   \ AS containvac, \"vaccinedetails.shipinject\" AS shipinject, \"vaccinedetails.agg_per_container_qmi.tss\"\
@@ -119,6 +133,7 @@ columns:
   sql: vacregistry
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -126,16 +141,19 @@ columns:
   sql: containvac
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: shipinject
   sql: shipinject
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: agg_per_container_qmi__tss
   sql: agg_per_container_qmi__tss
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -143,6 +161,7 @@ columns:
   sql: agg_per_container_qmi__hqi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -150,6 +169,7 @@ columns:
   sql: agg_per_container_qmi__cri
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -157,6 +177,7 @@ columns:
   sql: agg_per_container_qmi__tbs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -164,6 +185,7 @@ columns:
   sql: mcs_per_shipment_qmi__mcs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -171,11 +193,13 @@ columns:
   sql: sqi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: qmi
   sql: qmi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

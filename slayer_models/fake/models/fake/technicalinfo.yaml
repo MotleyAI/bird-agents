@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: technicalinfo
 sql_table: technicalinfo
 query_variables: {}
@@ -8,26 +8,31 @@ columns:
   sql: techkey
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: technetref
   sql: technetref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: techmsgref
   sql: techmsgref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: regip
   sql: regip
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: iprepscore
   sql: iprepscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "IP reputation score (KB #25). Range 0-1; >0.8 trusted IPs; <0.3 malicious\
     \ / compromised.\n\n[kb=25]\nRanges from 0 to 1. Scores above 0.8 indicate trusted\
     \ IPs, while scores below 0.3 suggest potentially malicious or compromised IPs.\
@@ -42,6 +47,7 @@ columns:
   sql: ipcountrynum
   type: INT
   primary_key: false
+  unique: false
   description: 'Number of distinct countries the registration IP is associated with.
     Component of TEI (KB #7): 0.3 * ipcountrynum/20. KB #16 (VPN Abuser) checks ipcountrynum
     >= 3.'
@@ -52,6 +58,7 @@ columns:
   sql: vpnratio
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Fraction of sessions where VPN was detected. Component of TEI (KB
     #7): 0.4 * vpnratio.'
   hidden: false
@@ -61,6 +68,7 @@ columns:
   sql: proxycount
   type: INT
   primary_key: false
+  unique: false
   description: 'Number of proxy detections. Component of TEI (KB #7): 0.3 * proxycount/10.'
   hidden: false
   format:
@@ -69,11 +77,13 @@ columns:
   sql: torflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: devtotal
   sql: devtotal
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -81,11 +91,13 @@ columns:
   sql: devtypedist
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: browserdiv
   sql: browserdiv
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -93,6 +105,7 @@ columns:
   sql: uaconsval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

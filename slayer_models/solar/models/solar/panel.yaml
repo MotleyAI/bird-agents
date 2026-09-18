@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: panel
 sql_table: panel
 query_variables: {}
@@ -8,12 +8,14 @@ columns:
   sql: panemark
   type: TEXT
   primary_key: true
+  unique: false
   description: VARCHAR(50) PRIMARY KEY uniquely identifying each panel record.
   hidden: false
 - name: hubregistry
   sql: hubregistry
   type: TEXT
   primary_key: false
+  unique: false
   description: UUID REFERENCES Plant(GrowRegistry), linking this panel to a specific
     plant.
   hidden: false
@@ -21,6 +23,7 @@ columns:
   sql: panemfr
   type: TEXT
   primary_key: false
+  unique: false
   description: "VARCHAR(100) describing the manufacturer\u2019s name (was 'PanelManufacturer').\
     \ Possible enumerations: 'Longi', 'Canadian Solar', 'JA Solar', 'JinkoSolar',\
     \ 'Trina'."
@@ -29,6 +32,7 @@ columns:
   sql: paneline
   type: TEXT
   primary_key: false
+  unique: false
   description: "VARCHAR(100) capturing the panel\u2019s model line or series (was\
     \ 'PanelModel') (e.g., 'ModelX', 'CS6K-P')."
   hidden: false
@@ -36,6 +40,7 @@ columns:
   sql: panetype
   type: TEXT
   primary_key: false
+  unique: false
   description: 'VARCHAR(50) labeling the panel type (was ''PanelType''). Possible
     enumerations: ''Mono-PERC'', ''HJT'', ''Poly-PERC'', ''Bifacial'', ''TOPCon''.'
   hidden: false
@@ -43,6 +48,7 @@ columns:
   sql: powratew
   type: INT
   primary_key: false
+  unique: false
   description: "[kb=20]\nMeasured in watts (W), representing the maximum power output\
     \ a panel can produce under Standard Test Conditions (STC). Values typically range\
     \ from 250W for older models to 650W for newer high-efficiency panels. \u2014\
@@ -58,6 +64,7 @@ columns:
   sql: paneeffpct
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "[kb=21]\nExpressed as a percentage, representing how much of the sun's\
     \ energy hitting the panel is converted to electricity. Modern panels typically\
     \ range from 15% to 23%, with premium models reaching up to 25%. \u2014 Illustrates\
@@ -72,6 +79,7 @@ columns:
   sql: nomtempc
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "NUMERIC(7,3) indicating the panel\u2019s nominal operating temperature\
     \ in \xB0C (was 'NominalOperatingTempC') (e.g., 45.000)."
   hidden: false
@@ -81,6 +89,7 @@ columns:
   sql: tempcoef
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "[kb=22]\nExpressed as a percentage per degree Celsius (usually negative),\
     \ indicating how much a panel's power output decreases for each degree above 25\xB0\
     C. Typical values range from -0.25% to -0.50% per \xB0C, with lower absolute values\

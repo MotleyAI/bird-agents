@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: households
 sql_table: households
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: housenum
   type: INT
   primary_key: true
+  unique: false
   description: A BIGINT primary key uniquely identifying each household unit in the
     database system. EX.3,4,7
   hidden: false
@@ -17,6 +18,7 @@ columns:
   sql: residentcount
   type: INT
   primary_key: false
+  unique: false
   description: Number of people currently residing in the household, representing
     the total household size including all family members and occupants. EX. 1,2 3
   hidden: false
@@ -27,6 +29,7 @@ columns:
   sql: locregion
   type: TEXT
   primary_key: false
+  unique: false
   description: Foreign key referencing locations.RegionCode, indicating the administrative
     region where this household is located. Part of composite foreign key constraint.
     EX.Taguatinga,Samambaia
@@ -36,6 +39,7 @@ columns:
   sql: loczone
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key referencing locations.ZoneNum, indicating the specific
     macrozone within the administrative region. Part of composite foreign key constraint.
     EX.315,222,332
@@ -47,6 +51,7 @@ columns:
   sql: serviceplan
   type: INT
   primary_key: false
+  unique: false
   description: Foreign key referencing service_types.ServiceRef, indicating which
     social service package or plan the household is enrolled in or eligible for. Contains
     NULL when household is not enrolled in any social service programs or eligibility
@@ -59,6 +64,7 @@ columns:
   sql: socioeconomic
   type: TEXT
   primary_key: false
+  unique: false
   description: JSONB column. Groups socioeconomic characteristics of the household
     including tenure status, income classification, and expenditure patterns for demographic
     analysis.
@@ -70,6 +76,7 @@ columns:
   sql: JSON_EXTRACT(socioeconomic, '$.Tenure_Type')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Household tenure classification indicating the ownership or occupancy\
     \ status. Contains NULL when tenure status is unknown, transitional, or under\
     \ legal dispute. Sample values mix case ('OWNED', 'Owned', 'owned'); downstream\
@@ -86,6 +93,7 @@ columns:
   sql: JSON_EXTRACT(socioeconomic, '$.Income_Bracket')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Income classification level representing the household's economic\
     \ status and earning capacity. Contains NULL when income information is not disclosed\
     \ or irregular/informal.\n\nThe actual sample values are R$ amount ranges (e.g.\
@@ -105,6 +113,7 @@ columns:
   sql: JSON_EXTRACT(socioeconomic, '$.Expend_Coeff')
   type: TEXT
   primary_key: false
+  unique: false
   description: Household expenditure coefficient as a real number representing the
     spending pattern or consumption multiplier factor for economic analysis. Contains
     NULL when expenditure data is not available or household spending patterns cannot
@@ -121,6 +130,7 @@ columns:
   sql: CASE WHEN loczone = 1 THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "[kb=45]\nA zone is considered urban if its `loczone` is 1. \u2014\
     \ Defines which zones are considered urban.\n[/kb=45]"
   label: Urban Zone

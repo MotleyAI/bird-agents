@@ -21,7 +21,7 @@ from typing import Any
 
 
 def extract_result_rows(result: Any) -> list[list[Any]]:
-    """Parse the SLayer ``query`` / ``query_nested`` tool output (``format="json"``)
+    """Parse the SLayer ``query`` tool output (``format="json"``)
     into a list of positional value rows. Column NAMES are dropped (the grader is
     positional). Tolerant of a leading JSON array possibly followed by trailing
     prose (the tool appends a "Measure attributes:" block)."""
@@ -198,21 +198,18 @@ async def verify_and_repack(
 
 
 async def run_store_query(scratch_dir: str, query: dict | list, *, fmt: str = "json") -> str:
-    """Run a ``SlayerQuery`` (single dict or nested list of stages) against a
-    materialised store via SLayer's own MCP ``query`` / ``query_nested`` tool
-    (the exact path the agents use), returning the raw tool output. Needs a live
-    datasource — the store's ``connection_string`` must resolve (local postgres)."""
+    """Run a ``SlayerQuery`` (single dict or multi-stage list of stages) against
+    a materialised store via SLayer's own MCP ``query`` tool (the exact path the
+    agents use), returning the raw tool output. Needs a live datasource — the
+    store's ``connection_string`` must resolve (local postgres)."""
     from slayer.mcp.server import create_mcp_server
     from slayer.storage.yaml_storage import YAMLStorage
 
     storage = YAMLStorage(base_dir=scratch_dir)
     mcp = create_mcp_server(storage)
     try:
-        if isinstance(query, list):
-            fn = mcp._tool_manager._tools["query_nested"].fn
-            return await fn(queries=query, format=fmt)
         fn = mcp._tool_manager._tools["query"].fn
-        return await fn(**{**query, "format": fmt})
+        return await fn(query=query, format=fmt)
     finally:
         engine = getattr(mcp, "_slayer_engine", None)
         if engine is not None and hasattr(engine, "aclose"):

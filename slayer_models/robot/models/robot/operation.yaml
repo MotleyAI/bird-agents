@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: operation
 sql_table: operation
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: operreg
   type: TEXT
   primary_key: true
+  unique: false
   description: "Operation primary key. Carrier for NO row count (KB #8) and Multi-Operation\
     \ Robot (KB #18).\n\n[kb=8]\nFor a given robot R, NO = |\\{o \\in \\text{operation}\
     \ \\mid \\text{operbotdetref = R}\\}| \u2014 Counts the number of operation records\
@@ -20,16 +21,19 @@ columns:
   sql: operbotdetref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: operrecref
   sql: operrecref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: totopshrval
   sql: totopshrval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Cumulative total operating hours up to this row. Carrier for TOH (KB\
     \ #7) and Heavily Used Robot (KB #17).\n\n[kb=7]\nFor a given robot R, TOH = \\\
     max_{o \\in \\text{operation} \\mid \\text{operbotdetref = R}} totopshrval \u2014\
@@ -45,21 +49,25 @@ columns:
   sql: apptypeval
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: opermodeval
   sql: opermodeval
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: currprogval
   sql: currprogval
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: progcyclecount
   sql: progcyclecount
   type: INT
   primary_key: false
+  unique: false
   description: "Program cycle count. Carrier for TPC (KB #9) and High Cycle Count\
     \ Robot (KB #19).\n\n[kb=9]\nFor a given robot R, TPC = \\sum_{o \\in \\text{operation}\
     \ \\mid \\text{operbotdetref = R}} progcyclecount \u2014 Sums the program cycle\
@@ -74,6 +82,7 @@ columns:
   sql: cycletimesecval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Per-operation cycle time (s). Carrier for OCE (KB #33), Cycle Efficiency\
     \ Category (KB #43), and Average Cycle Time (KB #51).\n\n[kb=33]\nFor a given\
     \ robot R, OCE = \\frac{\\text{TPC}}{\\sum_{o \\in \\text{operation} \\mid \\\
@@ -89,6 +98,7 @@ columns:
   sql: axiscountval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer

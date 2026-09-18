@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: signalclassification
 sql_table: signalclassification
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: signalref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: sigclasstype
   sql: sigclasstype
   type: TEXT
   primary_key: false
+  unique: false
   description: "Classification Type. sigclasstype='Broadband Transient' describes\
     \ short-duration signals (SigDurSec typically < 5) that span a large portion of\
     \ the spectrum (BFR > 0.1). Examples include solar radio bursts, lightning discharges,\
@@ -30,11 +32,13 @@ columns:
   sql: sigpattern
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: repeatcount
   sql: repeatcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -42,6 +46,7 @@ columns:
   sql: periodsec
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -49,6 +54,7 @@ columns:
   sql: complexidx
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -56,6 +62,7 @@ columns:
   sql: entropyval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -63,6 +70,7 @@ columns:
   sql: infodense
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -70,6 +78,7 @@ columns:
   sql: classconf
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -77,6 +86,7 @@ columns:
   sql: (complexidx * infodense) / log10(signals.bwhz)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Signal Complexity Ratio (SCR) = (ComplexIdx * InfoDense) / log10(BwHz).\
     \ ComplexIdx and InfoDense are local; BwHz is reached through the signalclassification.signalref\
     \ \u2192 signals FK. log10 is provided as a SQLite UDF by SLayer 0.4.2. Higher\
@@ -94,6 +104,7 @@ columns:
     WHEN entropyval < 0.9 THEN 1 ELSE 0.3 END) * ((complexidx * infodense) / log10(signals.bwhz))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Pattern Recognition Confidence (PRC) = (RepeatCount>1 ? 1+log10(RepeatCount)\
     \ : 0.5) * (EntropyVal<0.9 ? 1 : 0.3) * SCR. SCR is the local signalclassification.scr\
     \ column inlined as its formula (since referencing a derived sibling column inside\

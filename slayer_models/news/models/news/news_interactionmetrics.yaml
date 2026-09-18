@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: news_interactionmetrics
 sql_table: interactionmetrics
 query_variables: {}
@@ -8,12 +8,14 @@ columns:
   sql: intmetkey
   type: INT
   primary_key: true
+  unique: false
   description: Primary key (also FK to interactions.intkey).
   hidden: false
 - name: interaction_behavior
   sql: interaction_behavior
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSON column: nested scroll/time_spent/conversion sub-objects plus\
     \ exit_type, next_action, bounce_status, click_seconds. New rows default to the\
     \ KB #60 template (scroll depth/speed/percentage 0; exit_type 'Natural'; conversion\

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: attorney
 sql_table: attorney
 query_variables: {}
@@ -8,40 +8,47 @@ columns:
   sql: lawmail
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: attorney_profile
   sql: attorney_profile
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: firm
   sql: attorney_profile ->> '$.firm'
   type: TEXT
   primary_key: false
+  unique: false
   description: Law firm name.
   hidden: false
 - name: first_name
   sql: attorney_profile ->> '$.name.first'
   type: TEXT
   primary_key: false
+  unique: false
   description: Attorney first name.
   hidden: false
 - name: last_name
   sql: attorney_profile ->> '$.name.last'
   type: TEXT
   primary_key: false
+  unique: false
   description: Attorney last name.
   hidden: false
 - name: state
   sql: attorney_profile ->> '$.address.state'
   type: TEXT
   primary_key: false
+  unique: false
   description: Attorney state.
   hidden: false
 - name: country
   sql: attorney_profile ->> '$.address.country'
   type: TEXT
   primary_key: false
+  unique: false
   description: Attorney country.
   hidden: false
 measures: []

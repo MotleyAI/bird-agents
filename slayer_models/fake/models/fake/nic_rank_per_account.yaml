@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: nic_rank_per_account
 source_queries:
-- version: 3
+- version: 4
   name: nic_per_account
   source_model: moderationaction
   measures:
@@ -10,18 +10,25 @@ source_queries:
   dimensions:
   - name: account_id
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: nic_per_account
     columns:
     - name: nic_rank
-      type: DOUBLE
       sql: RANK() OVER (ORDER BY nic_v DESC)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: account_id
   - name: nic_v
   - name: nic_rank
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"nic_per_account.account_id\" AS account_id, \"nic_per_account.nic_v\"\
   \ AS nic_v, \"nic_per_account.nic_rank\" AS nic_rank FROM (SELECT\n  nic_per_account.account_id\
@@ -52,6 +59,7 @@ columns:
   sql: account_id
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row account identifier resolved through the moderationaction \u2192\
     \ contentbehavior \u2192 sessionbehavior \u2192 profile join chain. Convenience\
     \ handle for grouping/multistage; equals the underlying account.accindex."
@@ -60,6 +68,7 @@ columns:
   sql: nic_v
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Network Influence Centrality (KB #51): 0.4*connqualscore + 0.3*netinflscore
     + 0.3*interactdiv.'
   hidden: false
@@ -69,6 +78,7 @@ columns:
   sql: nic_rank
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

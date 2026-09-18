@@ -1,65 +1,85 @@
-version: 7
+version: 10
 name: polar_vehicle_safe_operation_conditions
 source_queries:
-- version: 3
+- version: 4
   name: vpc_flag_p_eq_pvsoc
   source_model:
     source_name: chassisandvehicle
     columns:
     - name: vpc_ok_flag
-      type: DOUBLE
       sql: CASE WHEN ((1 - (brakepadwearpercent + trackwearpercent) / 200.0) * (vehiclespeedkmh
         / 50.0) * (engineandfluids.engineloadpercent / 100.0)) > 0.75 THEN 1 ELSE
         0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: vpc_ok_flag:min
     name: vpc_ok
   dimensions:
   - name: chassiseqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: ptec_flag_p_eq_pvsoc
   source_model:
     source_name: polar_transportation_efficiency_coefficient
     columns:
     - name: ptec_ok_flag
-      type: DOUBLE
       sql: CASE WHEN ptec > 0.7 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: ptec_ok_flag:min
     name: ptec_ok
   dimensions:
   - name: chassiseqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: opstat_p_eq_pvsoc
   source_model:
     source_name: operationmaintenance
     columns:
     - name: opstat_active_flag
-      type: DOUBLE
       sql: CASE WHEN operationalstatus = 'Active' THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: opstat_active_flag:min
     name: opstat_ok
   dimensions:
   - name: opmainteqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: safety_p_eq_pvsoc
   source_model:
     source_name: equipment
     columns:
     - name: safety_ok_flag
-      type: DOUBLE
       sql: CASE WHEN safetyindex >= 0.8 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: safety_ok_flag:min
     name: safety_ok
   dimensions:
   - name: equipmentcode
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: safety_p_eq_pvsoc
     joins:
@@ -67,14 +87,17 @@ source_queries:
       join_pairs:
       - - equipmentcode
         - chassiseqref
+      join_type: left
     - target_model: ptec_flag_p_eq_pvsoc
       join_pairs:
       - - equipmentcode
         - chassiseqref
+      join_type: left
     - target_model: opstat_p_eq_pvsoc
       join_pairs:
       - - equipmentcode
         - opmainteqref
+      join_type: left
   measures:
   - formula: safety_ok:min * vpc_flag_p_eq_pvsoc.vpc_ok:min * ptec_flag_p_eq_pvsoc.ptec_ok:min
       * opstat_p_eq_pvsoc.opstat_ok:min
@@ -82,6 +105,8 @@ source_queries:
   dimensions:
   - name: equipmentcode
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"safety_p_eq_pvsoc.equipmentcode\" AS equipmentcode, \"\
   safety_p_eq_pvsoc.safety_ok_min\" AS safety_ok_min, \"safety_p_eq_pvsoc.is_pvsoc\"\
@@ -188,16 +213,19 @@ columns:
   sql: equipmentcode
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: safety_ok_min
   sql: safety_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_pvsoc
   sql: is_pvsoc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -205,16 +233,19 @@ columns:
   sql: opstat_p_eq_pvsoc__opstat_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: ptec_flag_p_eq_pvsoc__ptec_ok_min
   sql: ptec_flag_p_eq_pvsoc__ptec_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: vpc_flag_p_eq_pvsoc__vpc_ok_min
   sql: vpc_flag_p_eq_pvsoc__vpc_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

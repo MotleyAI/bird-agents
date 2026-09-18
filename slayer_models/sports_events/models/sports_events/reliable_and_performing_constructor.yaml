@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: reliable_and_performing_constructor
 sql: "WITH season_metrics AS (\n  SELECT\n    cr.unitnode AS unitnode,\n    r.yr AS\
   \ yr,\n    SUM(cr.scoreval) AS season_total_points,\n    SUM(CASE WHEN cr.st_mark\
@@ -18,54 +18,63 @@ columns:
   sql: unitnode
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to constructors.
   hidden: false
 - name: yr
   sql: yr
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Year of the season.
   hidden: false
 - name: season_total_points
   sql: season_total_points
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Constructor''s total race points in the season (KB #25).'
   hidden: false
 - name: finishes
   sql: finishes
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Number of races classified as a finish (st_mark IS NULL).
   hidden: false
 - name: starts
   sql: starts
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Number of constructor_results rows = race starts in the season.
   hidden: false
 - name: cps
   sql: cps
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Constructor's Performance Score (KB #31): season points \xD7 reliability."
   hidden: false
 - name: reliability_pct
   sql: reliability_pct
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Constructor Reliability Rate (KB #27) as a percentage.'
   hidden: false
 - name: cps_season_rank
   sql: cps_season_rank
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Rank of CPS within the season (1 = best).
   hidden: false
 - name: is_reliable_and_performing
   sql: is_reliable_and_performing
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Reliable and Performing Constructor (KB #45): TRUE iff Reliability\
     \ Rate > 95% AND CPS season rank <= 3.\n\n[kb=45]\nA team is a Reliable and Performing\
     \ Constructor if their Constructor Reliability Rate is above 95% and their Constructor's\

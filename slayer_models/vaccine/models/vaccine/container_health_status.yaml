@@ -1,15 +1,18 @@
-version: 6
+version: 10
 name: container_health_status
 source_queries:
-- version: 3
+- version: 4
   name: agg_per_container_chs
   source_model:
     source_name: sensordata
     columns:
     - name: is_within_year_chs
-      type: BOOLEAN
       sql: CASE WHEN julianday(alerttime) >= julianday('now', '-1 year') THEN 1 ELSE
         0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: tss:avg
     name: tss_avg
@@ -22,36 +25,54 @@ source_queries:
   filters:
   - is_within_year_chs = 1
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: container
-    joins:
-    - target_model: agg_per_container_chs
-      join_pairs:
-      - - containregistry
-        - containlink
     columns:
     - name: tss_avg_year
-      type: DOUBLE
       sql: agg_per_container_chs.tss_avg
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: tbs_max_year
-      type: DOUBLE
       sql: agg_per_container_chs.tbs_max
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: tss_current_min
-      type: DOUBLE
       sql: agg_per_container_chs.tss_min
-    - name: cri_for_chs
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: cri_for_chs
       sql: (1 - COALESCE(agg_per_container_chs.tss_avg, 0)) * (1 - COALESCE(coolremainpct,
         0) / 100)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: container_health_status
-      type: TEXT
       sql: CASE WHEN ((1 - COALESCE(agg_per_container_chs.tss_avg, 0)) * (1 - COALESCE(coolremainpct,
         0) / 100)) > 0.6 OR agg_per_container_chs.tss_min < 0.4 THEN 'Critical' WHEN
         agg_per_container_chs.tss_avg >= 0.7 AND agg_per_container_chs.tbs_max <=
         1.0 THEN 'Stable' WHEN agg_per_container_chs.tss_avg < 0.4 OR agg_per_container_chs.tbs_max
         > 1.5 THEN 'Unstable' WHEN agg_per_container_chs.tss_avg >= 0.4 AND agg_per_container_chs.tbs_max
         <= 1.5 THEN 'Moderate' ELSE 'Unknown' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
+    joins:
+    - target_model: agg_per_container_chs
+      join_pairs:
+      - - containregistry
+        - containlink
+      join_type: left
   dimensions:
   - name: containregistry
   - name: tss_avg_year
@@ -59,6 +80,8 @@ source_queries:
   - name: tss_current_min
   - name: container_health_status
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"container.containregistry\" AS containregistry, \"container.tss_avg_year\"\
   \ AS tss_avg_year, \"container.tbs_max_year\" AS tbs_max_year, \"container.tss_current_min\"\
@@ -97,26 +120,31 @@ columns:
   sql: containregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tss_avg_year
   sql: tss_avg_year
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: tbs_max_year
   sql: tbs_max_year
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: tss_current_min
   sql: tss_current_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: container_health_status
   sql: container_health_status
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

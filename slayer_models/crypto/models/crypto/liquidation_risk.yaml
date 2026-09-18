@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: liquidation_risk
 source_queries:
-- version: 3
+- version: 4
   name: midquote_per_pair
   source_model: marketstats
   measures:
@@ -11,27 +11,36 @@ source_queries:
   - name: mktcombo
     model: marketdata
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: orders
+    columns:
+    - name: is_liquidation_high_risk
+      sql: ABS(midquote_per_pair.marketdata__midquote_avg - riskandmargin.liqquote)
+        / NULLIF(riskandmargin.liqquote, 0) <= 0.05
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: riskandmargin
       join_pairs:
       - - recordvault
         - ordervault
+      join_type: left
     - target_model: midquote_per_pair
       join_pairs:
       - - mktnote
         - marketdata__mktcombo
-    columns:
-    - name: is_liquidation_high_risk
-      type: BOOLEAN
-      sql: ABS(midquote_per_pair.marketdata__midquote_avg - riskandmargin.liqquote)
-        / NULLIF(riskandmargin.liqquote, 0) <= 0.05
+      join_type: left
   dimensions:
   - name: recordvault
   - name: is_liquidation_high_risk
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"orders.recordvault\" AS recordvault, \"orders.is_liquidation_high_risk\"\
   \ AS is_liquidation_high_risk FROM (SELECT\n  orders.recordvault AS \"orders.recordvault\"\
@@ -62,11 +71,13 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_liquidation_high_risk
   sql: is_liquidation_high_risk
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

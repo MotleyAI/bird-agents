@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: wage_competitiveness_index
 source_queries:
-- version: 3
+- version: 4
   name: case_wage
   source_model: case_worksite
   measures:
@@ -11,21 +11,28 @@ source_queries:
   - name: homefirm
   - name: naics_code
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: with_industry_avg
   source_model:
     source_name: case_wage
     columns:
     - name: industry_avg
-      type: DOUBLE
       sql: AVG(offered_wage_annual_avg) OVER (PARTITION BY naics_code)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: homefirm
   - name: naics_code
   - name: offered_wage_annual_avg
   - name: industry_avg
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model: with_industry_avg
   measures:
   - formula: offered_wage_annual_avg:avg / industry_avg:avg
@@ -33,6 +40,8 @@ source_queries:
   dimensions:
   - name: homefirm
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"with_industry_avg.homefirm\" AS homefirm, \"with_industry_avg.offered_wage_annual_avg_avg\"\
   \ AS offered_wage_annual_avg_avg, \"with_industry_avg.industry_avg_avg\" AS industry_avg_avg,\
@@ -77,12 +86,14 @@ columns:
   sql: homefirm
   type: TEXT
   primary_key: false
+  unique: false
   description: Employer (homefirm) for the case, denormalized via cases join.
   hidden: false
 - name: offered_wage_annual_avg_avg
   sql: offered_wage_annual_avg_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Offered wage annualized for this case_worksite, denormalized via prevailing_wage
     join. Used for KB #28 / KB #31 industry-wage analyses.'
   hidden: false
@@ -92,6 +103,7 @@ columns:
   sql: industry_avg_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -99,6 +111,7 @@ columns:
   sql: wci
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

@@ -1,4 +1,4 @@
-version: 7
+version: 10
 name: engineandfluids
 sql_table: engineandfluids
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: engineregistry
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,11 +16,13 @@ columns:
   sql: engfluidseqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: engfluidspbref
   sql: engfluidspbref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -27,6 +30,7 @@ columns:
   sql: enginespeedrpm
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -34,6 +38,7 @@ columns:
   sql: engineloadpercent
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -41,6 +46,7 @@ columns:
   sql: enginetemperaturec
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -48,6 +54,7 @@ columns:
   sql: enginehours
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -55,6 +62,7 @@ columns:
   sql: engfluidsopmaintref
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -62,6 +70,7 @@ columns:
   sql: fluidmetrics
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

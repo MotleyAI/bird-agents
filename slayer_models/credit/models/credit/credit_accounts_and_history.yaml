@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: credit_accounts_and_history
 sql_table: credit_accounts_and_history
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: histcompref
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: newaccage
   sql: newaccage
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -20,6 +22,7 @@ columns:
   sql: avgaccage
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -27,6 +30,7 @@ columns:
   sql: accmixscore
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Account Mix Score. 0-1; higher = healthier diversity of account types\
     \ (revolving, installment, mortgage, etc.), positively impacts credit scores and\
     \ indicates financial sophistication.\n\n[kb=28]\nAccount mix score (accmixscore)\
@@ -44,6 +48,7 @@ columns:
   sql: credlimusage
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -51,6 +56,7 @@ columns:
   sql: payconsist
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -58,16 +64,19 @@ columns:
   sql: recentbeh
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: seekbeh
   sql: seekbeh
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: cardcount
   sql: cardcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -75,6 +84,7 @@ columns:
   sql: totcredlimit
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -82,6 +92,7 @@ columns:
   sql: credutil
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Credit Utilization Ratio (CUR).\n\n[kb=1]\nCUR = \\frac{\\text{Total\
     \ Credit Used}}{\\text{Total Credit Limit}} = credutil \u2014 Measures how much\
     \ of available credit a customer is currently using.\n[/kb=1]"
@@ -95,11 +106,13 @@ columns:
   sql: cardpayhist
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: loancount
   sql: loancount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -107,6 +120,7 @@ columns:
   sql: activeloan
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -114,6 +128,7 @@ columns:
   sql: totloanamt
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -121,11 +136,13 @@ columns:
   sql: loanpayhist
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: custservint
   sql: custservint
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -133,11 +150,13 @@ columns:
   sql: complainthist
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: produsescore
   sql: produsescore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -145,6 +164,7 @@ columns:
   sql: chanusescore
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -152,6 +172,7 @@ columns:
   sql: custlifeval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Customer Lifetime Value (CLV). Total worth of customer over the relationship;\
     \ factors product usage, tenure, profitability, expected future transactions.\n\
     \n[kb=3]\nCLV = custlifeval, which factors in product usage, tenure, profitability,\
@@ -164,14 +185,15 @@ columns:
   meta:
     kb_id: 3
 - name: chs
-  sql: 0.4 * MIN(1.0, CAST(credit_and_compliance.credscore AS REAL) / 850.0) + 0.2
+  sql: 0.4 * MIN(1.0, CAST(credit_and_compliance.credscore AS FLOAT) / 850.0) + 0.2
     * MIN(1.0, 1.0 - credit_accounts_and_history.credutil) + 0.2 * MIN(1.0, 1.0 -
-    credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.debincratio)
-    + 0.1 * MIN(1.0, CAST(credit_and_compliance.credageyrs AS REAL) / 20.0) + 0.1
+    credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.debincratio)
+    + 0.1 * MIN(1.0, CAST(credit_and_compliance.credageyrs AS FLOAT) / 20.0) + 0.1
     * MIN(1.0, 1.0 - CAST(credit_and_compliance.delinqcount + credit_and_compliance.latepaycount
-    + credit_and_compliance.choffs + credit_and_compliance.bankr AS REAL) / 10.0)
+    + credit_and_compliance.choffs + credit_and_compliance.bankr AS FLOAT) / 10.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Credit Health Score (CHS): 0.4*credscore/850 + 0.2*(1-CUR) + 0.2*(1-DTI)\
     \ + 0.1*credageyrs/20 + 0.1*(1-(delinq+late+choffs+bankr)/10), each component\
     \ capped at 1.0.\n\n[kb=5]\nCHS = 0.4 \xD7 \\frac{credscore}{850} + 0.2 \xD7 (1\
@@ -184,19 +206,20 @@ columns:
   meta:
     kb_id: 5
 - name: fsi
-  sql: 0.3 * MIN(1.0, 1.0 - credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.debincratio)
-    + 0.3 * CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    > 0 THEN MIN(1.0, credit_and_compliance__bank_and_transactions__expenses_and_assets.liqassets
-    / (credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    * 6.0)) ELSE 0 END + 0.2 * CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    > 0 THEN MIN(1.0, credit_and_compliance__bank_and_transactions__expenses_and_assets.bankaccbal
-    / (credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    * 3.0)) ELSE 0 END + 0.2 * CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    > 0 THEN MIN(1.0, credit_and_compliance__bank_and_transactions__expenses_and_assets.savamount
-    / (credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
+  sql: 0.3 * MIN(1.0, 1.0 - credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.debincratio)
+    + 0.3 * CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    > 0 THEN MIN(1.0, credit_and_compliance.bank_and_transactions.expenses_and_assets.liqassets
+    / (credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    * 6.0)) ELSE 0 END + 0.2 * CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    > 0 THEN MIN(1.0, credit_and_compliance.bank_and_transactions.expenses_and_assets.bankaccbal
+    / (credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    * 3.0)) ELSE 0 END + 0.2 * CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    > 0 THEN MIN(1.0, credit_and_compliance.bank_and_transactions.expenses_and_assets.savamount
+    / (credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
     * 12.0)) ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Financial Stability Index (FSI): 0.3*(1-DTI) + 0.3*liqassets/(mthincome*6)\
     \ + 0.2*bankaccbal/(mthincome*3) + 0.2*savamount/(mthincome*12), each capped at\
     \ 1.0.\n\n[kb=6]\nFSI = 0.3 \xD7 (1 - debincratio) + 0.3 \xD7 \\frac{liqassets}{mthincome\
@@ -209,10 +232,11 @@ columns:
     kb_id: 6
 - name: ces
   sql: 0.4 * MIN(1.0, credit_accounts_and_history.produsescore) + 0.3 * MIN(1.0, credit_accounts_and_history.chanusescore)
-    + 0.2 * MIN(1.0, credit_and_compliance__bank_and_transactions.bankrelscore) +
-    0.1 * MIN(1.0, CAST(credit_accounts_and_history.custservint AS REAL) / 10.0)
+    + 0.2 * MIN(1.0, credit_and_compliance.bank_and_transactions.bankrelscore) + 0.1
+    * MIN(1.0, CAST(credit_accounts_and_history.custservint AS FLOAT) / 10.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Customer Engagement Score (CES): 0.4*produsescore + 0.3*chanusescore\
     \ + 0.2*bankrelscore + 0.1*custservint/10, each capped at 1.0.\n\n[kb=7]\nCES\
     \ = 0.4 \xD7 produsescore + 0.3 \xD7 chanusescore + 0.2 \xD7 bankrelscore + 0.1\
@@ -224,11 +248,12 @@ columns:
   meta:
     kb_id: 7
 - name: rar
-  sql: credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.profitscore
+  sql: credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record.profitscore
     * (1.0 - CAST((CASE credit_and_compliance.risklev WHEN 'Low' THEN 1 WHEN 'Medium'
-    THEN 2 WHEN 'High' THEN 3 WHEN 'Very High' THEN 4 END) AS REAL) / 4.0)
+    THEN 2 WHEN 'High' THEN 3 WHEN 'Very High' THEN 4 END) AS FLOAT) / 4.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Risk-Adjusted Return (RAR) = profitscore * (1 - risklev/4), with risklev\
     \ numerically encoded Low=1, Medium=2, High=3, Very High=4.\n\n[kb=8]\nRAR = profitscore\
     \ \xD7 (1 - \\frac{risklev}{4}), \\text{where risklev is converted to a numeric\
@@ -243,6 +268,7 @@ columns:
     credit_accounts_and_history.accmixscore) + 0.3 * MIN(1.0, credit_accounts_and_history.payconsist)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Account Health Index (AHI) = 0.4*avgaccage/10 + 0.3*accmixscore +\
     \ 0.3*payconsist, each capped at 1.0.\n\n[kb=9]\nAHI = 0.4 \xD7 \\frac{avgaccage}{10}\
     \ + 0.3 \xD7 accmixscore + 0.3 \xD7 payconsist, \\text{where each component is\
@@ -253,14 +279,15 @@ columns:
   meta:
     kb_id: 9
 - name: tdsr
-  sql: credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.debincratio
-    + CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    > 0 AND json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.propvalue') IS NOT NULL THEN (CAST(json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.propvalue') AS REAL) * 0.005) / credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
+  sql: credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.debincratio
+    + CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    > 0 AND NOT JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.propvalue') IS NULL THEN (CAST(JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.propvalue') AS FLOAT) * 0.005) / credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
     ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Total Debt Service Ratio (TDSR) = DTI + Housing Costs / Monthly Income.\
     \ KB underspecifies 'Housing Costs'; here estimated as 0.5% of property value\
     \ (a common rule-of-thumb proxy for monthly housing payment). Status: encoded\
@@ -278,6 +305,7 @@ columns:
     - credit_accounts_and_history.credutil)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Credit Quality Index (CQI) = 0.6*credscore/850 + 0.4*(1-CUR).\n\n\
     [kb=31]\nCQI = 0.6 \xD7 \\frac{credscore}{850} + 0.4 \xD7 (1 - CUR), \\text{where\
     \ CUR is the Credit Utilization Ratio} \u2014 Comprehensive measure of overall\
@@ -287,13 +315,14 @@ columns:
   meta:
     kb_id: 31
 - name: har
-  sql: CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    > 0 AND json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.propvalue') IS NOT NULL THEN (CAST(json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.propvalue') AS REAL) * 0.005) / credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
+  sql: CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    > 0 AND NOT JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.propvalue') IS NULL THEN (CAST(JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.propvalue') AS FLOAT) * 0.005) / credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
     * 100.0 ELSE NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Housing Affordability Ratio (HAR) = Monthly Housing Payment / Monthly\
     \ Income * 100%. KB underspecifies 'Monthly Housing Payment'; here estimated as\
     \ 0.5% of property value. Status: encoded with approximation.\n\n[kb=32]\nHAR\
@@ -306,13 +335,14 @@ columns:
   meta:
     kb_id: 32
 - name: fvs
-  sql: 0.5 * credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.debincratio
-    + 0.5 * (1.0 - CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    > 0 THEN MIN(1.0, credit_and_compliance__bank_and_transactions__expenses_and_assets.liqassets
-    / (credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
+  sql: 0.5 * credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.debincratio
+    + 0.5 * (1.0 - CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    > 0 THEN MIN(1.0, credit_and_compliance.bank_and_transactions.expenses_and_assets.liqassets
+    / (credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
     * 6.0)) ELSE 0 END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Financial Vulnerability Score (FVS) = 0.5*DTI + 0.5*(1 - liqassets/(mthincome*6)).\
     \ Higher = more financially fragile.\n\n[kb=33]\nFVS = 0.5 \xD7 DTI + 0.5 \xD7\
     \ (1 - \\frac{liqassets}{mthincome \xD7 6}), \\text{where DTI is the Debt-to-Income\
@@ -323,14 +353,15 @@ columns:
   meta:
     kb_id: 33
 - name: crr
-  sql: 0.4 * credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.churnrate
+  sql: 0.4 * credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record.churnrate
     + 0.3 * (1.0 - (0.4 * MIN(1.0, credit_accounts_and_history.produsescore) + 0.3
-    * MIN(1.0, credit_accounts_and_history.chanusescore) + 0.2 * MIN(1.0, credit_and_compliance__bank_and_transactions.bankrelscore)
-    + 0.1 * MIN(1.0, CAST(credit_accounts_and_history.custservint AS REAL) / 10.0)))
+    * MIN(1.0, credit_accounts_and_history.chanusescore) + 0.2 * MIN(1.0, credit_and_compliance.bank_and_transactions.bankrelscore)
+    + 0.1 * MIN(1.0, CAST(credit_accounts_and_history.custservint AS FLOAT) / 10.0)))
     + 0.3 * CAST((CASE credit_accounts_and_history.complainthist WHEN 'Low' THEN 1
-    WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 END) AS REAL) / 3.0
+    WHEN 'Medium' THEN 2 WHEN 'High' THEN 3 END) AS FLOAT) / 3.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Customer Retention Risk (CRR) = 0.4*churnrate + 0.3*(1-CES) + 0.3*complainthist/3,\
     \ with complainthist Low=1, Medium=2, High=3.\n\n[kb=34]\nCRR = 0.4 \xD7 churnrate\
     \ + 0.3 \xD7 (1 - CES) + 0.3 \xD7 \\frac{complainthist}{3}, \\text{where CES is\
@@ -342,12 +373,13 @@ columns:
   meta:
     kb_id: 34
 - name: alr
-  sql: CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets.totassets
-    > 0 THEN credit_and_compliance__bank_and_transactions__expenses_and_assets.liqassets
-    / credit_and_compliance__bank_and_transactions__expenses_and_assets.totassets
-    ELSE NULL END
+  sql: CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.totassets
+    > 0 THEN credit_and_compliance.bank_and_transactions.expenses_and_assets.liqassets
+    / credit_and_compliance.bank_and_transactions.expenses_and_assets.totassets ELSE
+    NULL END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Asset Liquidity Ratio (ALR) = liqassets / totassets (equivalent to\
     \ liqassets / (Net Worth + totliabs)).\n\n[kb=35]\nALR = \\frac{liqassets}{totassets}\
     \ = \\frac{liqassets}{Net Worth + totliabs}, \\text{where Net Worth is the difference\
@@ -365,6 +397,7 @@ columns:
     + 0.3 * MIN(1.0, credit_accounts_and_history.payconsist)))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Credit Risk Intensity (CRI) = 0.5*(1-credscore/850) + 0.3*(delinq+late+choffs)/10\
     \ + 0.2*(1-AHI).\n\n[kb=36]\nCRI = 0.5 \xD7 (1 - \\frac{credscore}{850}) + 0.3\
     \ \xD7 \\frac{delinqcount + latepaycount + choffs}{10} + 0.2 \xD7 (1 - AHI), \\\
@@ -375,17 +408,18 @@ columns:
   meta:
     kb_id: 36
 - name: ipq
-  sql: 0.4 * (credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.profitscore
+  sql: 0.4 * (credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record.profitscore
     * (1.0 - CAST((CASE credit_and_compliance.risklev WHEN 'Low' THEN 1 WHEN 'Medium'
-    THEN 2 WHEN 'High' THEN 3 WHEN 'Very High' THEN 4 END) AS REAL) / 4.0)) + 0.4
-    * CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets.totassets
-    > 0 THEN credit_and_compliance__bank_and_transactions__expenses_and_assets.investamt
-    / credit_and_compliance__bank_and_transactions__expenses_and_assets.totassets
-    ELSE 0 END + 0.2 * CAST((CASE json_extract(credit_and_compliance__bank_and_transactions.chaninvdatablock,
+    THEN 2 WHEN 'High' THEN 3 WHEN 'Very High' THEN 4 END) AS FLOAT) / 4.0)) + 0.4
+    * CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.totassets
+    > 0 THEN credit_and_compliance.bank_and_transactions.expenses_and_assets.investamt
+    / credit_and_compliance.bank_and_transactions.expenses_and_assets.totassets ELSE
+    0 END + 0.2 * CAST((CASE JSON_EXTRACT(credit_and_compliance.bank_and_transactions.chaninvdatablock,
     '$.invcluster.investexp') WHEN 'Limited' THEN 1 WHEN 'Moderate' THEN 2 WHEN 'Extensive'
-    THEN 3 END) AS REAL) / 3.0
+    THEN 3 END) AS FLOAT) / 3.0
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Investment Portfolio Quality (IPQ) = 0.4*RAR + 0.4*investamt/totassets\
     \ + 0.2*investexp/3, with investexp Limited=1, Moderate=2, Extensive=3.\n\n[kb=37]\n\
     IPQ = 0.4 \xD7 RAR + 0.4 \xD7 \\frac{investamt}{totassets} + 0.2 \xD7 \\frac{chaninvdatablock.invcluster.investexp}{3},\
@@ -397,13 +431,14 @@ columns:
   meta:
     kb_id: 37
 - name: brs
-  sql: 0.3 * credit_and_compliance__bank_and_transactions.bankrelscore + 0.3 * (1.0
-    - credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.churnrate)
+  sql: 0.3 * credit_and_compliance.bank_and_transactions.bankrelscore + 0.3 * (1.0
+    - credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record.churnrate)
     + 0.4 * (0.4 * MIN(1.0, credit_accounts_and_history.produsescore) + 0.3 * MIN(1.0,
-    credit_accounts_and_history.chanusescore) + 0.2 * MIN(1.0, credit_and_compliance__bank_and_transactions.bankrelscore)
-    + 0.1 * MIN(1.0, CAST(credit_accounts_and_history.custservint AS REAL) / 10.0))
+    credit_accounts_and_history.chanusescore) + 0.2 * MIN(1.0, credit_and_compliance.bank_and_transactions.bankrelscore)
+    + 0.1 * MIN(1.0, CAST(credit_accounts_and_history.custservint AS FLOAT) / 10.0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Banking Relationship Strength (BRS) = 0.3*bankrelscore + 0.3*(1-churnrate)\
     \ + 0.4*CES.\n\n[kb=38]\nBRS = 0.3 \xD7 bankrelscore + 0.3 \xD7 (1 - churnrate)\
     \ + 0.4 \xD7 CES, \\text{where CES is the Customer Engagement Score} \u2014 Quantifies\
@@ -413,16 +448,17 @@ columns:
   meta:
     kb_id: 38
 - name: chm
-  sql: (0.4 * MIN(1.0, CAST(credit_and_compliance.credscore AS REAL) / 850.0) + 0.2
+  sql: (0.4 * MIN(1.0, CAST(credit_and_compliance.credscore AS FLOAT) / 850.0) + 0.2
     * MIN(1.0, 1.0 - credit_accounts_and_history.credutil) + 0.2 * MIN(1.0, 1.0 -
-    credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.debincratio)
-    + 0.1 * MIN(1.0, CAST(credit_and_compliance.credageyrs AS REAL) / 20.0) + 0.1
+    credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.debincratio)
+    + 0.1 * MIN(1.0, CAST(credit_and_compliance.credageyrs AS FLOAT) / 20.0) + 0.1
     * MIN(1.0, 1.0 - CAST(credit_and_compliance.delinqcount + credit_and_compliance.latepaycount
-    + credit_and_compliance.choffs + credit_and_compliance.bankr AS REAL) / 10.0))
+    + credit_and_compliance.choffs + credit_and_compliance.bankr AS FLOAT) / 10.0))
     * (1.0 + CASE credit_accounts_and_history.recentbeh WHEN 'Improving' THEN 0.1
     WHEN 'Stable' THEN 0.0 WHEN 'Deteriorating' THEN -0.1 ELSE 0.0 END)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Credit Health Momentum (CHM) = CHS * (1 + delta), where delta = +0.1\
     \ 'Improving', 0 'Stable', -0.1 'Deteriorating'.\n\n[kb=39]\nCHM = CHS \xD7 (1\
     \ + \\Delta_\\text{recentbeh}), \\text{where CHS is the Credit Health Score and\
@@ -439,6 +475,7 @@ columns:
     0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Prime Customer flag (KB 10): credscore > 720 AND defhist in (Excellent,\
     \ Good) AND risklev = 'Low'. 1=prime, 0=otherwise.\n\n[kb=10]\nA customer with\
     \ credscore > 720, defhist of 'Excellent' or 'Good', and risklev of 'Low'. \u2014\
@@ -449,14 +486,15 @@ columns:
   meta:
     kb_id: 10
 - name: is_financially_vulnerable
-  sql: CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.debincratio
-    > 0.5 AND credit_and_compliance__bank_and_transactions__expenses_and_assets.liqassets
-    < credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
+  sql: CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.debincratio
+    > 0.5 AND credit_and_compliance.bank_and_transactions.expenses_and_assets.liqassets
+    < credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
     * 3 AND (credit_and_compliance.delinqcount > 0 OR credit_and_compliance.latepaycount
-    > 1 OR credit_and_compliance__bank_and_transactions.ovrfreq = 'Frequent') THEN
+    > 1 OR credit_and_compliance.bank_and_transactions.ovrfreq = 'Frequent') THEN
     1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Financially Vulnerable flag (KB 11): debincratio > 0.5 AND liqassets\
     \ < mthincome*3 AND (delinqcount > 0 OR latepaycount > 1 OR ovrfreq='Frequent').\n\
     \n[kb=11]\nA customer with debincratio > 0.5, liqassets < mthincome \xD7 3, and\
@@ -471,6 +509,7 @@ columns:
     > 2 AND credit_accounts_and_history.recentbeh = 'Improving' THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Credit Builder flag (KB 13): credageyrs < 3 AND credinq > 2 (in past\
     \ year) AND recentbeh = 'Improving'.\n\n[kb=13]\nA customer with credageyrs <\
     \ 3, credinq > 2 in the past year, and recentbeh of 'Improving'. \u2014 Identifies\
@@ -480,12 +519,13 @@ columns:
   meta:
     kb_id: 13
 - name: is_digital_first
-  sql: CASE WHEN (json_extract(credit_and_compliance__bank_and_transactions.chaninvdatablock,
-    '$.onlineuse') = 'High' OR json_extract(credit_and_compliance__bank_and_transactions.chaninvdatablock,
-    '$.mobileuse') = 'High') AND json_extract(credit_and_compliance__bank_and_transactions.chaninvdatablock,
+  sql: CASE WHEN (JSON_EXTRACT(credit_and_compliance.bank_and_transactions.chaninvdatablock,
+    '$.onlineuse') = 'High' OR JSON_EXTRACT(credit_and_compliance.bank_and_transactions.chaninvdatablock,
+    '$.mobileuse') = 'High') AND JSON_EXTRACT(credit_and_compliance.bank_and_transactions.chaninvdatablock,
     '$.autopay') = 'Yes' THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Digital First Customer flag (KB 14): (onlineuse='High' OR mobileuse='High')\
     \ AND autopay='Yes'.\n\n[kb=14]\nA customer with chaninvdatablock.onlineuse of\
     \ 'High' or chaninvdatablock.mobileuse of 'High', and chaninvdatablock.autopay\
@@ -496,13 +536,14 @@ columns:
   meta:
     kb_id: 14
 - name: is_investment_focused
-  sql: CASE WHEN json_extract(credit_and_compliance__bank_and_transactions.chaninvdatablock,
-    '$.invcluster.investport') IN ('Moderate', 'Aggressive') AND json_extract(credit_and_compliance__bank_and_transactions.chaninvdatablock,
-    '$.invcluster.investexp') = 'Extensive' AND credit_and_compliance__bank_and_transactions__expenses_and_assets.investamt
-    > 0.3 * credit_and_compliance__bank_and_transactions__expenses_and_assets.totassets
+  sql: CASE WHEN JSON_EXTRACT(credit_and_compliance.bank_and_transactions.chaninvdatablock,
+    '$.invcluster.investport') IN ('Moderate', 'Aggressive') AND JSON_EXTRACT(credit_and_compliance.bank_and_transactions.chaninvdatablock,
+    '$.invcluster.investexp') = 'Extensive' AND credit_and_compliance.bank_and_transactions.expenses_and_assets.investamt
+    > 0.3 * credit_and_compliance.bank_and_transactions.expenses_and_assets.totassets
     THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Investment Focused flag (KB 15): investport in (Moderate, Aggressive)\
     \ AND investexp='Extensive' AND investamt > 0.3*totassets.\n\n[kb=15]\nA customer\
     \ with chaninvdatablock.invcluster.investport of 'Moderate' or 'Aggressive', chaninvdatablock.invcluster.investexp\
@@ -518,6 +559,7 @@ columns:
     0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Revolving Credit Dependent flag (KB 16): credutil > 0.7 AND cardcount\
     \ > 2 AND cardpayhist in (Fair, Poor).\n\n[kb=16]\nA customer with credutil >\
     \ 0.7, cardcount > 2, and cardpayhist of 'Fair' or 'Poor'. \u2014 Identifies customers\
@@ -527,14 +569,15 @@ columns:
   meta:
     kb_id: 16
 - name: is_property_risk_exposure
-  sql: CASE WHEN json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.propown') = 'Own' AND json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.propvalue') > 0 AND CAST(json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.mortgagebits.mortbalance') AS REAL) / CAST(json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.propvalue') AS REAL) > 0.8 AND json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
+  sql: CASE WHEN JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.propown') = 'Own' AND JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.propvalue') > 0 AND CAST(JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.mortgagebits.mortbalance') AS FLOAT) / CAST(JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.propvalue') AS FLOAT) > 0.8 AND JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
     '$.mortgagebits.mortpayhist') IN ('Fair', 'Poor') THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Property Risk Exposure flag (KB 17): propown='Own' AND LTV > 0.8 AND\
     \ mortpayhist in (Fair, Poor).\n\n[kb=17]\nA customer with propfinancialdata.propown\
     \ of 'Own', LTV > 0.8, and propfinancialdata.mortgagebits.mortpayhist of 'Fair'\
@@ -549,6 +592,7 @@ columns:
     = 'High' AND credit_accounts_and_history.newaccage < 1 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Frequent Credit Seeker flag (KB 18): hardinq > 3 (past six months)\
     \ AND seekbeh='High' AND newaccage < 1.\n\n[kb=18]\nA customer with hardinq >\
     \ 3 in the past six months, seekbeh of 'High', and newaccage < 1. \u2014 Identifies\
@@ -558,12 +602,13 @@ columns:
   meta:
     kb_id: 18
 - name: is_over_extended
-  sql: CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.debincratio
-    > 0.43 AND credit_accounts_and_history.credutil > 0.8 AND (credit_and_compliance__bank_and_transactions.ovrfreq
-    = 'Frequent' OR credit_and_compliance__bank_and_transactions.bouncecount > 0)
-    THEN 1 ELSE 0 END
+  sql: CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.debincratio
+    > 0.43 AND credit_accounts_and_history.credutil > 0.8 AND (credit_and_compliance.bank_and_transactions.ovrfreq
+    = 'Frequent' OR credit_and_compliance.bank_and_transactions.bouncecount > 0) THEN
+    1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Over-Extended flag (KB 19): DTI > 0.43 AND CUR > 0.8 AND (ovrfreq='Frequent'\
     \ OR bouncecount > 0).\n\n[kb=19]\nA customer with DTI > 0.43, CUR > 0.8, and\
     \ at least one of: ovrfreq of 'Frequent', bouncecount > 0 in the past three months.\
@@ -573,16 +618,17 @@ columns:
   meta:
     kb_id: 19
 - name: is_mortgage_risk_profile
-  sql: CASE WHEN json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.propvalue') > 0 AND CAST(json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.mortgagebits.mortbalance') AS REAL) / CAST(json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.propvalue') AS REAL) > 0.9 OR (json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.propvalue') > 0 AND CAST(json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.mortgagebits.mortbalance') AS REAL) / CAST(json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
-    '$.propvalue') AS REAL) > 1.0) OR json_extract(credit_and_compliance__bank_and_transactions__expenses_and_assets.propfinancialdata,
+  sql: CASE WHEN JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.propvalue') > 0 AND CAST(JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.mortgagebits.mortbalance') AS FLOAT) / CAST(JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.propvalue') AS FLOAT) > 0.9 OR (JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.propvalue') > 0 AND CAST(JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.mortgagebits.mortbalance') AS FLOAT) / CAST(JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
+    '$.propvalue') AS FLOAT) > 1.0) OR JSON_EXTRACT(credit_and_compliance.bank_and_transactions.expenses_and_assets.propfinancialdata,
     '$.mortgagebits.mortpayhist') IN ('Fair', 'Poor') THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Mortgage Risk Profile flag (KB 40): elevated mortgage risk via LTV\
     \ > 0.9 OR LTV > 1.0 (negative equity) OR mortpayhist in (Fair, Poor).\n\n[kb=40]\n\
     A customer with high LTV (Loan-to-Value Ratio > 0.9), negative equity risk (LTV\
@@ -594,15 +640,16 @@ columns:
   meta:
     kb_id: 40
 - name: is_financial_stress_indicator
-  sql: CASE WHEN (0.5 * credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.debincratio
-    + 0.5 * (1.0 - CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    > 0 THEN MIN(1.0, credit_and_compliance__bank_and_transactions__expenses_and_assets.liqassets
-    / (credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
+  sql: CASE WHEN (0.5 * credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.debincratio
+    + 0.5 * (1.0 - CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    > 0 THEN MIN(1.0, credit_and_compliance.bank_and_transactions.expenses_and_assets.liqassets
+    / (credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
     * 6.0)) ELSE 0 END)) > 0.7 AND (credit_and_compliance.delinqcount > 0 OR credit_and_compliance.latepaycount
-    > 0) AND credit_and_compliance__bank_and_transactions__expenses_and_assets.networth
+    > 0) AND credit_and_compliance.bank_and_transactions.expenses_and_assets.networth
     < 0 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Financial Stress Indicator flag (KB 42): FVS > 0.7 AND recent payment\
     \ issues (delinq>0 or late>0) AND negative Net Worth.\n\n[kb=42]\nA customer with\
     \ FVS (Financial Vulnerability Score) > 0.7, recent payment issues (delinqcount\
@@ -613,22 +660,23 @@ columns:
   meta:
     kb_id: 42
 - name: is_premium_banking_candidate
-  sql: CASE WHEN (0.6 * (CAST(credit_and_compliance.credscore AS REAL) / 850.0) +
+  sql: CASE WHEN (0.6 * (CAST(credit_and_compliance.credscore AS FLOAT) / 850.0) +
     0.4 * (1.0 - credit_accounts_and_history.credutil)) > 0.8 AND (0.3 * MIN(1.0,
-    1.0 - credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.debincratio)
-    + 0.3 * CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    > 0 THEN MIN(1.0, credit_and_compliance__bank_and_transactions__expenses_and_assets.liqassets
-    / (credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    * 6.0)) ELSE 0 END + 0.2 * CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    > 0 THEN MIN(1.0, credit_and_compliance__bank_and_transactions__expenses_and_assets.bankaccbal
-    / (credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    * 3.0)) ELSE 0 END + 0.2 * CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    > 0 THEN MIN(1.0, credit_and_compliance__bank_and_transactions__expenses_and_assets.savamount
-    / (credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
-    * 12.0)) ELSE 0 END) > 0.7 AND credit_and_compliance__bank_and_transactions__expenses_and_assets.totassets
+    1.0 - credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.debincratio)
+    + 0.3 * CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    > 0 THEN MIN(1.0, credit_and_compliance.bank_and_transactions.expenses_and_assets.liqassets
+    / (credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    * 6.0)) ELSE 0 END + 0.2 * CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    > 0 THEN MIN(1.0, credit_and_compliance.bank_and_transactions.expenses_and_assets.bankaccbal
+    / (credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    * 3.0)) ELSE 0 END + 0.2 * CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    > 0 THEN MIN(1.0, credit_and_compliance.bank_and_transactions.expenses_and_assets.savamount
+    / (credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
+    * 12.0)) ELSE 0 END) > 0.7 AND credit_and_compliance.bank_and_transactions.expenses_and_assets.totassets
     > 250000 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Premium Banking Candidate flag (KB 43): CQI > 0.8 AND FSI > 0.7 AND\
     \ totassets > 250000.\n\n[kb=43]\nA customer with high CQI (Credit Quality Index\
     \ > 0.8), strong FSI (Financial Stability Index > 0.7), and significant assets\
@@ -639,18 +687,19 @@ columns:
   meta:
     kb_id: 43
 - name: is_digital_channel_opportunity
-  sql: CASE WHEN (json_extract(credit_and_compliance__bank_and_transactions.chaninvdatablock,
-    '$.onlineuse') != 'High' OR json_extract(credit_and_compliance__bank_and_transactions.chaninvdatablock,
-    '$.onlineuse') IS NULL) AND (json_extract(credit_and_compliance__bank_and_transactions.chaninvdatablock,
-    '$.mobileuse') != 'High' OR json_extract(credit_and_compliance__bank_and_transactions.chaninvdatablock,
-    '$.mobileuse') IS NULL) AND (0.3 * credit_and_compliance__bank_and_transactions.bankrelscore
-    + 0.3 * (1.0 - credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.churnrate)
+  sql: CASE WHEN (JSON_EXTRACT(credit_and_compliance.bank_and_transactions.chaninvdatablock,
+    '$.onlineuse') <> 'High' OR JSON_EXTRACT(credit_and_compliance.bank_and_transactions.chaninvdatablock,
+    '$.onlineuse') IS NULL) AND (JSON_EXTRACT(credit_and_compliance.bank_and_transactions.chaninvdatablock,
+    '$.mobileuse') <> 'High' OR JSON_EXTRACT(credit_and_compliance.bank_and_transactions.chaninvdatablock,
+    '$.mobileuse') IS NULL) AND (0.3 * credit_and_compliance.bank_and_transactions.bankrelscore
+    + 0.3 * (1.0 - credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record.churnrate)
     + 0.4 * (0.4 * MIN(1.0, credit_accounts_and_history.produsescore) + 0.3 * MIN(1.0,
-    credit_accounts_and_history.chanusescore) + 0.2 * MIN(1.0, credit_and_compliance__bank_and_transactions.bankrelscore)
-    + 0.1 * MIN(1.0, CAST(credit_accounts_and_history.custservint AS REAL) / 10.0)))
+    credit_accounts_and_history.chanusescore) + 0.2 * MIN(1.0, credit_and_compliance.bank_and_transactions.bankrelscore)
+    + 0.1 * MIN(1.0, CAST(credit_accounts_and_history.custservint AS FLOAT) / 10.0)))
     > 0.7 AND credit_accounts_and_history.produsescore > 0.5 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Digital Channel Opportunity flag (KB 44): low digital engagement (onlineuse\
     \ != High AND mobileuse != High) AND BRS > 0.7 AND produsescore > 0.5.\n\n[kb=44]\n\
     A customer with low digital engagement (chaninvdatablock.onlineuse not 'High'\
@@ -663,11 +712,12 @@ columns:
     kb_id: 44
 - name: is_credit_building_opportunity
   sql: CASE WHEN credit_and_compliance.credageyrs < 2 AND (0.6 * (CAST(credit_and_compliance.credscore
-    AS REAL) / 850.0) + 0.4 * (1.0 - credit_accounts_and_history.credutil)) < 0.6
-    AND credit_and_compliance__bank_and_transactions.bouncecount = 0 AND credit_and_compliance__bank_and_transactions.bankrelscore
+    AS FLOAT) / 850.0) + 0.4 * (1.0 - credit_accounts_and_history.credutil)) < 0.6
+    AND credit_and_compliance.bank_and_transactions.bouncecount = 0 AND credit_and_compliance.bank_and_transactions.bankrelscore
     > 0.6 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Credit Building Opportunity flag (KB 45): credageyrs < 2 AND CQI <\
     \ 0.6 AND bouncecount = 0 AND bankrelscore > 0.6.\n\n[kb=45]\nA customer with\
     \ limited credit history (credageyrs < 2), low CQI (Credit Quality Index < 0.6),\
@@ -678,13 +728,14 @@ columns:
   meta:
     kb_id: 45
 - name: is_investment_services_target
-  sql: CASE WHEN credit_and_compliance__bank_and_transactions__expenses_and_assets.totassets
-    > 0 AND (credit_and_compliance__bank_and_transactions__expenses_and_assets.liqassets
-    / credit_and_compliance__bank_and_transactions__expenses_and_assets.totassets)
-    > 0.3 AND credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income.mthincome
+  sql: CASE WHEN credit_and_compliance.bank_and_transactions.expenses_and_assets.totassets
+    > 0 AND (credit_and_compliance.bank_and_transactions.expenses_and_assets.liqassets
+    / credit_and_compliance.bank_and_transactions.expenses_and_assets.totassets) >
+    0.3 AND credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.mthincome
     > 5000 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Investment Services Target flag (KB 46): ALR > 0.3 AND mthincome >\
     \ 5000.\n\n[kb=46]\nA customer with high ALR (Asset Liquidity Ratio > 0.3) and\
     \ strong income (mthincome > $5,000). \u2014 Identifies customers who are good\
@@ -695,13 +746,14 @@ columns:
     kb_id: 46
 - name: is_cross_sell_priority
   sql: CASE WHEN (0.4 * MIN(1.0, credit_accounts_and_history.produsescore) + 0.3 *
-    MIN(1.0, credit_accounts_and_history.chanusescore) + 0.2 * MIN(1.0, credit_and_compliance__bank_and_transactions.bankrelscore)
-    + 0.1 * MIN(1.0, CAST(credit_accounts_and_history.custservint AS REAL) / 10.0))
-    > 0.7 AND (0.6 * (CAST(credit_and_compliance.credscore AS REAL) / 850.0) + 0.4
-    * (1.0 - credit_accounts_and_history.credutil)) > 0.7 AND credit_and_compliance__bank_and_transactions__expenses_and_assets__employment_and_income__core_record.crossratio
+    MIN(1.0, credit_accounts_and_history.chanusescore) + 0.2 * MIN(1.0, credit_and_compliance.bank_and_transactions.bankrelscore)
+    + 0.1 * MIN(1.0, CAST(credit_accounts_and_history.custservint AS FLOAT) / 10.0))
+    > 0.7 AND (0.6 * (CAST(credit_and_compliance.credscore AS FLOAT) / 850.0) + 0.4
+    * (1.0 - credit_accounts_and_history.credutil)) > 0.7 AND credit_and_compliance.bank_and_transactions.expenses_and_assets.employment_and_income.core_record.crossratio
     > 0.5 AND credit_accounts_and_history.produsescore < 0.5 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Cross-Sell Priority flag (KB 49): CES > 0.7 AND CQI > 0.7 AND crossratio\
     \ > 0.5 AND produsescore < 0.5.\n\n[kb=49]\nA customer with strong CES (Customer\
     \ Engagement Score > 0.7), positive CQI (Credit Quality Index > 0.7), and unrealized\
@@ -713,11 +765,12 @@ columns:
     kb_id: 49
 - name: is_high_engagement
   sql: CASE WHEN (0.4 * MIN(1.0, credit_accounts_and_history.produsescore) + 0.3 *
-    MIN(1.0, credit_accounts_and_history.chanusescore) + 0.2 * MIN(1.0, credit_and_compliance__bank_and_transactions.bankrelscore)
-    + 0.1 * MIN(1.0, CAST(credit_accounts_and_history.custservint AS REAL) / 10.0))
+    MIN(1.0, credit_accounts_and_history.chanusescore) + 0.2 * MIN(1.0, credit_and_compliance.bank_and_transactions.bankrelscore)
+    + 0.1 * MIN(1.0, CAST(credit_accounts_and_history.custservint AS FLOAT) / 10.0))
     > 0.7 THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "High Engagement Criteria flag (KB 50): CES > 0.7.\n\n[kb=50]\nA Customer\
     \ Engagement Score (CES) greater than 0.7. \u2014 Defines customers with a high\
     \ level of engagement with bank products and services.\n[/kb=50]"
@@ -731,6 +784,7 @@ columns:
     'Severe Impact' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Credit Utilization Impact band derived from credutil.\n\n[kb=23]\n\
     Credit Utilization (credutil) ranges from 0-1 (or above). Utilization under 0.30\
     \ is optimal for credit scores, 0.30-0.50 has moderate negative impact, 0.50-0.70\

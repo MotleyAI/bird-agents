@@ -1,24 +1,36 @@
-version: 6
+version: 10
 name: adjacent_planet_period_ratios
 source_queries:
-- version: 3
+- version: 4
   name: with_lag
   source_model:
     source_name: orbital_characteristics
     columns:
     - name: hostlink
-      type: DOUBLE
       sql: planets.hostlink
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: period_inner
-      type: DOUBLE
       sql: LAG(period) OVER (PARTITION BY planets.hostlink ORDER BY period ASC)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     - name: period_outer
-      type: DOUBLE
       sql: period
-    - name: period_ratio
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: period_ratio
       sql: period * 1.0 / NULLIF(LAG(period) OVER (PARTITION BY planets.hostlink ORDER
         BY period ASC), 0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: bodylink
   - name: hostlink
@@ -26,7 +38,9 @@ source_queries:
   - name: period_outer
   - name: period_ratio
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model: with_lag
   dimensions:
   - name: bodylink
@@ -37,6 +51,8 @@ source_queries:
   filters:
   - period_inner is not None
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"with_lag.bodylink\" AS bodylink, \"with_lag.hostlink\"\
   \ AS hostlink, \"with_lag.period_inner\" AS period_inner, \"with_lag.period_outer\"\
@@ -62,6 +78,7 @@ columns:
   sql: bodylink
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -69,21 +86,25 @@ columns:
   sql: hostlink
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: period_inner
   sql: period_inner
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: period_outer
   sql: period_outer
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: period_ratio
   sql: period_ratio
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: actuation_data
 sql_table: actuation_data
 query_variables: {}
@@ -8,26 +8,31 @@ columns:
   sql: actreg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: actoperref
   sql: actoperref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: actdetref
   sql: actdetref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: actrecref
   sql: actrecref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tcpxval
   sql: tcpxval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -35,6 +40,7 @@ columns:
   sql: tcpyval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -42,6 +48,7 @@ columns:
   sql: tcpzval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -49,6 +56,7 @@ columns:
   sql: tcp_rxval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -56,6 +64,7 @@ columns:
   sql: tcp_ryval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -63,6 +72,7 @@ columns:
   sql: tcp_rzval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -70,6 +80,7 @@ columns:
   sql: tcpspeedval
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Tool Center Point linear speed (mm/s). Higher speeds may be required\
     \ for some applications but can affect precision (KB #23).\n\n[kb=23]\nTCP speed\
     \ is measured in mm/s. Higher speeds may be required for certain applications\
@@ -85,6 +96,7 @@ columns:
   sql: tcpaccelval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -92,6 +104,7 @@ columns:
   sql: pathaccmmval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -99,6 +112,7 @@ columns:
   sql: poserrmmval
   type: INT
   primary_key: false
+  unique: false
   description: "Position error (mm). Lower values indicate higher precision (KB #22).\n\
     \n[kb=22]\nPosition error is measured in millimeters. Lower values indicate higher\
     \ precision. \u2014 Illustrates the position error in robot actuations.\n[/kb=22]"
@@ -112,6 +126,7 @@ columns:
   sql: orienterrdegval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -119,6 +134,7 @@ columns:
   sql: payloadwval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -126,6 +142,7 @@ columns:
   sql: payloadival
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -133,6 +150,7 @@ columns:
   sql: m1currval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -140,6 +158,7 @@ columns:
   sql: m2currval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -147,6 +166,7 @@ columns:
   sql: m3currval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -154,6 +174,7 @@ columns:
   sql: m4currval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -161,6 +182,7 @@ columns:
   sql: m5currval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -168,6 +190,7 @@ columns:
   sql: m6currval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -175,6 +198,7 @@ columns:
   sql: m1voltval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -182,6 +206,7 @@ columns:
   sql: m2voltval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -189,6 +214,7 @@ columns:
   sql: m3voltval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -196,6 +222,7 @@ columns:
   sql: m4voltval
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -203,6 +230,7 @@ columns:
   sql: m5voltval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -210,6 +238,7 @@ columns:
   sql: m6voltval
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -217,6 +246,7 @@ columns:
   sql: payloadwval * 1.0 / NULLIF(robot_details.payloadcapkg, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Row-level payload weight relative to robot's payload capacity \u2014\
     \ helper for PUR (KB #39).\n\n[kb=39]\nFor a given robot R, PUR = \\frac{\\sum_{ad\
     \ \\in \\text{actuation_data} \\mid \\text{actdetref = R}} payloadwval}{\\text{(robot_details.payloadcapkg\
@@ -229,10 +259,11 @@ columns:
   meta:
     kb_id: 39
 - name: is_aged_over_one
-  sql: ((julianday(robot_details__robot_record.rects) - julianday(robot_details.instdateval))
+  sql: ((JULIANDAY(robot_details.robot_record.rects) - JULIANDAY(robot_details.instdateval))
     / 365.25) > 1
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: 'Row-level: is the owning robot older than 1 year (RAY>1)? Helper for
     KB #49 Overloaded.'
   hidden: true

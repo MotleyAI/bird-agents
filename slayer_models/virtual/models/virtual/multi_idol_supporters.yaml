@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: multi_idol_supporters
 source_queries:
-- version: 3
+- version: 4
   name: fan_distinct_idols
   source_model: interactions
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: interactfanpivot
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: fan_engrate
   source_model: engagement
   measures:
@@ -20,7 +22,9 @@ source_queries:
   - name: memberfanpivot
     model: membershipandspending
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: fans
     joins:
@@ -28,16 +32,20 @@ source_queries:
       join_pairs:
       - - userregistry
         - interactfanpivot
+      join_type: left
     - target_model: fan_engrate
       join_pairs:
       - - userregistry
         - membershipandspending__memberfanpivot
+      join_type: left
   dimensions:
   - name: userregistry
   filters:
   - fan_distinct_idols.n_idols >= 2
   - fan_engrate.engrate_v > 0.4
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"fans.userregistry\" AS userregistry FROM (SELECT\n  fans.userregistry\
   \ AS \"fans.userregistry\"\nFROM fans AS fans\nLEFT JOIN (\n  (\n    SELECT\n  \
@@ -62,6 +70,7 @@ columns:
   sql: userregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

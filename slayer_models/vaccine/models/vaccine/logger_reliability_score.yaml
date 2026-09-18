@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: logger_reliability_score
 source_queries:
-- version: 3
+- version: 4
   name: mcs_per_shipment_lrs
   source_model: regulatoryandmaintenance
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: shipgov
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: tss_tbs_per_container_lrs
   source_model: sensordata
   measures:
@@ -21,7 +23,9 @@ source_queries:
   dimensions:
   - name: containlink
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: lhi_per_container_lrs
   source_model: datalogger
   measures:
@@ -30,32 +34,43 @@ source_queries:
   dimensions:
   - name: containlog
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: container
+    columns:
+    - name: cmr
+      sql: (1 - mcs_per_shipment_lrs.mcs) * (1 + tss_tbs_per_container_lrs.tbs / 5.0)
+        * (1 - lhi_per_container_lrs.lhi)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
+    - name: lrs
+      sql: lhi_per_container_lrs.lhi * (1 - ((1 - mcs_per_shipment_lrs.mcs) * (1 +
+        tss_tbs_per_container_lrs.tbs / 5.0) * (1 - lhi_per_container_lrs.lhi))) *
+        tss_tbs_per_container_lrs.tss
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: mcs_per_shipment_lrs
       join_pairs:
       - - shipown
         - shipgov
+      join_type: left
     - target_model: lhi_per_container_lrs
       join_pairs:
       - - containregistry
         - containlog
+      join_type: left
     - target_model: tss_tbs_per_container_lrs
       join_pairs:
       - - containregistry
         - containlink
-    columns:
-    - name: cmr
-      type: DOUBLE
-      sql: (1 - mcs_per_shipment_lrs.mcs) * (1 + tss_tbs_per_container_lrs.tbs / 5.0)
-        * (1 - lhi_per_container_lrs.lhi)
-    - name: lrs
-      type: DOUBLE
-      sql: lhi_per_container_lrs.lhi * (1 - ((1 - mcs_per_shipment_lrs.mcs) * (1 +
-        tss_tbs_per_container_lrs.tbs / 5.0) * (1 - lhi_per_container_lrs.lhi))) *
-        tss_tbs_per_container_lrs.tss
+      join_type: left
   dimensions:
   - name: containregistry
   - name: shipown
@@ -70,6 +85,8 @@ source_queries:
   - name: cmr
   - name: lrs
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"container.containregistry\" AS containregistry, \"container.shipown\"\
   \ AS shipown, \"container.lhi_per_container_lrs.lhi\" AS lhi_per_container_lrs__lhi,\
@@ -120,16 +137,19 @@ columns:
   sql: containregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: shipown
   sql: shipown
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lhi_per_container_lrs__lhi
   sql: lhi_per_container_lrs__lhi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -137,6 +157,7 @@ columns:
   sql: tss_tbs_per_container_lrs__tss
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -144,6 +165,7 @@ columns:
   sql: tss_tbs_per_container_lrs__tbs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -151,6 +173,7 @@ columns:
   sql: mcs_per_shipment_lrs__mcs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -158,11 +181,13 @@ columns:
   sql: cmr
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: lrs
   sql: lrs
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

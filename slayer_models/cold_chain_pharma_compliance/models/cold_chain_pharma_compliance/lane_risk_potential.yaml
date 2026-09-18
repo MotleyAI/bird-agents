@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: lane_risk_potential
 source_queries:
-- version: 3
+- version: 4
   name: shipments_per_lane
   source_model: shipments
   measures:
@@ -10,28 +10,37 @@ source_queries:
   dimensions:
   - name: route_string
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: shipments_per_lane
+    columns:
+    - name: lrp
+      sql: (te_per_lane.temp_excursion_count_sum + shipments_per_lane.is_delayed_shipment_sum
+        + cd_per_lane.is_customs_delayed_sum) * 1.0 / NULLIF(shipments_per_lane._count,
+        0)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: te_per_lane
       join_pairs:
       - - route_string
         - shipments__route_string
+      join_type: left
     - target_model: cd_per_lane
       join_pairs:
       - - route_string
         - shipments__route_string
-    columns:
-    - name: lrp
-      type: DOUBLE
-      sql: (te_per_lane.temp_excursion_count_sum + shipments_per_lane.is_delayed_shipment_sum
-        + cd_per_lane.is_customs_delayed_sum) * 1.0 / NULLIF(shipments_per_lane._count,
-        0)
+      join_type: left
   dimensions:
   - name: route_string
   - name: lrp
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"shipments_per_lane.route_string\" AS route_string, \"\
   shipments_per_lane.lrp\" AS lrp FROM (SELECT\n  shipments_per_lane.route_string\
@@ -72,6 +81,7 @@ columns:
   sql: route_string
   type: TEXT
   primary_key: false
+  unique: false
   description: Encoded planned route (origin -> destination) string. Uses ->> to return
     the JSON scalar without surrounding quotes (json_extract gets rewritten to ->
     which yields JSON-quoted strings).
@@ -80,6 +90,7 @@ columns:
   sql: lrp
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

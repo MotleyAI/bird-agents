@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: trader_evasive_layering
 sql: "SELECT\n  trdref AS tradereg,\n  AVG(cancelpct) AS avg_cancelpct,\n  AVG(CASE\
   \ WHEN cancelpct >= 1.0 THEN NULL ELSE modfreq * 1.0 / (1.0 - cancelpct) END) AS\
@@ -12,26 +12,31 @@ columns:
   sql: tradereg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: avg_cancelpct
   sql: avg_cancelpct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: avg_omi
   sql: avg_omi
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: any_evasive_layering
   sql: any_evasive_layering
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_confirmed_evasive_layering
   sql: (avg_cancelpct > 0.5 OR avg_omi > 1.5) AND any_evasive_layering = 1
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: 'Confirmed Evasive Layering/Spoofing (KB #65): High Cancel/Mod Trader
     AND any transaction with layerind=''Confirmed'' OR spoofprob>0.75.'
   hidden: false

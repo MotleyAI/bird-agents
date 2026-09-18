@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: worksite_geographic_diversity
 source_queries:
-- version: 3
+- version: 4
   name: emp_geo
   source_model: case_worksite
   measures:
@@ -12,7 +12,9 @@ source_queries:
   dimensions:
   - name: homefirm
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: emp_geo
     columns:
@@ -20,12 +22,17 @@ source_queries:
       sql: CASE WHEN distinct_worksites <= 1 THEN 'Single-Location' WHEN distinct_states
         <= 3 THEN 'Regional' ELSE 'National' END
       type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: homefirm
   - name: distinct_worksites
   - name: distinct_states
   - name: geographic_diversity
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"emp_geo.homefirm\" AS homefirm, \"emp_geo.distinct_worksites\"\
   \ AS distinct_worksites, \"emp_geo.distinct_states\" AS distinct_states, \"emp_geo.geographic_diversity\"\
@@ -48,12 +55,14 @@ columns:
   sql: homefirm
   type: TEXT
   primary_key: false
+  unique: false
   description: Employer (homefirm) for the case, denormalized via cases join.
   hidden: false
 - name: distinct_worksites
   sql: distinct_worksites
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -61,6 +70,7 @@ columns:
   sql: distinct_states
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -68,6 +78,7 @@ columns:
   sql: geographic_diversity
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

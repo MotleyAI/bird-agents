@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: sensordata
 sql_table: sensordata
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: sensortrack
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: storetempc
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -22,6 +24,7 @@ columns:
   sql: temptolc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -29,6 +32,7 @@ columns:
   sql: tempnowc
   type: INT
   primary_key: false
+  unique: false
   description: "Current actual temperature reading in Celsius. Optimal vaccine storage\
     \ range: 2 C to 8 C (KB #20).\n\n[kb=20]\nTemperature between 2\xB0C and 8\xB0\
     C indicates optimal vaccine storage conditions. \u2014 Illustrates safe temperature\
@@ -43,6 +47,7 @@ columns:
   sql: tempdevcount
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -50,6 +55,7 @@ columns:
   sql: tempmaxc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -57,6 +63,7 @@ columns:
   sql: tempminc
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -64,6 +71,7 @@ columns:
   sql: tempstabidx
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -71,6 +79,7 @@ columns:
   sql: humiditypct
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -78,6 +87,7 @@ columns:
   sql: presskpa
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -85,21 +95,25 @@ columns:
   sql: shockflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tiltflag
   sql: tiltflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: impactflag
   sql: impactflag
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vibelvlmms
   sql: vibelvlmms
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -107,6 +121,7 @@ columns:
   sql: lightlux
   type: INT
   primary_key: false
+  unique: false
   description: "Current light level in lux. 0-10: Dark (ideal); 10-50: Low light;\
     \ >50: Excessive exposure risk (KB #29).\n\n[kb=29]\nMeasured in lux. 0-10: Dark\
     \ (ideal), 10-50: Low light, >50: Excessive exposure risk. \u2014 Illustrates\
@@ -121,6 +136,7 @@ columns:
   sql: acceldata
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -128,6 +144,7 @@ columns:
   sql: handleevents
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -135,6 +152,7 @@ columns:
   sql: critevents
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -142,6 +160,7 @@ columns:
   sql: alerts
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -149,27 +168,32 @@ columns:
   sql: alerttime
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: alertkind
   sql: alertkind
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: containlink
   sql: containlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vehsenseref
   sql: vehsenseref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: tss
   sql: (1 - COALESCE(CAST(tempdevcount AS REAL) / 100, 0)) * (1 - COALESCE(CAST(critevents
     AS REAL) / 10, 0)) * COALESCE(tempstabidx, 1)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Temperature Stability Score (TSS). Overall temperature stability of\
     \ a container, based on deviation count, critical events, and the stored stability\
     \ index (KB #0).\n\n[kb=0]\nTSS = (1 - \\frac{TempDevCount}{100}) \\times (1 -\
@@ -183,6 +207,7 @@ columns:
   sql: ABS(tempnowc - storetempc) / NULLIF(temptolc, 0) * tempdevcount
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Temperature Breach Severity (TBS). Severity of temperature breaches\
     \ as |TempNowC - StoreTempC| / TempTolC * TempDevCount (KB #9).\n\n[kb=9]\nTBS\
     \ = \\frac{|TempNowC - StoreTempC|}{TempTolC} \\times TempDevCount \u2014 Calculates\
@@ -196,6 +221,7 @@ columns:
     AS REAL) / 10, 0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Handling Quality Index (HQI). Quality of shipment handling, based\
     \ on handling events and critical events (KB #8).\n\n[kb=8]\nHQI = (1 - \\frac{HandleEvents}{100})\
     \ \\times (1 - \\frac{CritEvents}{10}) \u2014 Measures quality of shipment handling.\n\
@@ -210,6 +236,7 @@ columns:
     0) / 100)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Container Risk Index (CRI). Overall risk level for a container based\
     \ on temperature stability and coolant status: (1 - TSS) * (1 - CoolRemainPct/100)\
     \ (KB #2). CoolRemainPct comes from the joined container row.\n\n[kb=2]\nCRI =\
@@ -228,6 +255,7 @@ columns:
     / NULLIF(temptolc, 0) * tempdevcount)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Total Risk Score (TRS). Combined container risk and handling quality:\
     \ CRI * (1 - HQI) * (1 + TBS) (KB #30).\n\n[kb=30]\nTRS = \\text{CRI} \\times\
     \ (1 - \\text{HQI}) \\times (1 + \\text{TBS}) \u2014 Combines container risk and\
@@ -243,6 +271,7 @@ columns:
     - julianday(container.refilllatest), 0)) / 20.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Coolant Efficiency Index (CEI). How efficiently coolant maintains\
     \ temperature stability: TSS * (CoolRemainPct/100) * (1 - CDR/20) (KB #31). CDR\
     \ and CoolRemainPct come from the joined container row.\n\n[kb=31]\nCEI = \\text{TSS}\
@@ -263,6 +292,7 @@ columns:
     (1 + ABS(tempnowc - storetempc) / NULLIF(temptolc, 0))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Environmental Stress Factor (ESF). Combined environmental stressors\
     \ on vaccine stability: TSS * (1 + TBS/5) * CEI * (1 + |TempNowC - StoreTempC|/TempTolC)\
     \ (KB #53).\n\n[kb=53]\nESF = \\text{TSS} \\cdot (1 + \\frac{\\text{TBS}}{5})\
@@ -280,6 +310,7 @@ columns:
     1)) > 0.8 THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Stable Transport flag. True when HQI > 0.9 AND TSS > 0.8 (KB #14).\n\
     \n[kb=14]\nTransport where HQI > 0.9 and TSS > 0.8 \u2014 Identifies stable transport\
     \ conditions.\n[/kb=14]"
@@ -292,6 +323,7 @@ columns:
     > 2.0 AND tempdevcount > 5 THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Temperature Alert flag. True when TBS > 2.0 AND TempDevCount > 5 (KB\
     \ #16).\n\n[kb=16]\nA condition where TBS > 2.0 and TempDevCount > 5 \u2014 Identifies\
     \ critical temperature conditions.\n[/kb=16]"

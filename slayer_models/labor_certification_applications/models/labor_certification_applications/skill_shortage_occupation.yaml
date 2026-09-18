@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: skill_shortage_occupation
 source_queries:
-- version: 3
+- version: 4
   name: soc_metrics
   source_model: case_worksite
   measures:
@@ -10,19 +10,26 @@ source_queries:
   dimensions:
   - name: soccd
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: soc_metrics
     columns:
     - name: is_skill_shortage
-      type: BOOLEAN
       sql: wage_differential_rate_avg > 10 AND _count >= 5
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: soccd
   - name: wage_differential_rate_avg
   - name: _count
   - name: is_skill_shortage
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"soc_metrics.soccd\" AS soccd, \"soc_metrics.wage_differential_rate_avg\"\
   \ AS wage_differential_rate_avg, \"soc_metrics._count\" AS _count, \"soc_metrics.is_skill_shortage\"\
@@ -63,12 +70,14 @@ columns:
   sql: soccd
   type: TEXT
   primary_key: false
+  unique: false
   description: 'SOC code (KB #7) for this case_worksite, denormalized via cases join.'
   hidden: false
 - name: wage_differential_rate_avg
   sql: wage_differential_rate_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'WDR for this case_worksite, denormalized via prevailing_wage join.
     Used for KB #31 (Industry Wage Differential).'
   hidden: false
@@ -78,6 +87,7 @@ columns:
   sql: _count
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -85,6 +95,7 @@ columns:
   sql: is_skill_shortage
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

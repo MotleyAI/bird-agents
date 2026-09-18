@@ -1,16 +1,19 @@
-version: 6
+version: 10
 name: high_altitude_performance_factor
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: lap_times
     columns:
     - name: lap_seconds_high_altitude_only
-      type: DOUBLE
       sql: CASE WHEN CAST(json_extract(races__circuits.location_metadata, '$.coordinates.elevation_m')
         AS REAL) > 800 THEN msec_val / 1000.0 ELSE NULL END
+      type: DOUBLE
+      primary_key: false
+      unique: false
       description: 'Lap time in seconds, only when the lap was run at a High-Altitude
         Circuit (KB #14, elevation > 800 m).'
+      hidden: false
   measures:
   - formula: lap_seconds_high_altitude_only:avg / lap_seconds:avg
     name: high_altitude_performance_factor
@@ -23,6 +26,8 @@ source_queries:
   - name: yr
     model: races
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"lap_times.wheel_unit\" AS wheel_unit, \"lap_times.races.yr\"\
   \ AS races__yr, \"lap_times.lap_seconds_high_altitude_only_avg\" AS lap_seconds_high_altitude_only_avg,\
@@ -48,6 +53,7 @@ columns:
   sql: wheel_unit
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Foreign key to drivers.
   hidden: false
   format:
@@ -56,6 +62,7 @@ columns:
   sql: races__yr
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -63,6 +70,7 @@ columns:
   sql: lap_seconds_high_altitude_only_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Lap time in seconds, only when the lap was run at a High-Altitude
     Circuit (KB #14, elevation > 800 m).'
   hidden: false
@@ -72,6 +80,7 @@ columns:
   sql: lap_seconds_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Lap Time in Seconds (KB #21): T_seconds = T_milliseconds / 1000.'
   hidden: false
   format:
@@ -80,6 +89,7 @@ columns:
   sql: high_altitude_performance_factor
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

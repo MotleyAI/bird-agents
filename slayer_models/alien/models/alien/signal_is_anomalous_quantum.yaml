@@ -1,29 +1,36 @@
-version: 7
+version: 10
 name: signal_is_anomalous_quantum
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
+    columns:
+    - name: is_anomalous_quantum
+      sql: CASE WHEN signaladvancedphenomena.quanteffects IN ('Significant', 'Observed')
+        AND signalprobabilities.anomscore > 8 AND (modindex * (1 + ((1 - ABS(freqdrifthzs)
+        / (freqmhz * 1000.0)) * sigdursec / (1 + doppshifthz / 1000.0))) * (CASE modtype
+        WHEN 'AM' THEN 2 WHEN 'FM' THEN 1.5 ELSE 1 END)) > 2.0 THEN 1 ELSE 0 END
+      type: BOOLEAN
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: signalprobabilities
       join_pairs:
       - - signalregistry
         - signalref
+      join_type: left
     - target_model: signaladvancedphenomena
       join_pairs:
       - - signalregistry
         - signalref
-    columns:
-    - name: is_anomalous_quantum
-      type: BOOLEAN
-      sql: CASE WHEN signaladvancedphenomena.quanteffects IN ('Significant', 'Observed')
-        AND signalprobabilities.anomscore > 8 AND (modindex * (1 + ((1 - ABS(freqdrifthzs)
-        / (freqmhz * 1000.0)) * sigdursec / (1 + doppshifthz / 1000.0))) * (CASE modtype
-        WHEN 'AM' THEN 2 WHEN 'FM' THEN 1.5 ELSE 1 END)) > 2.0 THEN 1 ELSE 0 END
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: is_anomalous_quantum
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.is_anomalous_quantum\"\
   \ AS is_anomalous_quantum FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\"\
@@ -44,11 +51,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_anomalous_quantum
   sql: is_anomalous_quantum
   type: BOOLEAN
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

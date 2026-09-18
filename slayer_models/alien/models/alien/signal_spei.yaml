@@ -1,28 +1,35 @@
-version: 7
+version: 10
 name: signal_spei
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: signals
+    columns:
+    - name: spei
+      sql: (signaldecoding.decodeiters * signaldecoding.proctimehrs) / (((signaldecoding.compressratio
+        * signalclassification.complexidx * signalclassification.entropyval) / 10.0)
+        * signalclassification.complexidx)
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
     joins:
     - target_model: signaldecoding
       join_pairs:
       - - signalregistry
         - signalref
+      join_type: left
     - target_model: signalclassification
       join_pairs:
       - - signalregistry
         - signalref
-    columns:
-    - name: spei
-      type: DOUBLE
-      sql: (signaldecoding.decodeiters * signaldecoding.proctimehrs) / (((signaldecoding.compressratio
-        * signalclassification.complexidx * signalclassification.entropyval) / 10.0)
-        * signalclassification.complexidx)
+      join_type: left
   dimensions:
   - name: signalregistry
   - name: spei
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"signals.signalregistry\" AS signalregistry, \"signals.spei\"\
   \ AS spei FROM (SELECT\n  signals.signalregistry AS \"signals.signalregistry\",\n\
@@ -39,11 +46,13 @@ columns:
   sql: signalregistry
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: spei
   sql: spei
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

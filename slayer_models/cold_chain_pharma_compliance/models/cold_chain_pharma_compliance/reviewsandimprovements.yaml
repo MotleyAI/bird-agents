@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: reviewsandimprovements
 sql_table: reviewsandimprovements
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: reckeyrev
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: procimprove
   sql: procimprove
   type: TEXT
   primary_key: false
+  unique: false
   description: "Process improvement actions: Yes / No / In Progress. KB #56 (GDP Corrective\
     \ Action Categories) names the standard CAPA buckets recorded here: Training Enhancement,\
     \ Documentation Update, Process Modification, Equipment Upgrade, Supplier Management,\
@@ -30,41 +32,49 @@ columns:
   sql: trainneeds
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sop_update
   sql: sop_update
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vendorimpact
   sql: vendorimpact
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: nextshipchg
   sql: nextshipchg
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: monfreqchg
   sql: monfreqchg
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: routeriskreassess
   sql: routeriskreassess
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: packspecrev
   sql: packspecrev
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lanequalstat
   sql: lanequalstat
   type: TEXT
   primary_key: false
+  unique: false
   description: "Transport lane quality status: 'Valid', 'Invalid', 'Review Required'.\
     \ KB #54 (Serialization Maturity Model) classifies tracking maturity Level 0-4\
     \ from 'no serialization' through 'end-to-end serialized supply chain with real-time\
@@ -83,21 +93,25 @@ columns:
   sql: techupgrade
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: costoptpot
   sql: costoptpot
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sustainimpact
   sql: sustainimpact
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: carbonkg
   sql: carbonkg
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -105,11 +119,13 @@ columns:
   sql: energyscore
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: docformat
   sql: docformat
   type: TEXT
   primary_key: false
+  unique: false
   description: "Review document format: Paper / Electronic / Hybrid. KB #53 (Validation\
     \ Documentation Requirements) lists the master plan, qualifications, mapping studies,\
     \ and final report that this review record references.\n\n[kb=53]\nRequired validation\
@@ -126,6 +142,7 @@ columns:
   sql: dataintegrity
   type: TEXT
   primary_key: false
+  unique: false
   description: "Data integrity verification status: 'Verified' / 'Under Review' /\
     \ 'Compromised'. KB #59 (Data Integrity Components) describes the ALCOA+ principles\
     \ \u2014 Attributable, Legible, Contemporaneous, Original, Accurate, plus Complete,\
@@ -145,6 +162,7 @@ columns:
   sql: audittrailcomplete
   type: TEXT
   primary_key: false
+  unique: false
   description: "Audit-trail completeness percent. KB #46 (Quality Management System\
     \ Maturity Model) ranks QMS at Level 1 (Basic, minimal documentation) up to Level\
     \ 5 (Optimized, fully integrated continuous improvement). audittrailcomplete is\
@@ -164,46 +182,55 @@ columns:
   sql: e_sigstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: sysaccessctrl
   sql: sysaccessctrl
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: databackupstat
   sql: databackupstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: reportgenstat
   sql: reportgenstat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: distlist
   sql: distlist
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: archivestat
   sql: archivestat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: reviewnotes
   sql: reviewnotes
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: nextrevts
   sql: nextrevts
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: closestat
   sql: closestat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

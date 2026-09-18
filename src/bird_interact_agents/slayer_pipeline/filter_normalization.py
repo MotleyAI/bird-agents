@@ -19,9 +19,9 @@ Scope:
 Mode-B is Python-expression syntax, so we parse + rewrite + re-emit with stdlib
 ``ast`` (NOT sqlglot — ``==`` isn't SQL). SQL-style inputs (``=``, ``<>``,
 uppercase ``IN``/``AND``/``OR``/``NOT``/``IS``/``NULL``) are canonicalized first
-by reusing SLayer's own ``_preprocess_sql_operators`` — the canonical
-preprocessing ``parse_filter`` itself runs — so we accept exactly what SLayer
-accepts and never diverge. ``lower``/``trim`` are first-class Mode-B scalars
+by reusing SLayer's own ``_normalize_sql_filter_operators`` — the canonical
+preprocessing ``parse_filter_expr`` itself runs — so we accept exactly what
+SLayer accepts and never diverge. ``lower``/``trim`` are first-class Mode-B scalars
 (SLayer ``STRING_HYGIENE_OPS``), so ``lower(trim(col)) == 'x'`` round-trips
 through SLayer's translator.
 """
@@ -34,9 +34,9 @@ from typing import Any
 
 # Reuse SLayer's canonical SQL-operator preprocessing (user owns SLayer; reuse
 # over reinvent). It is string-literal-aware: `=`→`==`, `<>`→`!=`,
-# IN/AND/OR/NOT/IS lowercased, NULL→None — exactly what `parse_filter` runs
-# before its own `ast.parse`.
-from slayer.core.formula import _preprocess_sql_operators
+# IN/AND/OR/NOT/IS lowercased, NULL→None — exactly what `parse_filter_expr`
+# runs before its own `ast.parse`.
+from slayer.engine.syntax import _normalize_sql_filter_operators
 
 # Hygiene calls we peel off the LHS before re-wrapping, so an already- or
 # partially-normalized predicate canonicalizes instead of double-wrapping.
@@ -143,7 +143,7 @@ def normalize_mode_b_filter(filter_str: str) -> str:
     placeholder RHS, non-column LHS) — fail-safe. Idempotent: the canonical
     ``lower(trim(col)) == '<lower>'`` form is a fixed point.
 
-    Boundary (v1): we apply only ``_preprocess_sql_operators``, the one SLayer
+    Boundary (v1): we apply only ``_normalize_sql_filter_operators``, the one SLayer
     preprocessing step that round-trips cleanly back to Mode-B. The others
     (func-style/colon aggregations, ``||`` concat, ``LIKE``) rewrite into forms
     that don't unparse back to Mode-B, so a filter string that COMBINES a text
@@ -154,7 +154,7 @@ def normalize_mode_b_filter(filter_str: str) -> str:
     if not isinstance(filter_str, str) or not filter_str.strip():
         return filter_str
     try:
-        processed = _preprocess_sql_operators(filter_str)
+        processed = _normalize_sql_filter_operators(filter_str)
         tree = ast.parse(processed, mode="eval")
         normalizer = _FilterNormalizer()
         normalizer.visit(tree)
@@ -236,8 +236,7 @@ def normalize_tool_filters(tool_name: str, tool_args: Any) -> Any:
     """Facade entry: deep-copy ``tool_args`` and normalize the Mode-B filter
     strings in the arg that carries them, dispatched by MCP tool name:
 
-    - ``query`` → ``filters`` (top-level list)
-    - ``query_nested`` → each stage in ``queries`` → its ``filters``
+    - ``query`` → the ``query`` arg (a stage dict or list of stage dicts)
     - ``create_model`` → ``query`` (a stage dict or list of stage dicts)
     - ``edit_model`` → each stage in ``source_queries`` → its ``filters``
       (NOT ``add_filters`` / ``remove_filters`` — those are Mode-A SQL)
@@ -249,11 +248,11 @@ def normalize_tool_filters(tool_name: str, tool_args: Any) -> Any:
         return tool_args
     args = copy.deepcopy(tool_args)
     if tool_name == "query":
-        if isinstance(args.get("filters"), list):
-            args["filters"] = _normalize_filters_list(args["filters"])
-    elif tool_name == "query_nested":
-        if isinstance(args.get("queries"), list):
-            for stage in args["queries"]:
+        q = args.get("query")
+        if isinstance(q, dict):
+            _normalize_stage(q)
+        elif isinstance(q, list):
+            for stage in q:
                 _normalize_stage(stage)
     elif tool_name == "create_model":
         q = args.get("query")

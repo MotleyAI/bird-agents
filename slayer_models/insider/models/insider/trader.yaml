@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: trader
 sql_table: trader
 query_variables: {}
@@ -8,17 +8,20 @@ columns:
   sql: tradereg
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: tradekind
   sql: tradekind
   type: TEXT
   primary_key: false
+  unique: false
   description: Broad category of the trader (Market Maker, Broker, Individual, Institution).
   hidden: false
 - name: acctdays
   sql: acctdays
   type: INT
   primary_key: false
+  unique: false
   description: Age of the trading account in days since opening.
   hidden: false
   format:
@@ -27,6 +30,7 @@ columns:
   sql: acctbal
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Current cash equity in the trader's account in USD.
   hidden: false
   format:
@@ -35,12 +39,14 @@ columns:
   sql: freqscope
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Average trading frequency classification: Low, Medium, High.'
   hidden: false
 - name: voldaily
   sql: voldaily
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Mean daily share volume traded across all symbols.
   hidden: false
   format:
@@ -49,6 +55,7 @@ columns:
   sql: posavg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Average position size in USD held per trade.
   hidden: false
   format:
@@ -57,6 +64,7 @@ columns:
   sql: posspan
   type: TEXT
   primary_key: false
+  unique: false
   description: "Trader Position Holding Style (KB #20): Intraday = open+close same\
     \ day; Swing = a few days to weeks; Position = weeks to months on broader trends;\
     \ Long-term = months/years on fundamentals.\n\n[kb=20]\n`posspan`: 'Intraday'\
@@ -74,6 +82,7 @@ columns:
   sql: trading_performance
   type: TEXT
   primary_key: false
+  unique: false
   description: 'JSONB metrics. Top-level: winpct, plratio. Nested risklevel: {risklevel
     (Conservative/Moderate/Aggressive), margpct, levratio}.'
   hidden: false
@@ -81,6 +90,7 @@ columns:
   sql: json_extract(trading_performance, '$.winpct')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Historical win-rate percentage (extracted from trading_performance
     JSON).
   hidden: false
@@ -88,6 +98,7 @@ columns:
   sql: json_extract(trading_performance, '$.plratio')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Profit-to-loss ratio of realised trades (extracted from trading_performance
     JSON).
   hidden: false
@@ -95,6 +106,7 @@ columns:
   sql: CAST(json_extract(trading_performance, '$.risklevel.levratio') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Trader Leverage Exposure (TLE = trading_performance.risklevel.levratio)\
     \ \u2014 KB #2.\n\n[kb=2]\nTLE = \\text{trading_performance.risklevel.levratio}\
     \ \u2014 Extracts the leverage ratio from the trader's performance data.\n[/kb=2]"
@@ -106,6 +118,7 @@ columns:
   sql: CAST(json_extract(trading_performance, '$.risklevel.margpct') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Margin utilisation percentage (extracted from trading_performance.risklevel
     JSON).
   hidden: false
@@ -113,6 +126,7 @@ columns:
   sql: json_extract(trading_performance, '$.risklevel.risklevel')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Trader Risk Appetite (KB #23 reference): Conservative / Moderate /
     Aggressive.'
   hidden: false
@@ -120,6 +134,7 @@ columns:
   sql: voldaily * 1.0 / NULLIF(acctbal, 0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Daily Turnover Rate (DTR = voldaily / acctbal) \u2014 KB #0.\n\n[kb=0]\n\
     DTR = \\frac{\\text{voldaily}}{\\text{acctbal}} \u2014 Calculates the ratio of\
     \ a trader's daily trading volume to their account balance, indicating capital\
@@ -133,6 +148,7 @@ columns:
     '$.risklevel.levratio') AS REAL))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Risk-Adjusted Win Rate (RAWR = winpct / Max(1, TLE)) \u2014 KB #59.\n\
     \n[kb=59]\nRAWR = \\frac{\\text{trading_performance.winpct}}{\\text{Max}(1, \\\
     text{TLE})} \u2014 Calculates the trader's historical win percentage adjusted\
@@ -146,6 +162,7 @@ columns:
     '$.risklevel.levratio') AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Risk-Adjusted Turnover (RAT = DTR * TLE) \u2014 KB #30.\n\n[kb=30]\n\
     RAT = \\text{DTR} \\times \\text{TLE} \\\\ \\text{where DTR is Daily Turnover\
     \ Rate  and TLE is Trader Leverage Exposure .} \u2014 Calculates trader turnover\
@@ -160,6 +177,7 @@ columns:
     OR (voldaily * 1.0 / NULLIF(acctbal, 0)) > 0.5
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High-Risk Trader Profile (KB #10): TLE>5 AND risk_appetite='Aggressive'\
     \ OR DTR>0.5.\n\n[kb=10]\nA trader is considered High-Risk if their TLE > 5.0\
     \ AND their `trading_performance.risklevel.risklevel` is 'Aggressive' OR their\
@@ -175,6 +193,7 @@ columns:
     OR (voldaily * 1.0 / NULLIF(acctbal, 0)) > 0.5) AND freqscope = 'High'
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High-Frequency High-Risk Trader (KB #40): High-Risk Trader Profile\
     \ AND freqscope='High'.\n\n[kb=40]\nA trader matching the High-Risk Trader Profile\
     \  AND whose freqscope is 'High'. \u2014 Identifies traders classified as High-Risk\

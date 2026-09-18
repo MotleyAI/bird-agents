@@ -1,18 +1,23 @@
-version: 6
+version: 10
 name: smc_avg
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: qualitycompliance
     columns:
     - name: k
       sql: '1'
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: smc_score:avg
   dimensions:
   - name: k
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"qualitycompliance.k\" AS k, \"qualitycompliance.smc_score_avg\"\
   \ AS smc_score_avg FROM (SELECT\n  1 AS \"qualitycompliance.k\",\n  AVG(\n    CASE\n\
@@ -26,11 +31,13 @@ columns:
   sql: k
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: smc_score_avg
   sql: smc_score_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Stock Management Capability proxy (KB #30, SCRS sub-score, 0-10):
     GDP compliance Full = 9, Partial = 6, else = 3. Used inside Supply Chain Resilience
     Score; heuristic from the gold task solution because the schema does not store

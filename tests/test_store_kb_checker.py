@@ -359,8 +359,7 @@ async def test_unused_query_backed_model_flagged():
             source_queries=[{"source_model": "financial_management",
                              "dimensions": [{"name": "casetag"}]}],
             backing_query_sql="SELECT casetag FROM financial_management",
-            columns=[col("casetag", "casetag", type="TEXT")],
-            measures=[measure("avg_sal", "sum(casetag)/ *:count", kb=4)],
+            columns=[col("casetag", "casetag", kb=4, type="TEXT")],
         ),
     ]
     findings = await check_models(

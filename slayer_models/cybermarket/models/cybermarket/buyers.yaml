@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: buyers
 sql_table: buyers
 query_variables: {}
@@ -8,11 +8,13 @@ columns:
   sql: buyregistry
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: buyspan
   sql: buyspan
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -20,6 +22,7 @@ columns:
   sql: buytxtally
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -27,21 +30,25 @@ columns:
   sql: buyspending
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: buyfreqcat
   sql: buyfreqcat
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: buychecklvl
   sql: buychecklvl
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: buyriskrate
   sql: buyriskrate
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -49,11 +56,13 @@ columns:
   sql: mktref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: vendref
   sql: vendref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

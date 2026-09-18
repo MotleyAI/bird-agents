@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: securitydetection
 sql_table: securitydetection
 query_variables: {}
@@ -8,16 +8,19 @@ columns:
   sql: secdetkey
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: sectechref
   sql: sectechref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: detecttime
   sql: detecttime
   type: TEXT
   primary_key: false
+  unique: false
   description: "Detection timestamp. KB #84 'last activity proxy time' = max(detecttime)\
     \ per account.\n\n[kb=84]\nDerived as \\max(\\text{detecttime}) from associated\
     \ securitydetection records for an account. \u2014 An estimated timestamp of the\
@@ -31,16 +34,19 @@ columns:
   sql: detectsource
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: lastupd
   sql: lastupd
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: updfreqhrs
   sql: updfreqhrs
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -48,6 +54,7 @@ columns:
   sql: detection_score_profile
   type: TEXT
   primary_key: false
+  unique: false
   description: 'JSONB column. Aggregates all granular detection scores, risk indicators,
     and model-reliability attributes for a security event. Sub-fields (confval, riskval,
     threatlvl, botlikscore, autobehavscore) are extracted as separate columns; helper
@@ -58,6 +65,7 @@ columns:
   sql: json_extract(detection_score_profile, '$.overall.confval')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Confidence value of the detection (KB #20). Ranges 0-1; values >0.8\
     \ indicate high-confidence detections, <0.3 suggest uncertain results requiring\
     \ manual review.\n\n[kb=20]\nRanges from 0 to 1. Values above 0.8 indicate high-confidence\
@@ -71,12 +79,14 @@ columns:
   sql: json_extract(detection_score_profile, '$.overall.riskval')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Overall risk rating (component of SRS, KB #4).'
   hidden: false
 - name: threatlvl
   sql: json_extract(detection_score_profile, '$.overall.threatlvl')
   type: TEXT
   primary_key: false
+  unique: false
   description: 'Threat priority enum (Critical / High / Low / Medium). KB #10 ''High-Risk
     Account'' triggers on threatlvl=''Critical''.'
   hidden: false
@@ -84,18 +94,21 @@ columns:
   sql: json_extract(detection_score_profile, '$.overall.fposprob')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: False-positive probability.
   hidden: false
 - name: detectconf
   sql: json_extract(detection_score_profile, '$.overall.detectconf')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Detection confidence (overall).
   hidden: false
 - name: botlikscore
   sql: json_extract(detection_score_profile, '$.behavior_scores.botlikscore')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Bot-likelihood score (KB #29). Ranges 0-100; scores >70 strongly indicate\
     \ bot behavior, <20 suggest human-like behavior patterns. Component of BBI alongside\
     \ autobehavscore.\n\n[kb=29]\nRanges from 0 to 100. Scores above 70 strongly indicate\
@@ -109,54 +122,63 @@ columns:
   sql: json_extract(detection_score_profile, '$.behavior_scores.autobehavscore')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Automated-behavior score (component of BBI, KB #3).'
   hidden: false
 - name: spambehavscore
   sql: json_extract(detection_score_profile, '$.behavior_scores.spambehavscore')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Spam-behavior score.
   hidden: false
 - name: commintscore
   sql: json_extract(detection_score_profile, '$.behavior_scores.commintscore')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Commercial / spam intent score.
   hidden: false
 - name: behavpatscore
   sql: json_extract(detection_score_profile, '$.pattern_scores.behavpatscore')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Behavioral pattern score.
   hidden: false
 - name: temppatscore
   sql: json_extract(detection_score_profile, '$.pattern_scores.temppatscore')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Temporal pattern score.
   hidden: false
 - name: netpatscore
   sql: json_extract(detection_score_profile, '$.pattern_scores.netpatscore')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Network pattern score.
   hidden: false
 - name: contpatscore
   sql: json_extract(detection_score_profile, '$.pattern_scores.contpatscore')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Content pattern score.
   hidden: false
 - name: profpatscore
   sql: json_extract(detection_score_profile, '$.pattern_scores.profpatscore')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Profile pattern score.
   hidden: false
 - name: techpatscore
   sql: json_extract(detection_score_profile, '$.pattern_scores.techpatscore')
   type: DOUBLE
   primary_key: false
+  unique: false
   description: Technical pattern score.
   hidden: false
 - name: is_critical
@@ -164,12 +186,14 @@ columns:
     THEN 1 ELSE 0 END
   type: DOUBLE
   primary_key: false
+  unique: false
   description: '1 if threatlvl=''Critical'', else 0. Used for KB #10 (High-Risk Account).'
   hidden: false
 - name: account_id
-  sql: technicalinfo__networkmetrics__sessionbehavior__profile.profaccref
+  sql: technicalinfo.networkmetrics.sessionbehavior.profile.profaccref
   type: TEXT
   primary_key: false
+  unique: false
   description: "Per-row account identifier resolved through the securitydetection\
     \ \u2192 technicalinfo \u2192 networkmetrics \u2192 sessionbehavior \u2192 profile\
     \ join chain. Convenience handle for grouping/multistage; equals the underlying\

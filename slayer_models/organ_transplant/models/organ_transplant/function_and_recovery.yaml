@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: function_and_recovery
 sql_table: function_and_recovery
 query_variables: {}
@@ -8,24 +8,28 @@ columns:
   sql: recov_don_registry
   type: TEXT
   primary_key: true
+  unique: false
   description: FK to demographics.contrib_registry. One row per donor.
   hidden: false
 - name: don_crtn_val
   sql: don_crtn_val
   type: TEXT
   primary_key: false
+  unique: false
   description: Donor serum creatinine as text, e.g. '1.62 mg/dL'. See don_creatinine_mgdl.
   hidden: false
 - name: don_gfr_val
   sql: don_gfr_val
   type: TEXT
   primary_key: false
+  unique: false
   description: "Donor GFR as text, e.g. '103.4 mL/min/1.73m\xB2'. See don_gfr_mlmin."
   hidden: false
 - name: don_co_desc
   sql: don_co_desc
   type: TEXT
   primary_key: false
+  unique: false
   description: "Donor cause of death (text, e.g. 'Anoxia, oxygen deprivation may affect\
     \ organ quality'). The mechanism of death influences organ viability \u2014 see\
     \ is_anoxia_death (KB 32) for the Anoxia-specific helper.\n\n[kb=47]\nThe mechanism\
@@ -42,18 +46,21 @@ columns:
   sql: org_recov_dt
   type: TEXT
   primary_key: false
+  unique: false
   description: Date/time organ was recovered.
   hidden: false
 - name: org_presv_meth
   sql: org_presv_meth
   type: TEXT
   primary_key: false
+  unique: false
   description: Organ preservation method (raw text). KB Static Cold Storage.
   hidden: false
 - name: org_isch_time
   sql: org_isch_time
   type: TEXT
   primary_key: false
+  unique: false
   description: "Cold ischemia time text, e.g. '702 mins'. See cold_ischemia_minutes.\
     \ KB Cold Ischemia.\n\n[kb=21]\nA state of organ preservation where metabolic\
     \ activity is slowed by cooling, typically to around 4\xB0C, to minimize tissue\
@@ -68,6 +75,7 @@ columns:
   sql: organfuncassess
   type: TEXT
   primary_key: false
+  unique: false
   description: "JSON: {Liv_Func, Card_Func, Pulm_Func} status bands (Normal/Mild/Moderate/Severe).\
     \ KB LFT Values.\n\n[kb=49]\nKey markers like ALT and AST assess liver cell injury.\
     \ Normal ranges are typically below 40-50 U/L. Elevated levels, such as an ALT\
@@ -82,6 +90,7 @@ columns:
   sql: CAST(substr(don_crtn_val, 1, instr(don_crtn_val, ' ') - 1) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Donor serum creatinine (mg/dL), parsed.\n\n[kb=41]\nA waste product\
     \ from muscle metabolism, cleared by the kidneys. Normal values are typically\
     \ 0.7-1.3 mg/dL. A high value, such as 2.5 mg/dL, suggests impaired kidney function,\
@@ -98,6 +107,7 @@ columns:
     ' ') - 1) AS REAL) < 2.0 THEN 'Elevated' ELSE 'High' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "Banded serum creatinine: <0.7 Low, 0.7-1.3 Normal, 1.3-2.0 Elevated,\
     \ >=2.0 High (KB Serum Creatinine Levels).\n\n[kb=41]\nA waste product from muscle\
     \ metabolism, cleared by the kidneys. Normal values are typically 0.7-1.3 mg/dL.\
@@ -112,6 +122,7 @@ columns:
   sql: CAST(substr(don_gfr_val, 1, instr(don_gfr_val, ' ') - 1) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Donor GFR in mL/min/1.73m\xB2, parsed.\n\n[kb=42]\nGFR measures how\
     \ well the kidneys are filtering blood. A GFR > 90 mL/min/1.73m\xB2 is considered\
     \ normal. A GFR of 30-59 indicates moderate kidney disease, and a GFR < 15 signifies\
@@ -129,6 +140,7 @@ columns:
     ' ') - 1) AS REAL) >= 15 THEN 'Severe' ELSE 'Failure' END
   type: TEXT
   primary_key: false
+  unique: false
   description: "GFR stages: >90 Normal, 60-90 Mild, 30-59 Moderate, 15-29 Severe,\
     \ <15 Failure (KB GFR Values).\n\n[kb=42]\nGFR measures how well the kidneys are\
     \ filtering blood. A GFR > 90 mL/min/1.73m\xB2 is considered normal. A GFR of\
@@ -142,6 +154,7 @@ columns:
   sql: CASE WHEN don_co_desc LIKE 'Anoxia%' THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "True when donor cause of death starts with 'Anoxia' (KB Anoxia).\n\
     \n[kb=32]\nA donor's cause of death resulting from a complete lack of oxygen.\
     \ [cite_start]Within the database, this specific cause is recorded as 'Anoxia'\
@@ -157,6 +170,7 @@ columns:
   sql: CASE WHEN org_presv_meth LIKE 'Static cold storage%' THEN 1 ELSE 0 END
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "True when preservation method is Static Cold Storage (KB Static Cold\
     \ Storage).\n\n[kb=30]\nA preservation technique that relies on hypothermia to\
     \ reduce the organ's metabolic rate and oxygen demand during transport, minimizing\
@@ -171,6 +185,7 @@ columns:
   sql: CAST(substr(org_isch_time, 1, instr(org_isch_time, ' ') - 1) AS REAL)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Donor-side cold ischemia time in minutes (parsed). KB Cold Ischemia.\n\
     \n[kb=21]\nA state of organ preservation where metabolic activity is slowed by\
     \ cooling, typically to around 4\xB0C, to minimize tissue damage while outside\
@@ -187,6 +202,7 @@ columns:
     ' ') - 1) AS INTEGER))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Estimated GFR via simplified KB formula 141 * (Cr/0.9)^-0.411 * 0.993^Age\
     \ (males). Compare to don_gfr_mlmin.\n\n[kb=3]\nA calculated rate based on serum\
     \ creatinine level, age, and gender. A simplified estimation formula is: $eGFR\
@@ -202,6 +218,7 @@ columns:
     (10.0 * CAST(substr(don_crtn_val, 1, instr(don_crtn_val, ' ') - 1) AS REAL))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Renal Function Score = 1.0*eGFR - 10.0*Cr (uses observed don_gfr_mlmin\
     \ as eGFR).\n\n[kb=9]\nA score calculated from the donor's Estimated Glomerular\
     \ Filtration Rate (eGFR) and serum creatinine (Cr) level. Formula: $S_{renal}\
@@ -215,6 +232,7 @@ columns:
   sql: json_extract(organfuncassess, '$.Liv_Func')
   type: TEXT
   primary_key: false
+  unique: false
   description: "Donor liver function band parsed from organfuncassess (KB Liver Function\
     \ Test (LFT) Values).\n\n[kb=49]\nKey markers like ALT and AST assess liver cell\
     \ injury. Normal ranges are typically below 40-50 U/L. Elevated levels, such as\
@@ -229,22 +247,19 @@ columns:
   sql: json_extract(organfuncassess, '$.Card_Func')
   type: TEXT
   primary_key: false
+  unique: false
   description: Donor cardiac function band parsed from organfuncassess.
   hidden: false
 - name: pulm_func
   sql: json_extract(organfuncassess, '$.Pulm_Func')
   type: TEXT
   primary_key: false
+  unique: false
   description: Donor pulmonary function band parsed from organfuncassess.
   hidden: false
 measures: []
 aggregations: []
-joins:
-- target_model: demographics
-  join_pairs:
-  - - recov_don_registry
-    - contrib_registry
-  join_type: left
+joins: []
 filters: []
 description: 'Per-donor organ recovery + function data: serum creatinine, GFR, cause
   of death, recovery timestamp, preservation method, cold ischemia time, and a JSON

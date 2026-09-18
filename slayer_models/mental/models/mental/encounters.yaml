@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: encounters
 sql_table: encounters
 query_variables: {}
@@ -8,36 +8,43 @@ columns:
   sql: enckey
   type: TEXT
   primary_key: true
+  unique: false
   hidden: false
 - name: timemark
   sql: timemark
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: abref
   sql: abref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: patref
   sql: patref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: clinid
   sql: clinid
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: facid
   sql: facid
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: missappt
   sql: missappt
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Missed appointment count for this encounter (e.g. 0 = perfect attendance,\
     \ 5 = frequent absences).\n\n[kb=29]\nA numeric value indicating the number of\
     \ missed appointments. A value of 0 indicates perfect attendance, while higher\
@@ -53,16 +60,19 @@ columns:
   sql: txbarrier
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: nxapptdt
   sql: nxapptdt
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: dqscore
   sql: dqscore
   type: INT
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: integer
@@ -70,11 +80,13 @@ columns:
   sql: assesscomplete
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: is_stale_outcome
   sql: julianday('now') - julianday(timemark) > 60
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "Stale Treatment Outcome Records (KB #62): TRUE iff the encounter's\
     \ timemark is more than 60 days old. Used to flag outcomes linked to old encounters.\n\
     \n[kb=62]\nRecords in the `treatmentoutcomes` table where the `timemark` of the\
@@ -90,6 +102,7 @@ columns:
   sql: missappt < 1
   type: BOOLEAN
   primary_key: false
+  unique: false
   description: "High Appointment Adherence (KB #19): per-encounter missappt < 1.\n\
     \n[kb=19]\nA patient with MAR < 1 \u2014 Identifies patients with low missed appointment\
     \ rates.\n[/kb=19]"

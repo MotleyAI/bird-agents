@@ -1,16 +1,19 @@
-version: 7
+version: 10
 name: extreme_weather_ready
 source_queries:
-- version: 3
+- version: 4
   name: ssf_per_eq_ewr
   source_model:
     source_name: weatherandstructure
     columns:
     - name: ssf_gt_07_flag
-      type: DOUBLE
       sql: CASE WHEN (100 - structuralloadpercent) / 100.0 * CASE WHEN snowloadkgm2
         > 100 OR windspeedms > 20 THEN 0.5 WHEN snowloadkgm2 > 50 OR windspeedms >
         10 THEN 0.8 ELSE 1.0 END > 0.7 THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: ssf_gt_07_flag:min
     name: ssf_ok
@@ -18,49 +21,66 @@ source_queries:
   - name: opmainteqref
     model: operationmaintenance
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: heater_per_eq_ewr
   source_model:
     source_name: cabinenvironment
     columns:
     - name: heater_on_flag
-      type: DOUBLE
       sql: CASE WHEN heaterstatus != 'Off' THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: heater_on_flag:min
     name: heater_on
   dimensions:
   - name: cabineqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: insul_per_eq_ewr
   source_model:
     source_name: thermalsolarwindandgrid
     columns:
     - name: insul_ok_flag
-      type: DOUBLE
       sql: CASE WHEN insulationstatus != 'Poor' THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: insul_ok_flag:min
     name: insul_ok
   dimensions:
   - name: thermaleqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: emerg_per_eq_ewr
   source_model:
     source_name: lightingandsafety
     columns:
     - name: emerg_ok_flag
-      type: DOUBLE
       sql: CASE WHEN emergencylightstatus IN ('On', 'Testing') THEN 1 ELSE 0 END
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: emerg_ok_flag:min
     name: emerg_ok
   dimensions:
   - name: lighteqref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: ssf_per_eq_ewr
     joins:
@@ -68,14 +88,17 @@ source_queries:
       join_pairs:
       - - operationmaintenance__opmainteqref
         - cabineqref
+      join_type: left
     - target_model: insul_per_eq_ewr
       join_pairs:
       - - operationmaintenance__opmainteqref
         - thermaleqref
+      join_type: left
     - target_model: emerg_per_eq_ewr
       join_pairs:
       - - operationmaintenance__opmainteqref
         - lighteqref
+      join_type: left
   measures:
   - formula: ssf_ok:min * heater_per_eq_ewr.heater_on:min * insul_per_eq_ewr.insul_ok:min
       * emerg_per_eq_ewr.emerg_ok:min
@@ -83,6 +106,8 @@ source_queries:
   dimensions:
   - name: operationmaintenance__opmainteqref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"ssf_per_eq_ewr.operationmaintenance__opmainteqref\" AS\
   \ operationmaintenance__opmainteqref, \"ssf_per_eq_ewr.ssf_ok_min\" AS ssf_ok_min,\
@@ -148,16 +173,19 @@ columns:
   sql: operationmaintenance__opmainteqref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: ssf_ok_min
   sql: ssf_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: is_extreme_weather_ready
   sql: is_extreme_weather_ready
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float
@@ -165,16 +193,19 @@ columns:
   sql: emerg_per_eq_ewr__emerg_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: insul_per_eq_ewr__insul_ok_min
   sql: insul_per_eq_ewr__insul_ok_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: heater_per_eq_ewr__heater_on_min
   sql: heater_per_eq_ewr__heater_on_min
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

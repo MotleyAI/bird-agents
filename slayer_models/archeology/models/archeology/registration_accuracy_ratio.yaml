@@ -1,7 +1,7 @@
-version: 6
+version: 10
 name: registration_accuracy_ratio
 source_queries:
-- version: 3
+- version: 4
   name: pc_per_arcref
   source_model: scanpointcloud
   measures:
@@ -10,7 +10,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: reg_per_arcref
   source_model: scanregistration
   measures:
@@ -21,7 +23,9 @@ source_queries:
   dimensions:
   - name: arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   name: merged
   source_model:
     source_name: pc_per_arcref
@@ -30,6 +34,7 @@ source_queries:
       join_pairs:
       - - arcref
         - arcref
+      join_type: left
   dimensions:
   - name: arcref
   - name: scanresolmm
@@ -38,20 +43,27 @@ source_queries:
   - name: errvalmm
     model: reg_per_arcref
   whole_periods_only: false
-- version: 3
+  distinct_dimension_values: true
+  to_many_handling: broadcast
+- version: 4
   source_model:
     source_name: merged
     columns:
     - name: rar
-      type: DOUBLE
       sql: scanresolmm / (reg_per_arcref__logaccumm * sqrt(1 + reg_per_arcref__errvalmm
         / reg_per_arcref__logaccumm))
+      type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: rar:avg
     name: rar
   dimensions:
   - name: arcref
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"merged.arcref\" AS arcref, \"merged.rar\" AS rar FROM\
   \ (SELECT\n  merged.arcref AS \"merged.arcref\",\n  AVG(\n    merged.scanresolmm\
@@ -85,11 +97,13 @@ columns:
   sql: arcref
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: rar
   sql: rar
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
   format:
     type: float

@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: bond_ratings
 sql_table: bond_ratings
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: ratekey
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: creditmark
   type: TEXT
   primary_key: false
+  unique: false
   description: "Credit Quality (KB 29): creditworthiness of the bonds a fund holds.\
     \ 'us_government' is the highest quality. 'aaa' / 'aa' are high-grade investment\
     \ quality. Ratings 'bbb' and below ('bb', 'b', 'below_b') are speculative / high-yield.\n\

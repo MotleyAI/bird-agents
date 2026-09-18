@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: securities
 sql_table: securities
 query_variables: {}
@@ -8,6 +8,7 @@ columns:
   sql: securityref
   type: INT
   primary_key: true
+  unique: false
   hidden: false
   format:
     type: integer
@@ -15,6 +16,7 @@ columns:
   sql: securitylabel
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

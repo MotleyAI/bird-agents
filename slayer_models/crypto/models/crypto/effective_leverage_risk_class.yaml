@@ -1,18 +1,23 @@
-version: 6
+version: 10
 name: effective_leverage_risk_class
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: effective_leverage
     columns:
     - name: el_risk_class
-      type: TEXT
       sql: CASE WHEN el_value > 20 THEN 'High Risk' ELSE 'Normal' END
+      type: TEXT
+      primary_key: false
+      unique: false
+      hidden: false
   dimensions:
   - name: recordvault
   - name: userlink
   - name: el_risk_class
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"effective_leverage.recordvault\" AS recordvault, \"effective_leverage.userlink\"\
   \ AS userlink, \"effective_leverage.el_risk_class\" AS el_risk_class FROM (SELECT\n\
@@ -40,16 +45,19 @@ columns:
   sql: recordvault
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: userlink
   sql: userlink
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 - name: el_risk_class
   sql: el_risk_class
   type: TEXT
   primary_key: false
+  unique: false
   hidden: false
 measures: []
 aggregations: []

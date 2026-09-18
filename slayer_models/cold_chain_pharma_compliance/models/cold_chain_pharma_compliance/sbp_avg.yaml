@@ -1,18 +1,23 @@
-version: 6
+version: 10
 name: sbp_avg
 source_queries:
-- version: 3
+- version: 4
   source_model:
     source_name: vehicles
     columns:
     - name: k
       sql: '1'
       type: DOUBLE
+      primary_key: false
+      unique: false
+      hidden: false
   measures:
   - formula: sbp_score:avg
   dimensions:
   - name: k
   whole_periods_only: false
+  distinct_dimension_values: true
+  to_many_handling: broadcast
 query_variables: {}
 backing_query_sql: "SELECT \"vehicles.k\" AS k, \"vehicles.sbp_score_avg\" AS sbp_score_avg\
   \ FROM (SELECT\n  1 AS \"vehicles.k\",\n  AVG(\n    CASE\n      WHEN LOWER(TRIM(veh_qual))\
@@ -25,11 +30,13 @@ columns:
   sql: k
   type: DOUBLE
   primary_key: false
+  unique: false
   hidden: false
 - name: sbp_score_avg
   sql: sbp_score_avg
   type: DOUBLE
   primary_key: false
+  unique: false
   description: 'Supplier Backup Presence proxy (KB #30, SCRS sub-score, 0-10): Validated
     vehicle = 9, Qualified = 7, else = 5. Used inside Supply Chain Resilience Score;
     heuristic from the gold task solution because the schema does not store SBP directly.'

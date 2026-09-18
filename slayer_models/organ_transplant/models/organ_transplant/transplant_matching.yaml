@@ -1,4 +1,4 @@
-version: 6
+version: 10
 name: transplant_matching
 sql_table: transplant_matching
 query_variables: {}
@@ -8,42 +8,49 @@ columns:
   sql: match_rec_registry
   type: TEXT
   primary_key: true
+  unique: false
   description: Match primary key. Other matching-context tables FK here.
   hidden: false
 - name: created_ts
   sql: created_ts
   type: TEXT
   primary_key: false
+  unique: false
   description: When the match record was created.
   hidden: false
 - name: donor_ref_reg
   sql: donor_ref_reg
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to demographics.contrib_registry.
   hidden: false
 - name: recip_ref_reg
   sql: recip_ref_reg
   type: TEXT
   primary_key: false
+  unique: false
   description: FK to recipients_demographics.recip_registry.
   hidden: false
 - name: org_spec
   sql: org_spec
   type: TEXT
   primary_key: false
+  unique: false
   description: Organ being matched (Heart/Kidney/Liver/Lung/Pancreas).
   hidden: false
 - name: match_status
   sql: match_status
   type: TEXT
   primary_key: false
+  unique: false
   description: Match process status (Completed/Failed/In Progress/Matched/Pending).
   hidden: false
 - name: score_val
   sql: score_val
   type: INT
   primary_key: false
+  unique: false
   description: Overall matching score from upstream system.
   hidden: false
   format:
@@ -52,30 +59,35 @@ columns:
   sql: level_val
   type: TEXT
   primary_key: false
+  unique: false
   description: Match level (Acceptable/High Risk/Marginal/Optimal).
   hidden: false
 - name: alg_vers
   sql: alg_vers
   type: TEXT
   primary_key: false
+  unique: false
   description: Matching algorithm version, e.g. 'v2.5'.
   hidden: false
 - name: run_registry
   sql: run_registry
   type: TEXT
   primary_key: false
+  unique: false
   description: Batch run id.
   hidden: false
 - name: match_ts
   sql: match_ts
   type: TEXT
   primary_key: false
+  unique: false
   description: Timestamp the algorithm executed.
   hidden: false
 - name: dur_sec
   sql: dur_sec
   type: INT
   primary_key: false
+  unique: false
   description: Algorithm runtime in seconds.
   hidden: false
   format:
@@ -84,6 +96,7 @@ columns:
   sql: conf_val
   type: INT
   primary_key: false
+  unique: false
   description: Confidence value.
   hidden: false
   format:
@@ -92,6 +105,7 @@ columns:
   sql: dss_val
   type: INT
   primary_key: false
+  unique: false
   description: Decision support system score.
   hidden: false
   format:
@@ -101,6 +115,7 @@ columns:
     1, instr(demographics.age_count, ' ') - 1) AS INTEGER))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Donor-Recipient Age Difference = |Age_recipient - Age_donor| (KB).\n\
     \n[kb=1]\nThe absolute difference between the recipient's age and the donor's\
     \ age. Formula: $|Age_{recipient} - Age_{donor}|$. \u2014 Calculates the absolute\
@@ -114,6 +129,7 @@ columns:
     1, instr(demographics.age_count, ' ') - 1) AS INTEGER)))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Age Compatibility Score = e^(-0.03 * |age_diff|) (KB).\n\n[kb=7]\n\
     A normalized score based on the Donor-Recipient Age Difference. Formula: $S_{age}\
     \ = e^{-0.03 \\times |Age_{recipient} - Age_{donor}|}$, using a standard scaling\
@@ -128,6 +144,7 @@ columns:
     / NULLIF(recipients_demographics.bmi_val, 0) - 1.0)
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Size Compatibility Score = 1 - |donor_BMI / recipient_BMI - 1| (KB).\
     \ Uses physicalstats.Bmi_Value for donor, bmi_val for recipient.\n\n[kb=6]\nA\
     \ score derived from the ratio of donor and recipient BMI. Formula: $S_{size}\
@@ -145,6 +162,7 @@ columns:
     ' ') - 1) AS INTEGER))))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Expected Graft Survival = sigmoid(-0.5 + 1.5*S_immune - 0.02*Age_donor)\
     \ (KB EGS). S_immune inlined from KB Immunological Compat Score formula.\n\n[kb=13]\n\
     A predictive score based on factors like the Immunological Compatibility Score\
@@ -170,6 +188,7 @@ columns:
     ' ') - 1) AS INTEGER)))))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Composite Allocation Score = 0.5*S_urgency + 0.25*S_immune + 0.25*EGS\
     \ (KB). S_urgency / S_immune / EGS inlined from their KB formulas.\n\n[kb=17]\n\
     A weighted sum of the Patient Urgency Score, Immunological Compatibility Score,\
@@ -191,6 +210,7 @@ columns:
     ' ') - 1) AS REAL))))
   type: DOUBLE
   primary_key: false
+  unique: false
   description: "Comprehensive Match Quality = 0.4*S_immune + 0.2*S_age - 0.3*S_surgical\
     \ + 0.1*I_logistics (KB). S_age uses pre-computed compatscores.Age_Score; S_surgical\
     \ = risk_evaluation.surg_risk_val (COALESCE NULL\u21920); I_logistics inlined.\n\
@@ -216,36 +236,6 @@ joins:
   join_pairs:
   - - recip_ref_reg
     - recip_registry
-  join_type: left
-- target_model: compatibility_metrics
-  join_pairs:
-  - - match_rec_registry
-    - match_comp_registry
-  join_type: left
-- target_model: risk_evaluation
-  join_pairs:
-  - - match_rec_registry
-    - risk_eval_registry
-  join_type: left
-- target_model: allocation_details
-  join_pairs:
-  - - match_rec_registry
-    - allc_match_registry
-  join_type: left
-- target_model: logistics
-  join_pairs:
-  - - match_rec_registry
-    - log_match_registry
-  join_type: left
-- target_model: administrative_and_review
-  join_pairs:
-  - - match_rec_registry
-    - adm_rev_registry
-  join_type: left
-- target_model: data_source_and_quality
-  join_pairs:
-  - - match_rec_registry
-    - q_match_registry
   join_type: left
 filters: []
 description: 'Per-match record: donor x recipient pairing for a specific organ. Holds
