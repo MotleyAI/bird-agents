@@ -335,3 +335,20 @@ def results_root() -> Path:
 def benchmarks_root() -> Path:
     """pytest-benchmark output (committed)."""
     return main_checkout_root() / ".benchmarks"
+
+
+def reports_root() -> Path:
+    """BIRD-INTERACT-1.0 submission reports (DEV-1553). Worktree-safe.
+
+    Honors ``BIRD_REPORTS_ROOT``; otherwise the main checkout's
+    ``reports/`` so all worktree-generated submissions aggregate in one
+    place. Creates the directory lazily (mirrors ``runs_root``).
+    """
+    override = os.environ.get("BIRD_REPORTS_ROOT")
+    if override:
+        p = Path(override).expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    path = main_checkout_root() / "reports"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
